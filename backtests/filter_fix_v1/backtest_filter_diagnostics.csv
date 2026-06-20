@@ -1,0 +1,4 @@
+filter_name,skipped_count,would_have_losses,would_have_pnl,would_have_profit_factor,would_have_win_rate,would_have_wins
+blocked_hours,909,570,-4958.243413,0.805236,0.372937,339
+breakout_retest_min_score,1686,1004,5122.09222,1.108496,0.404508,682
+exclude_symbols,877,579,-2801.483139,0.902995,0.339795,298

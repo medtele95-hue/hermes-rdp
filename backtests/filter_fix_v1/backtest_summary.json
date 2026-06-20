@@ -1,0 +1,133 @@
+{
+  "allowed_hours": [],
+  "best_hours": [],
+  "best_sessions": [],
+  "best_strategy": null,
+  "best_symbol": null,
+  "blocked_hours": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    23
+  ],
+  "blocked_sessions": [
+    "ASIA"
+  ],
+  "breakout_retest_min_score": 70.0,
+  "excluded_symbols": [
+    "GOLD#"
+  ],
+  "expectancy": null,
+  "filters_applied": {
+    "allowed_hours": false,
+    "blocked_hours": true,
+    "blocked_sessions": true,
+    "breakout_retest_min_score": true,
+    "exclude_symbols": true,
+    "min_big_setup_grade": false
+  },
+  "losses": 0,
+  "max_drawdown": 0.0,
+  "min_big_setup_grade": null,
+  "performance_by_big_setup_grade": {},
+  "performance_by_safety_guard_status": {},
+  "pnl_by_filter_pass_status": {
+    "FILTERED": {
+      "expectancy": -0.759687,
+      "losses": 2153,
+      "pnl": -2637.634332,
+      "profit_factor": 0.974026,
+      "trades": 3472,
+      "win_rate": 0.379896,
+      "wins": 1319
+    },
+    "PASS": {
+      "expectancy": null,
+      "losses": 0,
+      "pnl": 0,
+      "profit_factor": null,
+      "trades": 0,
+      "win_rate": null,
+      "wins": 0
+    }
+  },
+  "profit_factor": null,
+  "safety_scan": {
+    "no_mt5_order_send_called": true,
+    "no_production_table_writes": true,
+    "no_supabase_writes_used": true,
+    "output_local_only": true
+  },
+  "skipped_by_filter": {
+    "blocked_hours": 909,
+    "breakout_retest_min_score": 1686,
+    "exclude_symbols": 877
+  },
+  "skipped_count_by_reason": {
+    "AMD_FVG_IFVG_CONDITIONS_NOT_MET": 61927,
+    "BREAKOUT_RETEST_SCORE_BELOW_MIN": 1686,
+    "BTC_BAD_HOUR_ANALYSIS_ONLY": 1084,
+    "BTC_WEEKEND_ANALYSIS_ONLY": 3111,
+    "CRT_TBS_CONDITIONS_NOT_MET": 61927,
+    "EMA_PULLBACK_NO_M15_M5_CONFIRMATION": 17996,
+    "FIB_OTE_CONDITIONS_NOT_MET": 61927,
+    "HOUR_BLOCKED": 909,
+    "MISSING_SL_TP": 59,
+    "No EMA pullback setup": 40706,
+    "No breakout retest": 55245,
+    "RR_BELOW_MIN": 2181,
+    "SYMBOL_EXCLUDED": 877
+  },
+  "strategy_activation_diagnostics": {
+    "AMD_FVG_IFVG_REVERSAL": {
+      "entered_count": 0,
+      "evaluated_count": 61927,
+      "signal_count": 0,
+      "skipped_by_filters": 0,
+      "skipped_conditions_not_met": 61927
+    },
+    "BREAKOUT_RETEST": {
+      "entered_count": 0,
+      "evaluated_count": 61927,
+      "signal_count": 6682,
+      "skipped_by_filters": 3472,
+      "skipped_conditions_not_met": 58455
+    },
+    "CRT_TBS_REVERSAL": {
+      "entered_count": 0,
+      "evaluated_count": 61927,
+      "signal_count": 0,
+      "skipped_by_filters": 0,
+      "skipped_conditions_not_met": 61927
+    },
+    "EMA_PULLBACK": {
+      "entered_count": 0,
+      "evaluated_count": 61927,
+      "signal_count": 21221,
+      "skipped_by_filters": 0,
+      "skipped_conditions_not_met": 61927
+    },
+    "FIB_OTE_RETEST": {
+      "entered_count": 0,
+      "evaluated_count": 61927,
+      "signal_count": 0,
+      "skipped_by_filters": 0,
+      "skipped_conditions_not_met": 61927
+    }
+  },
+  "total_pnl": 0,
+  "total_simulated_trades": 0,
+  "trades_after_filters": 0,
+  "trades_before_filters": 3472,
+  "win_rate": null,
+  "wins": 0,
+  "worst_hours": [],
+  "worst_sessions": [],
+  "worst_strategy": null,
+  "worst_symbol": null
+}

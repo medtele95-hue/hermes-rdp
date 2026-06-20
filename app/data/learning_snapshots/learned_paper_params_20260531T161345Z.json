@@ -1,0 +1,274 @@
+{
+  "symbols": {
+    "BTCUSD": {
+      "priority": 0.35,
+      "strategies": {
+        "AMD_FVG_IFVG_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 423,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 2,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.61,
+          "pnl": 89.109,
+          "setups": 814,
+          "sl_mult": 0.9306,
+          "tp_mult": 1.0286,
+          "weight": 1.03,
+          "wins": 4
+        },
+        "CRT_TBS_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 451,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 2,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.58,
+          "pnl": 1793.65,
+          "setups": 4764,
+          "sl_mult": 1.0816,
+          "tp_mult": 1.0492,
+          "weight": 1.03,
+          "wins": 10
+        },
+        "FIB_OTE_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 562,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 355,
+          "sl_mult": 0.9036,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 2762,
+          "sl_mult": 0.9796,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "EURUSD": {
+      "priority": 0.3,
+      "strategies": {
+        "AMD_FVG_IFVG_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 2108,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 273,
+          "sl_mult": 1.0192,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "CRT_TBS_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 9,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.57,
+          "pnl": 261.88,
+          "setups": 2733,
+          "sl_mult": 0.9792,
+          "tp_mult": 1.008,
+          "weight": 1.03,
+          "wins": 16
+        },
+        "FIB_OTE_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.57,
+          "pnl": 0.0,
+          "setups": 216,
+          "sl_mult": 0.9992,
+          "tp_mult": 0.9596,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 4783,
+          "sl_mult": 0.9792,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "GOLD#": {
+      "priority": 0.3,
+      "strategies": {
+        "AMD_FVG_IFVG_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 2108,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 6,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.62,
+          "pnl": 3064.76,
+          "setups": 322,
+          "sl_mult": 0.9681,
+          "tp_mult": 0.9878,
+          "weight": 1.03,
+          "wins": 7
+        },
+        "CRT_TBS_REVERSAL": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 11,
+          "max_hold_minutes": 25,
+          "min_confidence": 0.61,
+          "pnl": -4197.76,
+          "setups": 6247,
+          "sl_mult": 0.9302,
+          "tp_mult": 1.0286,
+          "weight": 1.0,
+          "wins": 3
+        },
+        "FIB_OTE_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 175,
+          "sl_mult": 0.9988,
+          "tp_mult": 0.96,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 1266,
+          "sl_mult": 0.922,
+          "tp_mult": 1.0612,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "total_setups": 30362,
+  "updated_at": "2026-05-31T16:09:44.727581+00:00",
+  "version": 1
+}

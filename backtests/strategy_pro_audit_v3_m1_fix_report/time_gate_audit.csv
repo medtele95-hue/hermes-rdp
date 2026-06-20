@@ -1,0 +1,4 @@
+broker_hour,broker_time_estimate,broker_utc_offset_hours,casablanca_time,is_bad_hour,is_news_blackout,is_weekend,local_hour,session_name,symbol,symbol_market_open,time_gate_reason,time_gate_status,utc_hour,utc_time,weekday
+14,2026-06-01T14:55:00+00:00,0.0,2026-06-01T12:55:18.400467+01:00,False,unknown,False,12,OFF_HOURS,BTCUSD#,True,TIME_GATE_PASS,PASS,11,2026-06-01T11:55:18.400467+00:00,MONDAY
+14,2026-06-01T14:55:00+00:00,0.0,2026-06-01T12:55:23.306033+01:00,False,unknown,False,12,OFF_HOURS,GOLD#,True,TIME_GATE_PASS,PASS,11,2026-06-01T11:55:23.306033+00:00,MONDAY
+14,2026-06-01T14:55:00+00:00,0.0,2026-06-01T12:55:28.264712+01:00,False,unknown,False,12,OFF_HOURS,EURUSD,True,TIME_GATE_PASS,PASS,11,2026-06-01T11:55:28.264712+00:00,MONDAY

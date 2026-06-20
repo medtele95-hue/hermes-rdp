@@ -1,0 +1,48 @@
+{
+  "avg_rr": 2.0,
+  "closed_pnl": 0,
+  "failures": [
+    "BTC_BAD_HOUR_BLOCK",
+    "MTFA_FAIL",
+    "QUANT_STATISTICAL_PULLBACK_BUY",
+    "QUANT_STATISTICAL_PULLBACK_SELL",
+    "SMC_STRONG_FAIL",
+    "TOP_DOWN_READER_BLOCK"
+  ],
+  "math_checks": {
+    "closed_candles_only": true,
+    "kelly_valid": true,
+    "lookahead_free": true,
+    "rr_valid": true,
+    "sl_tp_valid": true,
+    "trend_filter_valid": true,
+    "volatility_filter_valid": true,
+    "zscore_valid": true
+  },
+  "math_description": {
+    "candle_source": "M5 closed candles only; _closed_frame drops the currently forming last candle",
+    "entry_formula": "latest closed M5 close after regression/z-score signal",
+    "expected_direction_logic": "BUY positive regression pullback z <= -entry; SELL negative regression pullback z >= entry",
+    "kelly_inputs": "entry, sl, tp, reward_risk, approved_lot/final_capped_lot from demo_router risk path",
+    "lookahead": "No future candles used by the strategy implementation",
+    "lookback_window": {
+      "regression": 50,
+      "stdev": 20,
+      "z_score": 20
+    },
+    "mean_std_zscore": "mean=SMA(close,Z); stdev=sqrt(sum((close-mean)^2)/Z); z=(last_closed_close-mean)/stdev",
+    "rr_calculation": "abs(tp-entry)/abs(entry-sl), rejected when non-finite or <= 0",
+    "spread_impact": "Spread is not inside Quant math; demo_router spread gate blocks execution",
+    "stop_loss_formula": "BUY sl=entry-stdev_vol*mult; SELL sl=entry+stdev_vol*mult",
+    "take_profit_formula": "BUY tp=entry+risk*min_rr; SELL tp=entry-risk*min_rr",
+    "trend_filter": "BUY slope > 0, SELL slope < 0, with r2 >= HERMES_QUANT_MIN_R2",
+    "volatility_filter": "z-score stdev and stdev_vol must be > 0"
+  },
+  "recent_events_count": 277,
+  "status": "DISABLED_PENDING_AUDIT",
+  "strategy": "QUANT_STATISTICAL_PULLBACK",
+  "symbol": "BTCUSD#",
+  "trades_count": 3,
+  "win_rate": 0,
+  "window_hours": 48
+}

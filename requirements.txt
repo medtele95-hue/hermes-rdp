@@ -1,0 +1,7 @@
+MetaTrader5
+requests
+pandas
+numpy
+python-dotenv
+schedule
+pydantic

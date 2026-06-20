@@ -1,0 +1,166 @@
+{
+  "symbols": {
+    "BTCUSD": {
+      "priority": 0.35,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 2,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.61,
+          "pnl": 89.109,
+          "setups": 419,
+          "sl_mult": 0.9306,
+          "tp_mult": 1.0286,
+          "weight": 1.03,
+          "wins": 4
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 2,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.58,
+          "pnl": 1793.65,
+          "setups": 1829,
+          "sl_mult": 1.0816,
+          "tp_mult": 1.0492,
+          "weight": 1.03,
+          "wins": 10
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 132,
+          "sl_mult": 0.9036,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 1465,
+          "sl_mult": 0.9796,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "EURUSD": {
+      "priority": 0.3,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 256,
+          "sl_mult": 1.0192,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 9,
+          "max_hold_minutes": 35,
+          "min_confidence": 0.57,
+          "pnl": 261.88,
+          "setups": 2496,
+          "sl_mult": 0.9792,
+          "tp_mult": 1.008,
+          "weight": 1.03,
+          "wins": 16
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.57,
+          "pnl": 0.0,
+          "setups": 199,
+          "sl_mult": 0.9992,
+          "tp_mult": 0.9596,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 880,
+          "sl_mult": 0.9792,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "GOLD#": {
+      "priority": 0.3,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 6,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.62,
+          "pnl": 3064.76,
+          "setups": 273,
+          "sl_mult": 0.9681,
+          "tp_mult": 0.9878,
+          "weight": 1.03,
+          "wins": 7
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 11,
+          "max_hold_minutes": 25,
+          "min_confidence": 0.61,
+          "pnl": -4197.76,
+          "setups": 2302,
+          "sl_mult": 0.9302,
+          "tp_mult": 1.0286,
+          "weight": 1.0,
+          "wins": 3
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 158,
+          "sl_mult": 0.9988,
+          "tp_mult": 0.96,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 1103,
+          "sl_mult": 0.922,
+          "tp_mult": 1.0612,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "total_setups": 11512,
+  "updated_at": "2026-05-29T17:34:26.512420+00:00",
+  "version": 1
+}

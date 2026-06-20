@@ -1,0 +1,91 @@
+{
+  "best_hours": [
+    "12",
+    "14",
+    "13",
+    "9",
+    "16"
+  ],
+  "best_sessions": [
+    "OFF_SESSION",
+    "OVERLAP",
+    "NEW_YORK",
+    "LONDON",
+    "ASIA"
+  ],
+  "best_strategy": "BREAKOUT_RETEST",
+  "best_symbol": "EURUSD",
+  "expectancy": -0.580043,
+  "losses": 2155,
+  "max_drawdown": 3706.154076,
+  "performance_by_big_setup_grade": {
+    "C": {
+      "expectancy": -0.580043,
+      "losses": 2155,
+      "pnl": -2019.711434,
+      "profit_factor": 0.98013,
+      "trades": 3482,
+      "win_rate": 0.381103,
+      "wins": 1327
+    }
+  },
+  "performance_by_safety_guard_status": {
+    "CAUTION": {
+      "expectancy": -8.392029,
+      "losses": 74,
+      "pnl": -889.555046,
+      "profit_factor": 0.75958,
+      "trades": 106,
+      "win_rate": 0.301887,
+      "wins": 32
+    },
+    "PASS": {
+      "expectancy": -0.334762,
+      "losses": 2081,
+      "pnl": -1130.156388,
+      "profit_factor": 0.988462,
+      "trades": 3376,
+      "win_rate": 0.38359,
+      "wins": 1295
+    }
+  },
+  "profit_factor": 0.98013,
+  "safety_scan": {
+    "no_mt5_order_send_called": true,
+    "no_production_table_writes": true,
+    "no_supabase_writes_used": true,
+    "output_local_only": true
+  },
+  "skipped_count_by_reason": {
+    "AMD_FVG_IFVG_CONDITIONS_NOT_MET": 61975,
+    "BTC_BAD_HOUR_ANALYSIS_ONLY": 1084,
+    "BTC_WEEKEND_ANALYSIS_ONLY": 3108,
+    "CRT_TBS_CONDITIONS_NOT_MET": 61975,
+    "EMA_PULLBACK_NO_M15_M5_CONFIRMATION": 18007,
+    "FIB_OTE_CONDITIONS_NOT_MET": 61975,
+    "MISSING_SL_TP": 59,
+    "No EMA pullback setup": 40743,
+    "No breakout retest": 55280,
+    "RR_BELOW_MIN": 2187
+  },
+  "total_pnl": -2019.711434,
+  "total_simulated_trades": 3482,
+  "win_rate": 0.381103,
+  "wins": 1327,
+  "worst_hours": [
+    "5",
+    "4",
+    "1",
+    "0",
+    "6"
+  ],
+  "worst_sessions": [
+    "ASIA",
+    "LONDON",
+    "NEW_YORK",
+    "OVERLAP",
+    "OFF_SESSION"
+  ],
+  "worst_strategy": "BREAKOUT_RETEST",
+  "worst_symbol": "GOLD#"
+}

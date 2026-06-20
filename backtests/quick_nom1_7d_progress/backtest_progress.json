@@ -1,0 +1,13 @@
+{
+  "current_symbol": "GOLD#",
+  "current_timeframe": "M5",
+  "diagnostic_rows": 15000,
+  "elapsed_seconds": 35642,
+  "eta_seconds": 19199,
+  "last_update": "2026-06-01T08:19:41.800898+00:00",
+  "percent": 64.99,
+  "processed_steps": 15000,
+  "simulated_trades": 118,
+  "status": "RUNNING",
+  "total_steps": 23080
+}

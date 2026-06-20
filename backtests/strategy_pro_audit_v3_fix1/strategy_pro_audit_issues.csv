@@ -1,0 +1,2 @@
+bug_flag,demo_eligible_candidate,reason,session,signal,strategy,symbol,time_gate_status,timestamp
+DEMO_REQUIRES_M1_CONFIRMATION,False,M1_NOT_REQUESTED_FOR_AUDIT,,WAIT,GLOBAL,GLOBAL,,2026-06-01T18:52:33.741747+00:00

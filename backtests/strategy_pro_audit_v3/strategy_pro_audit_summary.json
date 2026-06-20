@@ -1,0 +1,51 @@
+{
+  "audit_version": "strategy_pro_audit_v3",
+  "blocked_candidates_count": 21,
+  "created_at": "2026-06-01T18:43:41.988293+00:00",
+  "demo_ready": false,
+  "entry_candidates_count": 1,
+  "issue_counts": {
+    "DEMO_REQUIRES_M1_CONFIRMATION": 1,
+    "EMA_ENTRY_NOT_ALLOWED": 1,
+    "GENERIC_WAIT_REASON": 14,
+    "M1_NOT_REQUESTED_FOR_AUDIT": 21,
+    "SIGNAL_WITH_MTFA_FAIL": 1,
+    "SIGNAL_WITH_NO_M15_CONFIRMATION": 1,
+    "SIGNAL_WITH_NO_M1_CONFIRMATION": 1,
+    "SIGNAL_WITH_SMC_FAIL": 1
+  },
+  "issues_found": 41,
+  "m1_status": "M1_NOT_REQUESTED_FOR_AUDIT",
+  "remaining_blockers": [
+    "DEMO_REQUIRES_M1_CONFIRMATION",
+    "EMA_ENTRY_NOT_ALLOWED",
+    "GENERIC_WAIT_REASON",
+    "M1_NOT_REQUESTED_FOR_AUDIT",
+    "SIGNAL_WITH_MTFA_FAIL",
+    "SIGNAL_WITH_NO_M15_CONFIRMATION",
+    "SIGNAL_WITH_NO_M1_CONFIRMATION",
+    "SIGNAL_WITH_SMC_FAIL"
+  ],
+  "safety_scan": {
+    "execution_settings_unchanged": true,
+    "no_demo_trading_enabled": true,
+    "no_live_trading_enabled": true,
+    "no_mt5_order_send_called": true,
+    "output_local_only": true
+  },
+  "strategies_checked": [
+    "BREAKOUT_RETEST",
+    "CRT_TBS_REVERSAL",
+    "AMD_FVG_IFVG_REVERSAL",
+    "FIB_OTE_RETEST",
+    "EMA_PULLBACK",
+    "SECOND_ENTRY",
+    "SCALPING_AGENT"
+  ],
+  "symbols_checked": [
+    "BTCUSD#",
+    "GOLD#",
+    "EURUSD"
+  ],
+  "time_engine_status": "OK"
+}

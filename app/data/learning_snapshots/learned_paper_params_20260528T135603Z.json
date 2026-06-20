@@ -1,0 +1,166 @@
+{
+  "symbols": {
+    "BTCUSD": {
+      "priority": 0.25,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 1,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.62,
+          "pnl": -55.947,
+          "setups": 61,
+          "sl_mult": 0.9306,
+          "tp_mult": 0.9796,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 90,
+          "sl_mult": 1.0816,
+          "tp_mult": 0.9992,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 47,
+          "sl_mult": 0.9036,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 196,
+          "sl_mult": 0.9796,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "EURUSD": {
+      "priority": 0.25,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 63,
+          "sl_mult": 1.0192,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 171,
+          "sl_mult": 0.9792,
+          "tp_mult": 0.96,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.57,
+          "pnl": 0.0,
+          "setups": 11,
+          "sl_mult": 0.9992,
+          "tp_mult": 0.9596,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 141,
+          "sl_mult": 0.9792,
+          "tp_mult": 1.04,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "GOLD#": {
+      "priority": 0.25,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 1,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.63,
+          "pnl": -54.4,
+          "setups": 52,
+          "sl_mult": 0.9681,
+          "tp_mult": 0.9408,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 215,
+          "sl_mult": 0.9792,
+          "tp_mult": 0.9796,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 28,
+          "sl_mult": 0.9988,
+          "tp_mult": 0.96,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 94,
+          "sl_mult": 0.922,
+          "tp_mult": 1.0612,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "total_setups": 1169,
+  "updated_at": "2026-05-28T13:52:28.768530+00:00",
+  "version": 1
+}

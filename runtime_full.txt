@@ -1,0 +1,55 @@
+[INFO] Lovable ingest configured
+[BOT_LOG_TIME] message="Hermes ingest startup test" utc_time=2026-06-10T11:40:38.482284+00:00 casablanca_time=2026-06-10T12:40:38.482284+01:00 broker_time_estimate=UNKNOWN session_name=UNKNOWN time_gate_status=UNKNOWN
+[INFO] MT5 connected
+[INFO] Account detected
+[INFO] [ACCOUNT_DIAG] login=345297734 trade_mode=0 account_type=DEMO name="Demo Account" server="XMGlobal-MT5 10" company="XM Global Limited" trade_allowed=True trade_expert=True
+[INFO] [DEMO_PILOT] enabled=true hours=48 account_type=DEMO live_allowed=false
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:40:43.281419+00:00
+[INFO] [LIVE_SNAPSHOT] utc_time=2026-06-10T11:40:43.281419+00:00 open=0 closed_pnl=0.00 floating_pnl=0.00 total=0.00 source=UNKNOWN
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:40:43.281419+00:00
+[INFO] Heartbeat written
+[INFO] Requested symbols resolved
+[INFO] BTCUSD -> BTCUSD#
+[INFO] GOLD# -> GOLD#
+[INFO] EURUSD -> EURUSD
+[INFO] [CYCLE] started
+[WARNING] [LIVE_SNAPSHOT] position_sync_skipped reason=MAIN_CYCLE_ACTIVE
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:40:56.310093+00:00
+[INFO] [LIVE_SNAPSHOT] utc_time=2026-06-10T11:40:56.310093+00:00 open=0 closed_pnl=0.00 floating_pnl=0.00 total=0.00 source=UNKNOWN
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:40:56.310093+00:00
+[INFO] Heartbeat written
+[WARNING] [LOVABLE_INGEST] status=SKIP reason=TIMEOUT_OR_HTTP_ERROR
+[WARNING] [POSITION_SYNC] remote open demo trades read unavailable; using local reconciliation fallback
+[WARNING] [POSITION_SYNC] open demo read unavailable reason=REMOTE_DEMO_READ_UNAVAILABLE
+[WARNING] [POSITION_SYNC] fallback confirmed demo order scan skipped reason=LOVABLE_INGEST_FAIL_SOFT
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:07.652552+00:00
+[INFO] [LIVE_SNAPSHOT] utc_time=2026-06-10T11:41:07.652552+00:00 open=0 closed_pnl=0.00 floating_pnl=0.00 total=0.00 source=UNKNOWN
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:07.652552+00:00
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:13.498765+00:00
+[INFO] [LIVE_SNAPSHOT] utc_time=2026-06-10T11:41:13.498765+00:00 open=0 closed_pnl=0.00 floating_pnl=0.00 total=0.00 source=UNKNOWN
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:13.498765+00:00
+[INFO] [POSITION_SYNC] mt5_open=0 hermes_open=0 synced=0 closed=0 already_closed=0 ignored=[]
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:14.524874+00:00
+[INFO] [LIVE_SNAPSHOT] utc_time=2026-06-10T11:41:14.524874+00:00 open=0 closed_pnl=-19.39 floating_pnl=0.00 total=-19.39 source=MT5_HISTORY_DEALS
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_48H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-10T11:41:14.524874+00:00
+[TIME_GATE] symbol=BTCUSD utc=2026-06-10T11:41:14.679837+00:00 local=2026-06-10T12:41:14.679837+01:00 broker=2026-06-10T14:41:12+00:00 session=LONDON market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=11 local_hour=12 broker_hour=14 session=LONDON time_gate=PASS
+[TIME_GATE] session=LONDON decision=PASS reason=TIME_GATE_PASS
+[INFO] [SPREAD_DIAG] symbol=BTCUSD broker_symbol=BTCUSD# spread=2250.0 point=0.01 digits=2 bid=60981.5 ask=61004.0 max_spread=2500.0 spread_status=OK
+[INFO] [GOLD_LIQUIDITY] mode=ENTRY_STRATEGY decision=WAIT reason=GOLD_LIQUIDITY_SYMBOL_NOT_GOLD
+[INFO] [ORDER_FLOW] symbol=BTCUSD POC=61760.735 VAH=61904.64167 VAL=61149.13167 VWAP=61473.6668 CVD_SLOPE=15.0 DELTA=77.0 DIVERGENCE=bull
+[INFO] [STRATEGY] ORDER_FLOW_READER decision=WAIT confidence=85 reason=ORDER_FLOW_ENTRY_DISABLED
+[INFO] [ORDER_FLOW_PAYLOAD_EMITTED] strategy=ORDER_FLOW_READER symbol=BTCUSD status=OBSERVE_ONLY
+[INFO] [BTC_SCALPING_AGENT] decision=WAIT reason=NO_SCALP_TRIGGER confidence=0.0
+[INFO] [BTC_SCALPING_CONF] raw=0.0 normalized=0 threshold=55 decision=BLOCK
+[TOP_DOWN_READER] symbol=BTCUSD status=FAIL decision=WAIT_FOR_CONFIRMATION score=0 reason=NO_TRADE_DIRECTION
+[INFO] [MTFA] symbol=BTCUSD h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=SELL mode=TAG_ONLY status=FAIL reason=H1_BIAS_MISMATCH,NO_M15_LIQUIDITY,NO_M5_CISD score=15
+[INFO] [MTF_STRUCTURE] symbol=BTCUSD h4_bias=BEARISH h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=FAIL score=25 reason=PRICE_NOT_AT_H4_ZONE,NO_M15_STRUCTURE_SHIFT,NO_M1_ENTRY_CONFIRMATION
+[INFO] [SMC_TAGGER] symbol=BTCUSD direction=SELL h4=BEARISH h1=RANGE m15=False score=40 status=FAIL reason=NO_M15_CONFIRMATION,NO_M5_CONFIRMATION,NO_M1_ENTRY_CONFIRMATION,LOW_SMC_CONFLUENCE_SCORE
+[INFO] [ORDER_FLOW_SNAPSHOT] symbol=BTCUSD broker_symbol=BTCUSD# status=OBSERVE_ONLY mode=OBSERVE_ONLY
+[INFO] [CYCLE] symbol=BTCUSD status=ENTER_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-10T11:41:14.679837+00:00 casablanca_time=2026-06-10T12:41:14.679837+01:00 broker_time_estimate=2026-06-10T14:41:12+00:00 session_name=LONDON time_gate_status=PASS
+[TIME_GATE] symbol=GOLD# utc=2026-06-10T11:41:15.234487+00:00 local=2026-06-10T12:41:15.234487+01:00 broker=2026-06-10T14:41:15+00:00 session=LONDON market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=11 local_hour=12 broker_hour=14 session=LONDON time_gate=PASS
+[TIME_GATE] session=LONDON decision=PASS reason=TIME_GATE_PASS
+[INFO] [SPREAD_DIAG] symbol=GOLD# broker_symbol=GOLD# spread=24.0 point=0.01 digits=2 bid=4156.54 ask=4156.84 max_spread=50.0 spread_status=OK

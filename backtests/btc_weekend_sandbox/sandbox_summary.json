@@ -1,0 +1,19 @@
+{
+  "data_reasons": {},
+  "events": 436,
+  "local_output_only": true,
+  "losses": 0,
+  "main_guard_blocks_recorded": 2,
+  "pnl_estimated_money": 0,
+  "profit_factor": null,
+  "sandbox_trades": 0,
+  "skip_reasons": {
+    "AMD_FVG_IFVG_CONDITIONS_NOT_MET": 109,
+    "CRT_TBS_CONDITIONS_NOT_MET": 109,
+    "FIB_OTE_CONDITIONS_NOT_MET": 109,
+    "No breakout retest": 107,
+    "SMC_NOT_PASS": 2
+  },
+  "win_rate": null,
+  "wins": 0
+}

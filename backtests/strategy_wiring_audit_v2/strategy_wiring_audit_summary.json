@@ -1,0 +1,59 @@
+{
+  "audit_version": "strategy_math_wiring_v2",
+  "bars_requested": 500,
+  "confirmation_only_strategies": [
+    "EMA_PULLBACK"
+  ],
+  "created_at": "2026-06-01T16:58:28.023793+00:00",
+  "demo_ready": false,
+  "demo_ready_count": 0,
+  "entry_strategies": [
+    "AMD_FVG_IFVG_REVERSAL",
+    "BREAKOUT_RETEST",
+    "CRT_TBS_REVERSAL",
+    "FIB_OTE_RETEST"
+  ],
+  "issue_counts": {
+    "EMA_ENTRY_NOT_ALLOWED": 1,
+    "GENERIC_WAIT_REASON": 14,
+    "M1_REQUIRED_BUT_EMPTY": 21,
+    "SIGNAL_WITH_MTFA_FAIL": 1,
+    "SIGNAL_WITH_NO_M15_CONFIRMATION": 1,
+    "SIGNAL_WITH_NO_M1_CONFIRMATION": 1,
+    "SIGNAL_WITH_SMC_FAIL": 1
+  },
+  "issues_found": 40,
+  "missing_m1_reported": true,
+  "observer_only_strategies": [
+    "SCALPING_AGENT",
+    "SECOND_ENTRY"
+  ],
+  "safety_scan": {
+    "execution_settings_unchanged": true,
+    "no_demo_trading_enabled": true,
+    "no_live_trading_enabled": true,
+    "no_mt5_order_send_called": true,
+    "output_local_only": true
+  },
+  "signals_checked": 21,
+  "strategies": [
+    "BREAKOUT_RETEST",
+    "CRT_TBS_REVERSAL",
+    "AMD_FVG_IFVG_REVERSAL",
+    "FIB_OTE_RETEST",
+    "EMA_PULLBACK",
+    "SECOND_ENTRY",
+    "SCALPING_AGENT"
+  ],
+  "symbols": [
+    "BTCUSD#",
+    "GOLD#",
+    "EURUSD"
+  ],
+  "timeframes_requested": [
+    "M5",
+    "M15",
+    "H1",
+    "H4"
+  ]
+}

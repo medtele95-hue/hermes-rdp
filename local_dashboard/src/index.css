@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: #0d1117;
+    color: #e6edf3;
+    font-family: 'Inter', system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6e7681;
+  }
+}
+
+@layer components {
+  .mono {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  .card {
+    @apply bg-surface-1 border border-border rounded-lg;
+  }
+
+  .card-header {
+    @apply px-4 py-3 border-b border-border flex items-center justify-between;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-medium font-mono uppercase tracking-wide;
+  }
+
+  .badge-live {
+    @apply badge bg-accent-green/15 text-accent-green border border-accent-green/30;
+  }
+
+  .badge-wait {
+    @apply badge bg-text-muted/10 text-text-secondary border border-border;
+  }
+
+  .badge-block {
+    @apply badge bg-accent-red/15 text-accent-red border border-accent-red/30;
+  }
+
+  .badge-observe {
+    @apply badge bg-accent-purple/15 text-accent-purple border border-accent-purple/30;
+  }
+
+  .badge-demo {
+    @apply badge bg-accent-amber/15 text-accent-amber border border-accent-amber/30;
+  }
+
+  .badge-stale {
+    @apply badge bg-accent-orange/15 text-accent-orange border border-accent-orange/30;
+  }
+
+  .badge-no-data {
+    @apply badge bg-surface-4 text-text-muted border border-border;
+  }
+
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
+  .num-green {
+    @apply num text-accent-green;
+  }
+
+  .num-red {
+    @apply num text-accent-red;
+  }
+
+  .section-title {
+    @apply text-2xs font-semibold uppercase tracking-widest text-text-muted;
+  }
+
+  .stat-label {
+    @apply text-xs text-text-secondary;
+  }
+
+  .stat-value {
+    @apply text-sm font-medium text-text-primary mono;
+  }
+
+  .table-cell {
+    @apply px-3 py-2 text-xs border-b border-border/50;
+  }
+
+  .table-head {
+    @apply px-3 py-2 text-2xs font-semibold uppercase tracking-wider text-text-muted border-b border-border;
+  }
+}
+
+/* Lightweight charts dark override */
+.tv-chart-container {
+  border-radius: 8px;
+  overflow: hidden;
+}

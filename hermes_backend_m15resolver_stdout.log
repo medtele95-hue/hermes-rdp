@@ -1,0 +1,474 @@
+[INFO] Lovable ingest configured
+[BOT_LOG_TIME] message="Hermes ingest startup test" utc_time=2026-06-01T19:38:55.810656+00:00 casablanca_time=2026-06-01T20:38:55.810656+01:00 broker_time_estimate=UNKNOWN session_name=UNKNOWN time_gate_status=UNKNOWN
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] MT5 connected
+[INFO] Account detected
+[INFO] [ACCOUNT_DIAG] login=345297734 trade_mode=0 account_type=DEMO name="Demo Account" server="XMGlobal-MT5 10" company="XM Global Limited" trade_allowed=True trade_expert=True
+[INFO] [DEMO_PILOT] enabled=true hours=24 account_type=DEMO live_allowed=false
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:55.944633+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:55.944633+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[INFO] Requested symbols resolved
+[INFO] BTCUSD -> BTCUSD#
+[INFO] GOLD# -> GOLD#
+[INFO] EURUSD -> EURUSD
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [CYCLE] started
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:56.093926+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:56.093926+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=BTCUSD utc=2026-06-01T19:38:56.479734+00:00 local=2026-06-01T20:38:56.479734+01:00 broker=2026-06-01T22:38:56+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=BTCUSD broker_symbol=BTCUSD# spread=2250.0 point=0.01 digits=2 bid=71573.9 ask=71596.4 max_spread=2500.0 spread_status=OK
+[INFO] [MTFA] symbol=BTCUSD h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=BTCUSD h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=BTCUSD direction=WAIT h4=RANGE h1=RANGE m15=False score=0 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=BTCUSD best=FIB_OTE_RETEST direction=WAIT score=65 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,RR_TOO_LOW,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,WAITING_FOR_M15_CONFIRMATION,WAITING_FOR_M1_TRIGGER,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=BTCUSD strategy=FIB_OTE_RETEST direction=WAIT score=65 missing=NO_TRADE_DIRECTION,RR_TOO_LOW,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,WAITING_FOR_M15_CONFIRMATION,WAITING_FOR_M1_TRIGGER,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=BTCUSD status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:38:56.479734+00:00 casablanca_time=2026-06-01T20:38:56.479734+01:00 broker_time_estimate=2026-06-01T22:38:56+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=GOLD# utc=2026-06-01T19:38:56.892663+00:00 local=2026-06-01T20:38:56.892663+01:00 broker=2026-06-01T22:38:57+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=GOLD# broker_symbol=GOLD# spread=24.0 point=0.01 digits=2 bid=4485.14 ask=4485.4 max_spread=50.0 spread_status=OK
+[INFO] [MTFA] symbol=GOLD# h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=GOLD# h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=GOLD# direction=WAIT h4=RANGE h1=RANGE m15=False score=0 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=GOLD# best=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=GOLD# strategy=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=GOLD# status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:38:56.892663+00:00 casablanca_time=2026-06-01T20:38:56.892663+01:00 broker_time_estimate=2026-06-01T22:38:57+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=EURUSD utc=2026-06-01T19:38:57.270964+00:00 local=2026-06-01T20:38:57.270964+01:00 broker=2026-06-01T22:38:54+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=EURUSD broker_symbol=EURUSD spread=18.0 point=1e-05 digits=5 bid=1.1632 ask=1.16338 max_spread=30.0 spread_status=OK
+[INFO] [MTFA] symbol=EURUSD h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=EURUSD h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=EURUSD direction=WAIT h4=RANGE h1=RANGE m15=False score=25 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=EURUSD best=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=72 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=EURUSD strategy=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=72 missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=EURUSD status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:38:57.270964+00:00 casablanca_time=2026-06-01T20:38:57.270964+01:00 broker_time_estimate=2026-06-01T22:38:54+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for nightly_reports: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: nightly_reports
+[INFO] [CYCLE] completed analyzed=3 skipped=0 paper_opened=0 paper_closed=0 demo_orders=0
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:57.270964+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:57.270964+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[INFO] [CYCLE] started
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:57.270964+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:38:57.270964+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=BTCUSD utc=2026-06-01T19:39:01.269874+00:00 local=2026-06-01T20:39:01.269874+01:00 broker=2026-06-01T22:39:02+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=BTCUSD broker_symbol=BTCUSD# spread=2250.0 point=0.01 digits=2 bid=71588.1 ask=71610.6 max_spread=2500.0 spread_status=OK
+[INFO] [MTFA] symbol=BTCUSD h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=BTCUSD h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=BTCUSD direction=WAIT h4=RANGE h1=RANGE m15=False score=0 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=BTCUSD best=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=BTCUSD strategy=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=BTCUSD status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:39:01.269874+00:00 casablanca_time=2026-06-01T20:39:01.269874+01:00 broker_time_estimate=2026-06-01T22:39:02+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=GOLD# utc=2026-06-01T19:39:01.540438+00:00 local=2026-06-01T20:39:01.540438+01:00 broker=2026-06-01T22:39:02+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=GOLD# broker_symbol=GOLD# spread=24.0 point=0.01 digits=2 bid=4485.41 ask=4485.68 max_spread=50.0 spread_status=OK
+[INFO] [MTFA] symbol=GOLD# h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=GOLD# h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=GOLD# direction=WAIT h4=RANGE h1=RANGE m15=False score=0 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=GOLD# best=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=GOLD# strategy=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=70 missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=GOLD# status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:39:01.540438+00:00 casablanca_time=2026-06-01T20:39:01.540438+01:00 broker_time_estimate=2026-06-01T22:39:02+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for market_candles: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_candles
+[TIME_GATE] symbol=EURUSD utc=2026-06-01T19:39:01.846489+00:00 local=2026-06-01T20:39:01.846489+01:00 broker=2026-06-01T22:39:02+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=EURUSD broker_symbol=EURUSD spread=18.0 point=1e-05 digits=5 bid=1.16318 ask=1.16337 max_spread=30.0 spread_status=OK
+[INFO] [MTFA] symbol=EURUSD h1_bias=NEUTRAL m15_liquidity=False m5_cisd=False direction=WAIT mode=TAG_ONLY status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION score=0
+[INFO] [MTF_STRUCTURE] symbol=EURUSD h4_bias=RANGE h4_zone=NONE m15_confirmation=False m1_entry=False direction=WAIT status=NOT_APPLICABLE score=0 reason=NO_TRADE_DIRECTION
+[INFO] [SMC_TAGGER] symbol=EURUSD direction=WAIT h4=RANGE h1=RANGE m15=False score=25 status=NOT_APPLICABLE reason=NO_TRADE_DIRECTION
+[ERROR] Hermes ingest request failed for market_states: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: market_states
+[ERROR] Hermes ingest request failed for markov_predictions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: markov_predictions
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for strategy_signals: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: strategy_signals
+[ERROR] Hermes ingest request failed for kelly_risk: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: kelly_risk
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=BLOCK reason=EMA_PULLBACK_LOW_SMC_SCORE
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SAFETY_GUARD] status=PASS reason=SAFETY_GUARD_PASS
+[SETUP_HUNTER] symbol=EURUSD best=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=72 grade=C demo_eligible=false missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[NEAR_MISS] symbol=EURUSD strategy=TREND_CONTINUATION_BREAKDOWN direction=WAIT score=72 missing=NO_TRADE_DIRECTION,SMC_SCORE_LT_60,MTFA_SCORE_LT_50,DIRECTION_RESOLVER_FAIL,TREND_CONTINUATION_SCORE_LT_80,BIG_SETUP_GRADE_BELOW_B
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for execution_events: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: execution_events
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[ERROR] Hermes ingest request failed for ai_decisions: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: ai_decisions
+[INFO] [CYCLE] symbol=EURUSD status=WAIT_ANALYSIS_ONLY
+[BOT_LOG_TIME] message="Hermes analysis cycle complete" utc_time=2026-06-01T19:39:01.846489+00:00 casablanca_time=2026-06-01T20:39:01.846489+01:00 broker_time_estimate=2026-06-01T22:39:02+00:00 session_name=NEW_YORK time_gate_status=PASS
+[ERROR] Hermes ingest request failed for bot_logs: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_logs
+[ERROR] Hermes ingest request failed for nightly_reports: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: nightly_reports
+[INFO] [CYCLE] completed analyzed=3 skipped=0 paper_opened=0 paper_closed=0 demo_orders=0
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:39:01.846489+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:39:01.846489+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[INFO] [CYCLE] started
+[ERROR] Hermes ingest request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for hermes_agents: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: hermes_agents
+[INFO] [DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:39:01.846489+00:00
+[DASHBOARD_STATUS] component=dashboard_status mode=DEMO_PILOT_24H account_type=DEMO demo_pilot_enabled=true allow_live_trading=false utc_time=2026-06-01T19:39:01.846489+00:00
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest update request failed for bot_status: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: bot_status
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[ERROR] Hermes ingest request failed for account_snapshots: HTTPSConnectionPool(host='bnb-trade-os.lovable.app', port=443): Max retries exceeded with url: /api/public/hermes-ingest (Caused by NewConnectionError("HTTPSConnection(host='bnb-trade-os.lovable.app', port=443): Failed to establish a new connection: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions"))
+[ERROR] Failed table: account_snapshots
+[TIME_GATE] symbol=BTCUSD utc=2026-06-01T19:39:06.201307+00:00 local=2026-06-01T20:39:06.201307+01:00 broker=2026-06-01T22:39:07+00:00 session=NEW_YORK market_open=True bad_hour=False decision=PASS reason=TIME_GATE_PASS
+[SESSION_DIAG] utc_hour=19 local_hour=20 broker_hour=22 session=NEW_YORK time_gate=PASS
+[INFO] [SPREAD_DIAG] symbol=BTCUSD broker_symbol=BTCUSD# spread=2250.0 point=0.01 digits=2 bid=71582.3 ask=71604.8 max_spread=2500.0 spread_status=OK

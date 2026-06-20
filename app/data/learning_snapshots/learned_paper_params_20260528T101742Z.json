@@ -1,0 +1,166 @@
+{
+  "symbols": {
+    "BTCUSD": {
+      "priority": 0.85,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 6,
+          "sl_mult": 1.0,
+          "tp_mult": 1.02,
+          "weight": 0.97,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 11,
+          "sl_mult": 1.0,
+          "tp_mult": 0.9996,
+          "weight": 0.94,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 0.9412,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0,
+          "tp_mult": 1.02,
+          "weight": 1.0,
+          "wins": 0
+        }
+      }
+    },
+    "EURUSD": {
+      "priority": 0.9,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 0.98,
+          "tp_mult": 1.0,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 0.9604,
+          "tp_mult": 0.9996,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.58,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 0.98,
+          "tp_mult": 1.02,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 16,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0,
+          "weight": 0.94,
+          "wins": 0
+        }
+      }
+    },
+    "GOLD#": {
+      "priority": 0.8,
+      "strategies": {
+        "BREAKOUT_RETEST": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.61,
+          "pnl": 0.0,
+          "setups": 4,
+          "sl_mult": 1.02,
+          "tp_mult": 0.9412,
+          "weight": 0.94,
+          "wins": 0
+        },
+        "EMA_PULLBACK": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 6,
+          "sl_mult": 0.9996,
+          "tp_mult": 1.02,
+          "weight": 0.97,
+          "wins": 0
+        },
+        "SCALPING_AGENT": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.59,
+          "pnl": 0.0,
+          "setups": 0,
+          "sl_mult": 1.0404,
+          "tp_mult": 1.02,
+          "weight": 1.0,
+          "wins": 0
+        },
+        "SECOND_ENTRY": {
+          "enabled": true,
+          "losses": 0,
+          "max_hold_minutes": 30,
+          "min_confidence": 0.6,
+          "pnl": 0.0,
+          "setups": 7,
+          "sl_mult": 1.0,
+          "tp_mult": 1.0404,
+          "weight": 0.97,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "total_setups": 50,
+  "updated_at": "2026-05-28T10:13:35.572532+00:00",
+  "version": 1
+}
