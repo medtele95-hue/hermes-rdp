@@ -22,6 +22,7 @@ from app.logger import log
 GEOMETRIC_CONFLUENCE_MODE: str = "SHADOW"
 GEOMETRIC_CONFIRM_BONUS: float = 5.0
 GEOMETRIC_RATIO_TOLERANCE: float = 0.05
+GEOMETRIC_FIB_HIT_TOLERANCE: float = 0.015
 
 SCHEMA_VERSION: str = "geometric_confluence.v1"
 
@@ -589,7 +590,7 @@ def analyze_geometric_confluence(
     if sh <= 0 or sl <= 0 or sh <= sl:
         return _null_result(symbol, direction, mode, "INSUFFICIENT_SWING_DATA")
 
-    fib_tol = (sh - sl) * 0.015
+    fib_tol = (sh - sl) * GEOMETRIC_FIB_HIT_TOLERANCE
 
     # ── Harmonic pattern ─────────────────────────────────────────────────
     # Rebuild specs with caller-supplied tolerance (in case it differs from default)

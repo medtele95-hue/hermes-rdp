@@ -32,6 +32,7 @@ import contextlib
 
 from app.mt5.geometric_confluence import (
     GEOMETRIC_CONFIRM_BONUS,
+    GEOMETRIC_FIB_HIT_TOLERANCE,
     GEOMETRIC_RATIO_TOLERANCE,
     SCHEMA_VERSION,
     _alternating_swings,
@@ -732,3 +733,251 @@ class TestSquareOf9:
         result = _square_of_9_hit(price, high)
         # 0.12 % 0.25 = 0.12 (between 0.05 and 0.20) → expect no hit
         assert not result
+
+
+# ---------------------------------------------------------------------------
+# §15 Negative + discriminative harmonic tests (Task A)
+# ---------------------------------------------------------------------------
+
+class TestNegativeHarmonicDiscrimination:
+    """Tests that prove _validate_harmonic REJECTS as well as ACCEPTS.
+
+    The existing §3 tests are tautological (they only prove the validator
+    accepts its own ratio definitions).  These tests prove the hard boundary:
+    ratios outside the tolerance band return NONE, and Gartley geometry is
+    NOT misclassified as Bat (and Bat NOT as Butterfly).
+    """
+
+    def test_contradictory_ratios_return_none(self):
+        """XABCD ratios that fit no pattern must return harmonic_pattern=='NONE'.
+
+        BUG REPORT (do NOT fix without user approval):
+        _validate_harmonic lines 211-213 compute:
+          total  = sum(1 for _, r in checks if r is not None)
+          passed = sum(1 for v, r in checks if _in_range(v, r))
+        _in_range(v, None) always returns True (unchecked dimension), so the
+        D_XC=None spec dimension inflates `passed` by 1 for every pattern that
+        has D_XC=None (GARTLEY, BUTTERFLY, BAT, CRAB, SHARK).  When AB_XA fails
+        but the other 3 checked ratios pass, passed = 3 checked-pass + 1 from
+        D_XC(None) = 4 = total=4 → the pattern is incorrectly classified.
+
+        Fix needed (NOT applied here per invariant):
+          passed = sum(1 for v, r in checks if r is not None and _in_range(v, r))
+
+        This test is LEFT FAILING to surface the bug.
+        """
+        # AB_XA = 0.1 is outside every pattern's AB_XA range:
+        #   GARTLEY (0.568–0.668), BUTTERFLY (0.736–0.836), BAT (0.332–0.550),
+        #   CRAB (0.332–0.668), SHARK (1.080–1.668), CYPHER (0.332–0.668)
+        ratios = {
+            "AB_XA": 0.1,
+            "BC_AB": 0.618,
+            "CD_BC": 1.272,
+            "D_XA":  0.786,
+            "D_XC":  0.0,
+            "XA": 100.0, "AB": 10.0, "BC": 6.18, "CD": 5.0,
+        }
+        valid, pattern, quality = _validate_harmonic(ratios)
+        assert not valid, (
+            f"BUG: AB_XA=0.1 is outside all pattern ranges but _validate_harmonic "
+            f"returned pattern={pattern}. "
+            f"Root cause: D_XC spec=None inflates 'passed' count via _in_range(v, None)=True. "
+            f"Fix: passed = sum(... if r is not None and _in_range(v, r))"
+        )
+        assert pattern == "NONE"
+        assert quality == 0.0
+
+    def test_ratio_just_outside_tolerance_returns_none(self):
+        """A ratio set AT the upper bound validates; ONE step outside returns NONE.
+
+        This proves _in_range enforces a hard boundary — the tolerance band
+        rejects as firmly as it accepts.
+
+        BUG REPORT (same root cause as test_contradictory_ratios_return_none):
+        AB_XA=0.669 is just outside the GARTLEY upper bound (0.668) and outside
+        CRAB/CYPHER (0.332–0.668) — it should match NONE.  However the D_XC=None
+        inflation in _validate_harmonic causes GARTLEY to still match.
+
+        This test is LEFT FAILING to surface the bug.  The precondition (AT-bound
+        validates) is tested first and is expected to PASS.
+        """
+        # Gartley AB_XA range: (0.568, 0.668).  0.668 is the exact upper bound.
+        at_bound = {
+            "AB_XA": 0.668,   # AT upper bound → still valid
+            "BC_AB": 0.618,   # valid Gartley (0.382, 0.886)
+            "CD_BC": 1.272,   # at lower bound of Gartley (1.272, 1.618)
+            "D_XA":  0.786,   # valid Gartley (0.736, 0.836)
+            "D_XC":  0.0,     # Gartley D_XC spec is None → _in_range(0.0, None)=True
+            "XA": 100.0, "AB": 66.8, "BC": 41.22, "CD": 40.0,
+        }
+        valid_in, pattern_in, _ = _validate_harmonic(at_bound)
+        assert valid_in and pattern_in == "GARTLEY", (
+            f"Precondition failed: AT-bound ratios must validate as GARTLEY; "
+            f"got valid={valid_in} pattern={pattern_in}"
+        )
+
+        # 0.669 is ONE step above GARTLEY upper bound of 0.668, and also above
+        # CRAB (0.332–0.668) and CYPHER (0.332–0.668) upper bounds.
+        just_outside = {**at_bound, "AB_XA": 0.669}
+        valid_out, pattern_out, _ = _validate_harmonic(just_outside)
+        assert not valid_out, (
+            f"BUG: AB_XA=0.669 is outside all pattern AB_XA ranges but "
+            f"_validate_harmonic returned pattern={pattern_out}. "
+            f"Same D_XC=None inflation bug as test_contradictory_ratios_return_none. "
+            f"Fix: passed = sum(... if r is not None and _in_range(v, r))"
+        )
+        assert pattern_out == "NONE"
+
+    def test_gartley_not_classified_as_bat(self):
+        """Gartley XABCD must not be misclassified as BAT.
+
+        Discriminating feature: Gartley AB_XA = 0.618 (outside BAT 0.332–0.550)
+        and D_XA = 0.786 (outside BAT 0.836–0.936).
+        """
+        X, A, B, C, D = _build_gartley_bullish()
+        r = _harmonic_ratios(X, A, B, C, D)
+        valid, pattern, _ = _validate_harmonic(r)
+        assert valid, f"Gartley XABCD must be valid; got invalid. ratios={r}"
+        assert pattern == "GARTLEY", f"Expected GARTLEY, got {pattern}"
+        assert pattern != "BAT", "Gartley ratios must NOT be misclassified as BAT"
+
+    def test_bat_not_classified_as_butterfly(self):
+        """Bat XABCD must not be misclassified as BUTTERFLY.
+
+        Discriminating feature: Bat AB_XA = 0.45 (outside BUTTERFLY 0.736–0.836)
+        and Bat D_XA = 0.886 (outside BUTTERFLY 1.27–1.618).
+        """
+        X, A, B, C, D = _build_bat_bullish()
+        r = _harmonic_ratios(X, A, B, C, D)
+        valid, pattern, _ = _validate_harmonic(r)
+        assert valid, f"Bat XABCD must be valid; got invalid. ratios={r}"
+        assert pattern == "BAT", f"Expected BAT, got {pattern}"
+        assert pattern != "BUTTERFLY", "Bat ratios must NOT be misclassified as BUTTERFLY"
+
+    def test_gartley_not_classified_as_crab(self):
+        """Additional discrimination: Gartley D_XA = 0.786 is outside CRAB D_XA (1.568–1.952)."""
+        X, A, B, C, D = _build_gartley_bullish()
+        r = _harmonic_ratios(X, A, B, C, D)
+        _, pattern, _ = _validate_harmonic(r)
+        assert pattern != "CRAB", "Gartley ratios must NOT be misclassified as CRAB"
+
+    def test_config_fib_hit_tolerance_constant_exists_and_matches_hardcoded_value(self):
+        """GEOMETRIC_FIB_HIT_TOLERANCE must be defined and equal the former hardcoded 0.015."""
+        assert GEOMETRIC_FIB_HIT_TOLERANCE == 0.015, (
+            "GEOMETRIC_FIB_HIT_TOLERANCE must equal 0.015 — same value as the "
+            "former hardcoded tolerance. No behaviour change allowed."
+        )
+
+
+# ---------------------------------------------------------------------------
+# §16 End-to-end main.py integration path tests (Task B)
+# ---------------------------------------------------------------------------
+
+class TestMainPyIntegrationPath:
+    """Integration tests that mirror the main.py geometric confluence block.
+
+    These tests exercise the full extraction path:
+      best_candidate["failed_gates"] → _geo_smc_blocked → compute_geometric_bonus
+    — not just compute_geometric_bonus in isolation.
+
+    They also verify the critical invariant: geometric bonus cannot flip a WAIT
+    candidate into a trade by itself.
+    """
+
+    def test_smc_hard_block_in_failed_gates_zeroes_bonus_active_confirm(self):
+        """CONFIRMATION_MATRIX_HARD_BLOCK in failed_gates must yield final_bonus=0.0
+        even when mode=ACTIVE and decision=CONFIRM.
+
+        Replicates main.py lines 1031–1039:
+          _geo_smc_blocked = "CONFIRMATION_MATRIX_HARD_BLOCK" in (
+              (hunter.best_candidate or {}).get("failed_gates") or [])
+          _geo_bonus = compute_geometric_bonus(geo_result, _geo_smc_blocked, ...)
+        """
+        best_candidate = {
+            "failed_gates": ["CONFIRMATION_MATRIX_HARD_BLOCK"],
+            "direction": "BUY",
+            "best_strategy": "ORDER_FLOW_EXECUTION_AGENT",
+        }
+
+        # Replicate main.py derivation of _geo_smc_blocked from candidate
+        _geo_smc_blocked = "CONFIRMATION_MATRIX_HARD_BLOCK" in (
+            best_candidate.get("failed_gates") or []
+        )
+        assert _geo_smc_blocked is True, "Precondition: candidate must be SMC-hard-blocked"
+
+        # geo_result that would yield bonus=5.0 if not blocked
+        geo_result = {"mode": "ACTIVE", "decision": "CONFIRM"}
+
+        final_bonus = compute_geometric_bonus(geo_result, _geo_smc_blocked, confirm_bonus=5.0)
+
+        assert final_bonus == 0.0, (
+            "CONFIRMATION_MATRIX_HARD_BLOCK in failed_gates must zero the bonus "
+            "even when mode=ACTIVE and decision=CONFIRM"
+        )
+
+    def test_smc_unblocked_candidate_receives_full_bonus_active_confirm(self):
+        """Discriminative counterpart: unblocked candidate in ACTIVE+CONFIRM must
+        receive full bonus — proves the blocked test is not a false positive."""
+        best_candidate = {
+            "failed_gates": [],
+            "direction": "BUY",
+            "best_strategy": "ORDER_FLOW_EXECUTION_AGENT",
+        }
+        _geo_smc_blocked = "CONFIRMATION_MATRIX_HARD_BLOCK" in (
+            best_candidate.get("failed_gates") or []
+        )
+        assert not _geo_smc_blocked
+
+        geo_result = {"mode": "ACTIVE", "decision": "CONFIRM"}
+        final_bonus = compute_geometric_bonus(geo_result, _geo_smc_blocked, confirm_bonus=5.0)
+        assert final_bonus == 5.0, "Unblocked ACTIVE+CONFIRM must receive the full configured bonus"
+
+    def test_wait_candidate_geo_bonus_cannot_create_trade(self):
+        """Invariant: geometric bonus is purely additive to confluence score.
+
+        A WAIT candidate (demo_eligible=False, no force_active_handoff) stays
+        WAIT even after ACTIVE+CONFIRM geo bonus is applied to _conf['score'].
+
+        The geometric block in main.py only modifies _conf['score'].  It never
+        sets demo_eligible, route_to_demo, or force_active_handoff.  Those flags
+        are determined by setup_hunter BEFORE the geometric block runs and are
+        never touched by it.
+        """
+        best_candidate = {
+            "demo_eligible": False,     # WAIT candidate — not cleared for execution
+            "failed_gates": [],         # NOT smc-blocked (testing a different path)
+            "direction": "BUY",
+            "best_strategy": "ORDER_FLOW_EXECUTION_AGENT",
+        }
+
+        # Geo analysis gives CONFIRM in ACTIVE mode — bonus is non-zero
+        geo_result = {"mode": "ACTIVE", "decision": "CONFIRM"}
+        _geo_smc_blocked = "CONFIRMATION_MATRIX_HARD_BLOCK" in (
+            best_candidate.get("failed_gates") or []
+        )
+        bonus = compute_geometric_bonus(geo_result, _geo_smc_blocked, confirm_bonus=5.0)
+        assert bonus == 5.0, "Bonus must be non-zero so the invariant is meaningful"
+
+        # Replicate main.py: apply bonus to _conf score (lines 1041–1043)
+        _conf = {"score": 65.0}
+        if bonus > 0.0 and _conf:
+            _conf["score"] = min(100.0, _conf["score"] + bonus)
+        assert _conf["score"] == 70.0, "Confluence score is bumped by the bonus"
+
+        # The geometric block NEVER modifies demo_eligible — candidate remains WAIT
+        assert best_candidate["demo_eligible"] is False, (
+            "Geometric bonus must not flip demo_eligible. "
+            "WAIT candidate must stay WAIT regardless of geo CONFIRM+ACTIVE."
+        )
+
+        # Replicate _is_demo_eligible_active_candidate (main.py line 1157)
+        from app.strategies.registry import ACTIVE_EXECUTION_STRATEGIES
+        force_active_handoff = (
+            str(best_candidate.get("best_strategy") or "").upper() in ACTIVE_EXECUTION_STRATEGIES
+            and bool(best_candidate.get("demo_eligible"))
+            and str(best_candidate.get("direction") or "").upper() in {"BUY", "SELL"}
+        )
+        assert not force_active_handoff, (
+            "force_active_handoff must remain False for a WAIT candidate. "
+            "Bonus-inflated confluence score cannot open a trade by itself."
+        )

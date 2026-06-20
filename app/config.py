@@ -160,6 +160,7 @@ class Settings(BaseModel):
     geometric_confluence_mode: str = "SHADOW"
     geometric_confirm_bonus: float = 5.0
     geometric_ratio_tolerance: float = 0.05
+    geometric_fib_hit_tolerance: float = 0.015
     fib_confluence_execution_enabled: bool = False
     fib_confluence_lookback: int = 30
     fib_confluence_struct_window: int = 15
@@ -703,6 +704,7 @@ def get_settings() -> Settings:
         geometric_confluence_mode=os.getenv("GEOMETRIC_CONFLUENCE_MODE", "SHADOW").strip().upper(),
         geometric_confirm_bonus=float(os.getenv("GEOMETRIC_CONFIRM_BONUS", "5.0")),
         geometric_ratio_tolerance=float(os.getenv("GEOMETRIC_RATIO_TOLERANCE", "0.05")),
+        geometric_fib_hit_tolerance=float(os.getenv("GEOMETRIC_FIB_HIT_TOLERANCE", "0.015")),
         fib_confluence_execution_enabled=_bool_env("FIB_CONFLUENCE_EXECUTION_ENABLED", False),
         fib_confluence_lookback=_int_env("FIB_CONFLUENCE_LOOKBACK", 30),
         fib_confluence_struct_window=_int_env("FIB_CONFLUENCE_STRUCT_WINDOW", 15),
