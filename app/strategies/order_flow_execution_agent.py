@@ -16,6 +16,27 @@ SETUP_VWAP_RECLAIM_REJECTION = "VWAP_RECLAIM_REJECTION"
 SETUP_VALUE_AREA_ROTATION = "VALUE_AREA_ROTATION"
 SETUP_VALUE_BREAKOUT = "VALUE_BREAKOUT"
 
+# ── Planned setups (NOT active — observation only) ───────────────────────────
+# AMD_FVG_IFVG_REVERSAL
+#   Concept  : ICT AMD cycle (Accumulation / Manipulation / Distribution).
+#              Entry at an unmitigated Fair Value Gap (FVG) or Inverse FVG (IFVG)
+#              that forms during the Manipulation leg, targeting the Distribution leg.
+#   Trigger  : Price sweeps a session high/low (manipulation), then retraces into
+#              an FVG/IFVG on M1–M5; MSS M1 confirms the reversal.
+#   Filters  : Kill zone required (London Open or NY Open); H1 bias must align.
+#   Risk     : SL beyond the swept liquidity level; TP at opposing session extreme.
+#   Status   : OBSERVATION_ONLY — requires FVG detector (not yet implemented).
+#
+# FIB_OTE_RETEST
+#   Concept  : Optimal Trade Entry (OTE) — ICT retracement into the 62–79 % Fibonacci
+#              zone of the most recent significant swing, with a confirmed MSS on M1.
+#   Trigger  : Swing identified on H1 or M15; price retraces to OTE zone; M1 MSS
+#              confirms rejection; CVD divergence or delta spike adds confluence.
+#   Filters  : H1 bias alignment; kill zone preferred but not mandatory.
+#   Risk     : SL beyond swing high/low; TP at 127–162 % Fibonacci extension.
+#   Status   : OBSERVATION_ONLY — requires Fibonacci swing detector (not yet implemented).
+# ─────────────────────────────────────────────────────────────────────────────
+
 _STALE_SECONDS = 120
 
 # Module-level cooldown state per canonical symbol
@@ -74,6 +95,68 @@ def evaluate(
     score = _score_setup(
         price, vwap, poc, vah, val, cvd_slope, delta, divergence,
         setup_type, direction, spread_ok, session_ok,
+    )
+
+    # MSS M1 — Market Structure Shift confirmation after liquidity sweep
+    _m1_df = (frames or {}).get("M1")
+    _mss = _check_mss_m1(_m1_df, direction)
+    _mss_close: float | None = None
+    _mss_recent_level: float | None = None
+    if _m1_df is not None and not getattr(_m1_df, "empty", True) and len(_m1_df) >= 5:
+        try:
+            _mss_close = float(_m1_df.iloc[-1]["close"])
+            if direction == "SELL":
+                _mss_recent_level = float(_m1_df.iloc[-4:-1]["low"].min())
+            else:
+                _mss_recent_level = float(_m1_df.iloc[-4:-1]["high"].max())
+        except (KeyError, TypeError, ValueError):
+            pass
+    if _mss is False and score < 85:
+        log.info(
+            "[MSS_M1] symbol=%s direction=%s mss_confirmed=False m1_close=%s"
+            " recent_level=%s score=%s action=WAIT",
+            symbol, direction, _mss_close, _mss_recent_level, score,
+        )
+        return _wait(symbol, "ORDER_FLOW_MSS_NOT_CONFIRMED", score=score)
+    if _mss is True:
+        score = min(100, score + 8)
+    log.info(
+        "[MSS_M1] symbol=%s direction=%s mss_confirmed=%s m1_close=%s"
+        " recent_level=%s bonus=%s",
+        symbol, direction, _mss, _mss_close, _mss_recent_level,
+        8 if _mss is True else 0,
+    )
+
+    # H1 Bias Filter — blocks entries that contradict the H1 trend
+    _h1_bias = str((context or {}).get("h1_bias") or "").upper() or None
+    _h1_conflict = (
+        (_h1_bias == "BEARISH" and direction == "BUY")
+        or (_h1_bias == "BULLISH" and direction == "SELL")
+    )
+    _h1_aligned = (
+        (_h1_bias == "BULLISH" and direction == "BUY")
+        or (_h1_bias == "BEARISH" and direction == "SELL")
+    )
+    if _h1_conflict:
+        log.info(
+            "[H1_BIAS] symbol=%s direction=%s h1_bias=%s action=WAIT",
+            symbol, direction, _h1_bias,
+        )
+        return _wait(symbol, "ORDER_FLOW_H1_BIAS_CONFLICT", score=score)
+    if _h1_aligned:
+        score = min(100, score + 5)
+    log.info(
+        "[H1_BIAS] symbol=%s direction=%s h1_bias=%s aligned=%s bonus=%s",
+        symbol, direction, _h1_bias, _h1_aligned, 5 if _h1_aligned else 0,
+    )
+
+    # Kill Zone bonus — high-volume BTC sessions
+    _kz_active, _kz_name = _in_kill_zone(context)
+    if _kz_active:
+        score = min(100, score + 6)
+    log.info(
+        "[KILL_ZONE] symbol=%s zone=%s active=%s bonus=%s",
+        symbol, _kz_name, _kz_active, 6 if _kz_active else 0,
     )
 
     min_score = int(getattr(settings, "order_flow_min_score", 75))
@@ -144,11 +227,15 @@ def evaluate(
         "strategy_status": "ACTIVE",
         "timeframe": "M5",
         "m15_confirmation": True,
-        "m1_entry_confirmation": True,
+        "m1_entry_confirmation": _mss is not False,
         "m15_confirmation_status": "PASS",
-        "m1_trigger_status": "PASS",
+        "m1_trigger_status": "PASS" if _mss is not False else "FAIL",
         "m15_confirmation_reason": STRATEGY,
-        "m1_trigger_reason": STRATEGY,
+        "m1_trigger_reason": (
+            "MSS_M1_CONFIRMED" if _mss is True
+            else "MSS_M1_NOT_CONFIRMED_OVERRIDE" if _mss is False
+            else STRATEGY
+        ),
         "order_flow_entry_enabled": True,
         "order_flow_required_fields_valid": True,
         "source": SOURCE,
@@ -386,3 +473,51 @@ def _to_float(value: object) -> float | None:
         return out if math.isfinite(out) else None
     except (TypeError, ValueError):
         return None
+
+
+def _check_mss_m1(m1_df: object, direction: str) -> bool | None:
+    """
+    Market Structure Shift on M1 — confirms reversal after a liquidity sweep.
+    SELL: last M1 close < minimum low of the 3 previous candles (Lower Low).
+    BUY : last M1 close > maximum high of the 3 previous candles (Higher High).
+    Returns True (confirmed), False (not confirmed), or None (insufficient data).
+    """
+    if m1_df is None or getattr(m1_df, "empty", True) or len(m1_df) < 5:
+        return None
+    try:
+        last_close = float(m1_df.iloc[-1]["close"])
+        if direction == "SELL":
+            recent_low = float(m1_df.iloc[-4:-1]["low"].min())
+            return last_close < recent_low
+        if direction == "BUY":
+            recent_high = float(m1_df.iloc[-4:-1]["high"].max())
+            return last_close > recent_high
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None
+
+
+_KILL_ZONES: tuple[tuple[str, int, int], ...] = (
+    ("LONDON_OPEN",    7,  9),
+    ("NY_OPEN",       12, 14),
+    ("ASIAN_REVERSAL", 1,  3),
+)
+
+
+def _in_kill_zone(context: dict | None) -> tuple[bool, str | None]:
+    """
+    Returns (True, zone_name) if the current UTC hour falls inside a BTC kill zone,
+    (False, None) otherwise.  Prefers 'utc_hour' from context; falls back to datetime.now(UTC).
+    """
+    utc_hour_raw = (context or {}).get("utc_hour")
+    if utc_hour_raw is not None:
+        try:
+            hour = int(utc_hour_raw)
+        except (TypeError, ValueError):
+            hour = datetime.now(timezone.utc).hour
+    else:
+        hour = datetime.now(timezone.utc).hour
+    for name, start, end in _KILL_ZONES:
+        if start <= hour < end:
+            return True, name
+    return False, None
