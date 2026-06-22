@@ -12,6 +12,10 @@ from app.agents.safety_guard import SafetyGuard
 from app.config import Settings
 from app.logger import log
 from app.mt5.ml_random_forest_confirmator import confirm as _ml_rf_confirm
+from app.mt5.geometric_engine_v2 import final_trade_gate as _final_trade_gate_v2
+from app.mt5.geometric_engine_v2 import geometric_score
+from app.mt5.multi_timeframe_momentum import calculate_momentum_confluence as _calculate_momentum
+from app.mt5.mtf_arbiter import arbitrate_mtf as _arbitrate_mtf
 from app.mt5.smc_orderblock_liquidity_narrator import narrate as _smc_ob_narrate
 from app.profiles.lovable_btc_old_system import is_active as _lovable_btc_is_active
 from app.strategies.candidate import validate_candidate
@@ -49,10 +53,18 @@ NEAR_MISS_CATEGORIES = {
     "BTC_PULLBACK_DISABLED_PENDING_MATH_AUDIT",
     "BTC_SCALPING_CONFIDENCE_BELOW_MIN",
     "CONFLUENCE_SCORE_TOO_LOW",
+    "MOMENTUM_DIVERGENCE",
 }
 
 # Hard floor for BTC_SCALPING routing — never route below this confidence regardless of settings.
 _BTC_SCALPING_MIN_ROUTE_CONFIDENCE = 75
+_OF_MIN_GEOMETRIC_SCORE = 50.0
+_PENALTY_FULL_BONUS_SCORE = 80.0
+_PENALTY_NEUTRAL_SCORE = 50.0
+_PENALTY_SOFT_SCORE = 20.0
+_PENALTY_FULL_BONUS = 10.0
+_PENALTY_SOFT = -5.0
+_PENALTY_STRONG_BASE = -15.0
 
 # Strategy tie-break priority: higher = preferred when grade and score are equal.
 _STRATEGY_PRIORITY: dict[str, int] = {
@@ -88,8 +100,33 @@ class SetupHunter:
         time_gate: dict,
         spread: float,
         max_spread: float,
+        symbol_specs: dict | None = None,
+        tick: dict | None = None,
+        recent_candles: list[dict] | None = None,
+        audit_cycle_id: str | None = None,
     ) -> SetupHunterResult:
         base_decision = dict(analysis.get("ai_decision") or {})
+        momentum_result = analysis.get("momentum_result")
+        if momentum_result is None and getattr(self.settings, "multi_tf_momentum_enabled", False) is True:
+            try:
+                configured_tfs = [
+                    item.strip().upper()
+                    for item in str(getattr(self.settings, "multi_tf_momentum_timeframes", "M1,M5,M15,H1,H4")).split(",")
+                    if item.strip()
+                ]
+                momentum_result = _calculate_momentum(
+                    broker_symbol or symbol,
+                    configured_tfs,
+                    min_confluence=int(getattr(self.settings, "multi_tf_momentum_min_confluence", 4)),
+                    ema_length=int(getattr(self.settings, "multi_tf_momentum_ema_length", 20)),
+                    rsi_length=int(getattr(self.settings, "multi_tf_momentum_rsi_length", 14)),
+                )
+            except Exception as exc:
+                log.error("[MTF_MOMENTUM_ERROR] symbol=%s error=%s", broker_symbol or symbol, exc)
+                momentum_result = None
+        if isinstance(momentum_result, dict):
+            base_decision["momentum_result"] = momentum_result
+            base_decision["momentum_score"] = momentum_result.get("momentum_score")
         signals = list(analysis.get("strategy_signals") or [])
         if getattr(self.settings, "hermes_strategy_pack_enabled", True):
             pack_candidate = build_strategy_pack_candidate(
@@ -139,7 +176,8 @@ class SetupHunter:
             if not isinstance(signal, dict):
                 continue
             candidate = self._candidate(
-                symbol, broker_symbol, signal, base_decision, time_gate, spread, max_spread, ema
+                symbol, broker_symbol, signal, base_decision, time_gate, spread, max_spread, ema,
+                symbol_specs=symbol_specs, tick=tick, recent_candles=recent_candles, audit_cycle_id=audit_cycle_id,
             )
             candidates.append(candidate)
             strategy = str(candidate.get("best_strategy") or "")
@@ -250,6 +288,10 @@ class SetupHunter:
         spread: float,
         max_spread: float,
         ema: dict,
+        symbol_specs: dict | None = None,
+        tick: dict | None = None,
+        recent_candles: list[dict] | None = None,
+        audit_cycle_id: str | None = None,
     ) -> dict:
         strategy = str(signal.get("strategy") or signal.get("setup_type") or "UNKNOWN").upper()
         role = _strategy_role(strategy)
@@ -275,7 +317,60 @@ class SetupHunter:
         merged.update({key: value for key, value in ema.items() if key != "ema_direction"})
         edge_score = setup_score if strategy == "BTC_SCALPING_AGENT" else _edge_score(setup_score, role, merged)
         grade = _candidate_grade(strategy, setup_score, edge_score, self.settings)
+        geo_mode = str(getattr(self.settings, "geometric_mode", "SHADOW") or "SHADOW").upper()
         failed = _failed_gates(role, merged, spread, max_spread, self.settings)
+        momentum = merged.get("momentum_result") if isinstance(merged.get("momentum_result"), dict) else None
+        momentum_adjustment = 0.0
+        momentum_aligned = None
+        if momentum and momentum.get("confluence_active") and direction in {"BUY", "SELL"}:
+            expected_momentum = "BULL" if direction == "BUY" else "BEAR"
+            momentum_aligned = str(momentum.get("confluence_direction") or "").upper() == expected_momentum
+            if strategy == "ORDER_FLOW_EXECUTION_AGENT" or geo_mode in {"EXECUTION_FILTER", "LIVE"}:
+                momentum_adjustment = 5.0 if momentum_aligned else -10.0
+            else:
+                momentum_adjustment = 0.0
+            if not momentum_aligned and (strategy == "ORDER_FLOW_EXECUTION_AGENT" or geo_mode in {"EXECUTION_FILTER", "LIVE"}):
+                failed.append("MOMENTUM_DIVERGENCE")
+        merged["momentum_aligned"] = momentum_aligned
+        merged["momentum_alignment_adjustment"] = momentum_adjustment
+        mtf_arbiter = _arbitrate_mtf(
+            merged.get("h4_main_bias") or merged.get("smc_h4_direction"),
+            merged.get("d1_macro_bias"),
+            merged.get("smc_h4_direction") or merged.get("smc_status"),
+            (momentum or {}).get("confluence_direction") if momentum else None,
+        )
+        merged["mtf_arbiter"] = mtf_arbiter
+        geometric_v2 = merged.get("geometric_v2") if isinstance(merged.get("geometric_v2"), dict) else _candidate_geometric_v2(merged, geo_mode)
+        merged["geometric_v2"] = geometric_v2
+        directional_momentum = dict(momentum or {})
+        raw_momentum_score = _to_float(directional_momentum.get("momentum_score"))
+        if raw_momentum_score is not None:
+            directional_momentum["momentum_score"] = raw_momentum_score if direction != "SELL" else 100.0 - raw_momentum_score
+        directional_momentum["aligned"] = momentum_aligned
+        final_gate = _final_trade_gate_v2(
+            geometric_v2,
+            {"score": _to_float(merged.get("order_flow_execution_agent_score") or merged.get("order_flow_score")) or 0.0},
+            {"status": merged.get("smc_calibrated_status") or merged.get("smc_status"), "score": _to_float(merged.get("smc_confluence_score")) or 0.0},
+            {"status": merged.get("mtfa_calibrated_status") or merged.get("mtfa_status"), "score": _to_float(merged.get("mtfa_score")) or 0.0, "trend_strength": _to_float(merged.get("mtfa_trend_strength")) or 0.0},
+            float(spread),
+            _to_float(merged.get("atr") or merged.get("atr_value")) or 0.0,
+            str(merged.get("session_name") or "UNKNOWN"),
+            broker_symbol or symbol,
+            _to_float(merged.get("capital_risk_pct")) or 0.0,
+            geo_mode,
+            strategy=strategy,
+            spread_points=float(spread),
+            point=_to_float((symbol_specs or {}).get("point")) if symbol_specs else None,
+            bid=_to_float((tick or {}).get("bid")) if tick else None,
+            ask=_to_float((tick or {}).get("ask")) if tick else None,
+            max_spread=_to_float(max_spread),
+            cycle_id=audit_cycle_id,
+            momentum_result=directional_momentum,
+            recent_candles=recent_candles,
+        )
+        merged["final_trade_gate_v2"] = final_gate
+        if geo_mode in {"EXECUTION_FILTER", "LIVE"} and final_gate.get("hard_block"):
+            failed.extend(str(reason) for reason in final_gate.get("hard_block_reasons") or [])
         policy_reason = _execution_policy_block_reason(symbol, broker_symbol, strategy, role, self.settings)
         if policy_reason is None and strategy == "GOLD_ORDER_FLOW_CVD_VWAP":
             missing_order_flow = _gold_order_flow_missing_required_fields(merged, self.settings)
@@ -352,6 +447,13 @@ class SetupHunter:
             "final_confluence_grade": merged.get("final_confluence_grade") or merged.get("confluence_grade") or _grade(int(_to_float(merged.get("final_confluence_score") or merged.get("confluence_score") or merged.get("smc_confluence_score")) or 0)),
             "mtfa_status": merged.get("mtfa_status"),
             "mtfa_score": _to_float(merged.get("mtfa_score")),
+            "geometric_v2": merged.get("geometric_v2"),
+            "momentum_result": merged.get("momentum_result"),
+            "momentum_score": merged.get("momentum_score"),
+            "momentum_aligned": merged.get("momentum_aligned"),
+            "momentum_alignment_adjustment": merged.get("momentum_alignment_adjustment"),
+            "mtf_arbiter": merged.get("mtf_arbiter"),
+            "final_trade_gate_v2": merged.get("final_trade_gate_v2"),
             "mtf_structure_status": merged.get("mtf_structure_status"),
             "m15_confirmation": bool(merged.get("m15_confirmation") or merged.get("smc_m15_confirmation")),
             "m15_confirmation_status": merged.get("m15_confirmation_status", "PASS" if bool(merged.get("m15_confirmation") or merged.get("smc_m15_confirmation")) else "FAIL"),
@@ -939,6 +1041,38 @@ def _setup_score(strategy: str, payload: dict) -> int:
     return int(max(0, min(100, round(raw))))
 
 
+def _compute_penalty(raw_score: float) -> float:
+    """Return the graduated confirmation adjustment for a raw 0-100 score."""
+    score = max(0.0, min(100.0, float(raw_score)))
+    if score >= _PENALTY_FULL_BONUS_SCORE:
+        return _PENALTY_FULL_BONUS
+    if score >= _PENALTY_NEUTRAL_SCORE:
+        return 0.0
+    if score >= _PENALTY_SOFT_SCORE:
+        return _PENALTY_SOFT
+    return _PENALTY_STRONG_BASE * (1.0 + (_PENALTY_SOFT_SCORE - score) / _PENALTY_SOFT_SCORE)
+
+
+def _candidate_geometric_v2(payload: dict, mode: str) -> dict:
+    pattern = {
+        "quality": _to_float(payload.get("harmonic_score") or payload.get("harmonic_quality_score")) or 0.0,
+    }
+    prz = {
+        "prz_strength": _to_float(payload.get("prz_strength")) or 0.0,
+        "distance_atr": _to_float(payload.get("prz_distance_atr")),
+    }
+    if prz["distance_atr"] is None:
+        prz["distance_atr"] = float("inf")
+    return geometric_score(
+        pattern,
+        prz,
+        _to_float(payload.get("htf_alignment_score")) or 0.0,
+        _to_float(payload.get("gann_confluence")) or 0.0,
+        _to_float(payload.get("vwap_score")) or 0.0,
+        mode,
+    )
+
+
 def _edge_score(setup_score: int, role: str, payload: dict) -> int:
     score = setup_score
     score += min(15, int((_to_float(payload.get("smc_confluence_score")) or 0) / 10))
@@ -1012,6 +1146,69 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
         and _to_float(payload.get("sl")) is not None
         and _to_float(payload.get("tp")) is not None
     )
+    if order_flow_exec_ready:
+        _of_setup_score = float(_setup_score("ORDER_FLOW_EXECUTION_AGENT", payload))
+        _of_symbol_raw = str(payload.get("broker_symbol") or payload.get("symbol") or "").upper()
+        _is_btc_of = _of_symbol_raw.startswith("BTCUSD")
+        if _is_btc_of:
+            _of_cm = _confirmation_matrix(
+                str(payload.get("symbol") or ""),
+                "ORDER_FLOW_EXECUTION_AGENT",
+                smc_score,
+                mtfa_score,
+                _of_setup_score,
+                rr,
+            )
+            if _of_cm["hard_block"]:
+                failed.append("CONFIRMATION_MATRIX_HARD_BLOCK")
+                log.info(
+                    "[SETUP_HUNTER_REJECT] symbol=%s strategy=ORDER_FLOW_EXECUTION_AGENT "
+                    "reason=CONFIRMATION_MATRIX_HARD_BLOCK",
+                    str(payload.get("symbol") or ""),
+                )
+                log.info(
+                    "[BTC_ENTRY_GUARD] status=BLOCK reason=CONFIRMATION_MATRIX_HARD_BLOCK"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT exits_allowed=true",
+                )
+            _of_grade = str(payload.get("final_confluence_grade") or "D").upper()
+            _of_cscore = _to_float(payload.get("final_confluence_score")) or 0.0
+            _of_high_quality_legacy_bypass = _of_setup_score >= 90.0 and _of_grade == "A"
+            if not _of_high_quality_legacy_bypass and _grade_rank(_of_grade) < _grade_rank("B"):
+                failed.append("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B")
+                log.info(
+                    "[BTC_ENTRY_GUARD] status=BLOCK reason=ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT grade=%s exits_allowed=true",
+                    _of_grade,
+                )
+            if not _of_high_quality_legacy_bypass and _of_cscore < 65.0:
+                failed.append("ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65")
+                log.info(
+                    "[BTC_ENTRY_GUARD] status=BLOCK reason=ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT score=%.1f exits_allowed=true",
+                    _of_cscore,
+                )
+            if _of_high_quality_legacy_bypass:
+                log.info(
+                    "[BTC_ENTRY_GUARD] status=PASS reason=OF_BYPASS_SAFETY_CHECK "
+                    "strategy=ORDER_FLOW_EXECUTION_AGENT grade=%s score=%.1f",
+                    _of_grade, _of_setup_score,
+                )
+        _geo_mode = str(getattr(settings, "geometric_mode", "SHADOW") or "SHADOW").upper()
+        _of_geo = _candidate_geometric_v2(payload, _geo_mode)
+        payload["geometric_v2"] = _of_geo
+        _of_grade_for_geo = str(payload.get("order_flow_grade") or payload.get("grade") or "D").upper()
+        if (
+            _geo_mode in {"EXECUTION_FILTER", "LIVE"}
+            and float(_of_geo.get("score") or 0.0) < _OF_MIN_GEOMETRIC_SCORE
+            and _of_grade_for_geo != "A+"
+        ):
+            failed.append("OF_GEO_INSUFFICIENT")
+            order_flow_exec_ready = False
+            log.info(
+                "[SETUP_HUNTER_REJECT] symbol=%s strategy=ORDER_FLOW_EXECUTION_AGENT "
+                "reason=OF_GEO_INSUFFICIENT geometric_score=%.1f mode=%s",
+                payload.get("symbol"), float(_of_geo.get("score") or 0.0), _geo_mode,
+            )
     fib_strategy = strategy == "FIB_CONFLUENCE_EXECUTION_AGENT"
     fib_ready = (
         fib_strategy
@@ -1049,8 +1246,7 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
             _btc_setup,
             rr,
         )
-        _cm_adj = {"PASS": 10.0, "SOFT_FAIL": -5.0, "STRONG_FAIL": -15.0}
-        _btc_confluence = _btc_setup + _cm_adj.get(_btc_cm["smc_calibrated_status"], 0.0) + _cm_adj.get(_btc_cm["mtfa_calibrated_status"], 0.0)
+        _btc_confluence = _btc_setup + _compute_penalty(smc_score) + _compute_penalty(mtfa_score)
         _btc_safety_pass = str(payload.get("safety_guard_status") or "").upper() == "PASS"
         _old_btc_cm_bypass = _lovable_btc_is_active(settings) and _btc_safety_pass
         if _old_btc_cm_bypass:
@@ -1061,16 +1257,16 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                 "[BTC_SCALPING_ROUTE] decision=PASS reason=SCALP_SIGNAL_VALID normalized_confidence=%s",
                 int(_btc_setup),
             )
-        elif _btc_confluence < 55.0:
-            failed.append("CONFLUENCE_SCORE_TOO_LOW")
-            log.info(
-                "[SETUP_HUNTER_REJECT] symbol=%s strategy=BTC_SCALPING_AGENT reason=CONFLUENCE_SCORE_TOO_LOW",
-                payload.get("symbol"),
-            )
         elif _btc_cm["hard_block"]:
             failed.append("CONFIRMATION_MATRIX_HARD_BLOCK")
             log.info(
                 "[SETUP_HUNTER_REJECT] symbol=%s strategy=BTC_SCALPING_AGENT reason=CONFIRMATION_MATRIX_HARD_BLOCK",
+                payload.get("symbol"),
+            )
+        elif _btc_confluence < 55.0:
+            failed.append("CONFLUENCE_SCORE_TOO_LOW")
+            log.info(
+                "[SETUP_HUNTER_REJECT] symbol=%s strategy=BTC_SCALPING_AGENT reason=CONFLUENCE_SCORE_TOO_LOW",
                 payload.get("symbol"),
             )
         else:
@@ -1102,9 +1298,10 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
         and _to_float(payload.get("tp")) is not None
     )
     statistical_quant_ready = quant_ready or quant_pro_ready
-    strategy_ready_without_confluence = statistical_quant_ready or gold_ready or gold_m1m5_ready or gold_order_flow_ready or order_flow_exec_ready or btc_scalping_ready or _btc_lovable_bypass or simo_ready or strategy_pack_ready or fib_ready
-    if not strategy_ready_without_confluence:
+    strategy_ready_without_confluence = statistical_quant_ready or gold_ready or gold_m1m5_ready or gold_order_flow_ready or btc_scalping_ready or _btc_lovable_bypass or simo_ready or strategy_pack_ready or fib_ready
+    if not strategy_ready_without_confluence and not order_flow_exec_ready:
         # Task 4: skip confirmation matrix for symbol-mismatched strategies to avoid noisy logs.
+        # order_flow_exec_ready has its own dedicated CM check above — skip the general check.
         _sym_check = str(payload.get("symbol") or "")
         _bs_check = str(payload.get("broker_symbol") or "")
         if role == "ENTRY" and allowed_for_symbol(strategy, _sym_check, _bs_check):
@@ -1128,9 +1325,9 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
     m1_pass = bool(payload.get("m1_entry_confirmation") or payload.get("smc_m1_entry_confirmation") or payload.get("m1_trigger_status") == "PASS")
     if trend_strategy and m1_pass and m15_pass and _same_confirmed_direction(payload) and str(payload.get("resolved_direction") or payload.get("signal") or "").upper() not in {"BUY", "SELL"}:
         failed.append("DIRECTION_RESOLVER_FAIL")
-    if not m15_pass and not strategy_ready_without_confluence:
+    if not m15_pass and not strategy_ready_without_confluence and not order_flow_exec_ready:
         failed.append("WAITING_FOR_M15_CONFIRMATION")
-    if not m1_pass and not strategy_ready_without_confluence:
+    if not m1_pass and not strategy_ready_without_confluence and not order_flow_exec_ready:
         failed.append("WAITING_FOR_M1_TRIGGER")
     if str(payload.get("safety_guard_status") or "").upper() != "PASS":
         failed.append(str(payload.get("safety_guard_reason") or "SAFETY_GUARD_BLOCK"))
@@ -1140,7 +1337,7 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
     grade_ok = _grade_rank(str(payload.get("big_setup_grade") or "")) >= _grade_rank("B")
     setup_score = _to_float(payload.get("big_setup_score")) or _to_float(payload.get("setup_score")) or 0.0
     strict = bool(payload.get("m15_confirmation") or payload.get("smc_m15_confirmation")) and bool(payload.get("m1_entry_confirmation") or payload.get("smc_m1_entry_confirmation"))
-    if not (strategy_ready_without_confluence or grade_ok or (setup_score >= 75 and strict)):
+    if not (strategy_ready_without_confluence or order_flow_exec_ready or grade_ok or (setup_score >= 75 and strict)):
         failed.append("BIG_SETUP_GRADE_BELOW_B")
     # §4.1–4.3: HERMES entry gates (feature-flagged; default off)
     # Use `is True` to guard against MagicMock auto-attributes in tests.
