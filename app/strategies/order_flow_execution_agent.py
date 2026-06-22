@@ -128,7 +128,11 @@ def evaluate(
     )
 
     # H1 Bias Filter — blocks entries that contradict the H1 trend
-    _h1_bias = str((context or {}).get("h1_bias") or "").upper() or None
+    # Prefer h1_bias from context (explicitly passed); fallback to frames["H1"] same logic as MTFA
+    _h1_bias_ctx = str((context or {}).get("h1_bias") or "").upper() or None
+    _h1_bias_computed = _compute_h1_bias((frames or {}).get("H1"))
+    _h1_bias = _h1_bias_ctx or _h1_bias_computed
+    _h1_source = "context" if _h1_bias_ctx else ("frames_H1" if _h1_bias_computed else "none")
     _h1_conflict = (
         (_h1_bias == "BEARISH" and direction == "BUY")
         or (_h1_bias == "BULLISH" and direction == "SELL")
@@ -139,15 +143,15 @@ def evaluate(
     )
     if _h1_conflict:
         log.info(
-            "[H1_BIAS] symbol=%s direction=%s h1_bias=%s action=WAIT",
-            symbol, direction, _h1_bias,
+            "[H1_BIAS] symbol=%s direction=%s h1_bias_source=%s h1_bias_value=%s action=WAIT",
+            symbol, direction, _h1_source, _h1_bias,
         )
         return _wait(symbol, "ORDER_FLOW_H1_BIAS_CONFLICT", score=score)
     if _h1_aligned:
         score = min(100, score + 5)
     log.info(
-        "[H1_BIAS] symbol=%s direction=%s h1_bias=%s aligned=%s bonus=%s",
-        symbol, direction, _h1_bias, _h1_aligned, 5 if _h1_aligned else 0,
+        "[H1_BIAS] symbol=%s direction=%s h1_bias_source=%s h1_bias_value=%s aligned=%s bonus=%s",
+        symbol, direction, _h1_source, _h1_bias, _h1_aligned, 5 if _h1_aligned else 0,
     )
 
     # Kill Zone bonus — high-volume BTC sessions
@@ -157,6 +161,19 @@ def evaluate(
     log.info(
         "[KILL_ZONE] symbol=%s zone=%s active=%s bonus=%s",
         symbol, _kz_name, _kz_active, 6 if _kz_active else 0,
+    )
+
+    # SFP — Swing Failure Pattern (M15)
+    _m15_df = (frames or {}).get("M15")
+    _sfp = _check_sfp(_m15_df, direction)
+    if _sfp is True:
+        score = min(100, score + 12)
+    elif _sfp is False:
+        score = max(0, score - 5)
+    log.info(
+        "[SFP] symbol=%s direction=%s sfp_confirmed=%s bonus=%s",
+        symbol, direction, _sfp,
+        12 if _sfp is True else (-5 if _sfp is False else 0),
     )
 
     min_score = int(getattr(settings, "order_flow_min_score", 75))
@@ -171,6 +188,18 @@ def evaluate(
     entry, sl, tp, rr = levels
     if rr < min_rr:
         return _wait(symbol, "ORDER_FLOW_RR_BELOW_MIN", score=score)
+
+    # AMD_FVG — active unmitigated FVG bonus + entry adjustment
+    _m5_df = (frames or {}).get("M5")
+    _fvg_bonus, _fvg_mid = _detect_fvg_bonus(_m5_df, direction)
+    if _fvg_bonus > 0:
+        score = min(100, score + _fvg_bonus)
+    if _fvg_mid is not None and abs(entry - _fvg_mid) < entry * 0.005:
+        entry = round(_fvg_mid, 5)
+    log.info(
+        "[AMD_FVG] symbol=%s direction=%s fvg_active=%s fvg_mid=%s bonus=%s",
+        symbol, direction, _fvg_bonus > 0, _fvg_mid, _fvg_bonus,
+    )
 
     cooldown_minutes = int(getattr(settings, "order_flow_cooldown_minutes", 15))
     if not _cooldown_ok(canonical, cooldown_minutes):
@@ -497,6 +526,29 @@ def _check_mss_m1(m1_df: object, direction: str) -> bool | None:
     return None
 
 
+def _compute_h1_bias(h1_df: object) -> str | None:
+    """Mirror of MTFAFilter._h1_bias() — 12-candle window, excludes live candle."""
+    if h1_df is None or getattr(h1_df, "empty", True):
+        return None
+    try:
+        closed = h1_df.iloc[:-1]
+        tail = closed.tail(12)
+        if len(tail) < 6:
+            return "NEUTRAL"
+        prev = tail.iloc[:-1]
+        last = tail.iloc[-1]
+        prev_high = float(prev["high"].tail(5).max())
+        prev_low = float(prev["low"].tail(5).min())
+        close = float(last["close"])
+        if close > prev_high:
+            return "BULLISH"
+        if close < prev_low:
+            return "BEARISH"
+        return "NEUTRAL"
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 _KILL_ZONES: tuple[tuple[str, int, int], ...] = (
     ("LONDON_OPEN",    7,  9),
     ("NY_OPEN",       12, 14),
@@ -521,3 +573,60 @@ def _in_kill_zone(context: dict | None) -> tuple[bool, str | None]:
         if start <= hour < end:
             return True, name
     return False, None
+
+
+def _check_sfp(m15_df: object, direction: str) -> bool | None:
+    """
+    Swing Failure Pattern on M15 — wick beyond recent extreme, close reverses.
+    SELL: last closed candle wick > recent 13-candle high AND close < that high AND vol > avg*1.3
+    BUY : last closed candle wick < recent 13-candle low  AND close > that low  AND vol > avg*1.3
+    Returns True (SFP confirmed), False (sweep no reversal), None (no sweep — neutral).
+    """
+    if m15_df is None or getattr(m15_df, "empty", True) or len(m15_df) < 16:
+        return None
+    try:
+        closed = m15_df.iloc[:-1]
+        last = closed.iloc[-1]
+        prev = closed.iloc[-14:-1]
+        vol_col = "tick_volume" if "tick_volume" in closed.columns else "volume"
+        vol_last = float(last.get(vol_col) or 0)
+        vol_avg = float(prev[vol_col].mean()) if vol_col in prev.columns else 0.0
+        vol_ok = vol_avg > 0 and vol_last > vol_avg * 1.3
+        if direction == "SELL":
+            recent_high = float(prev["high"].max())
+            sweep = float(last["high"]) > recent_high
+            sfp = sweep and float(last["close"]) < recent_high and vol_ok
+            return True if sfp else (False if sweep else None)
+        if direction == "BUY":
+            recent_low = float(prev["low"].min())
+            sweep = float(last["low"]) < recent_low
+            sfp = sweep and float(last["close"]) > recent_low and vol_ok
+            return True if sfp else (False if sweep else None)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _detect_fvg_bonus(m5_df: object, direction: str) -> tuple[int, float | None]:
+    """
+    Detect active unmitigated FVG on M5 (3-candle pattern, same logic as AMD_FVG module).
+    BULLISH FVG: candle[-1].low > candle[-3].high  (gap up — buy-side)
+    BEARISH FVG: candle[-1].high < candle[-3].low  (gap down — sell-side)
+    Returns (bonus, fvg_midpoint): bonus=10 if FVG matches direction, else (0, None).
+    """
+    if m5_df is None or getattr(m5_df, "empty", True) or len(m5_df) < 3:
+        return 0, None
+    try:
+        a = m5_df.iloc[-3]
+        c = m5_df.iloc[-1]
+        a_high = float(a["high"])
+        a_low  = float(a["low"])
+        c_low  = float(c["low"])
+        c_high = float(c["high"])
+        if direction == "BUY" and c_low > a_high:
+            return 10, round((a_high + c_low) / 2, 5)
+        if direction == "SELL" and c_high < a_low:
+            return 10, round((a_low + c_high) / 2, 5)
+    except (KeyError, TypeError, ValueError):
+        return 0, None
+    return 0, None

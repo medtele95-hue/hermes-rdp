@@ -15,6 +15,11 @@ import time
 
 import MetaTrader5 as mt5
 
+from app.config import (
+    BTC_SL_BREAKEVEN_BUFFER_ATR,
+    BTC_SL_TRAIL_GAP_ATR,
+    BTC_SL_TRAIL_START_ATR,
+)
 from app.logger import log
 
 MAX_SL_DOLLARS: float = 8.0
@@ -115,18 +120,32 @@ class BtcSlEngine:
         poc: float | None = None,
         vah: float | None = None,
         val: float | None = None,
+        current_price: float | None = None,
     ) -> tuple[float, str]:
         """Return (sl_price, method_name) for the most protective viable SL."""
         dir_upper = direction.upper()
         candles = candles_m5 or []
         methods: dict[str, float] = {}
 
-        # Method A — ATR multiplier (1.5 × SELL, 2.0 × BUY)
-        sl_mult = 1.5 if dir_upper == "SELL" else 2.0
+        # Method A — ATR multiplier asymétrique (2.0 × SELL, 4.0 × BUY)
+        sl_mult = 2.0 if dir_upper == "SELL" else 4.0
         if dir_upper == "SELL":
             methods["A"] = entry_price + atr * sl_mult
         else:
             methods["A"] = entry_price - atr * sl_mult
+
+        if current_price is not None and float(current_price) > 0.0:
+            price = float(current_price)
+            favorable_move = entry_price - price if dir_upper == "SELL" else price - entry_price
+            if favorable_move >= BTC_SL_TRAIL_START_ATR * atr:
+                if dir_upper == "SELL":
+                    breakeven = entry_price - BTC_SL_BREAKEVEN_BUFFER_ATR * atr
+                    trailing = price + BTC_SL_TRAIL_GAP_ATR * atr
+                    methods["A_TRAILING"] = min(breakeven, trailing)
+                else:
+                    breakeven = entry_price + BTC_SL_BREAKEVEN_BUFFER_ATR * atr
+                    trailing = price - BTC_SL_TRAIL_GAP_ATR * atr
+                    methods["A_TRAILING"] = max(breakeven, trailing)
 
         # Method B — Swing structure (last 5 of the 20 most-recent candles)
         if len(candles) >= 5:
@@ -187,10 +206,10 @@ class BtcSlEngine:
             best_method = "HARD_CAP"
 
         # Anti-inversion guard
-        if dir_upper == "SELL" and sl_price <= entry_price:
+        if best_method != "A_TRAILING" and dir_upper == "SELL" and sl_price <= entry_price:
             sl_price = cap_sl
             best_method = "ANTI_INVERSION"
-        elif dir_upper == "BUY" and sl_price >= entry_price:
+        elif best_method != "A_TRAILING" and dir_upper == "BUY" and sl_price >= entry_price:
             sl_price = cap_sl
             best_method = "ANTI_INVERSION"
 
@@ -290,6 +309,7 @@ class BtcSlEngine:
         poc: float | None = None,
         vah: float | None = None,
         val: float | None = None,
+        current_price: float | None = None,
     ) -> dict:
         """Orchestrate SL/TP modification. Returns result dict with applied/reason/sl/tp/method."""
         _empty = {"applied": False, "sl": None, "tp": None, "method": None}
@@ -318,7 +338,7 @@ class BtcSlEngine:
             return {**_empty, "reason": "ATR_ZERO_OR_NEGATIVE"}
 
         sl_price, method = self._calculate_sl_price(
-            entry_price, direction, atr, candles_m5, vwap, poc, vah, val
+            entry_price, direction, atr, candles_m5, vwap, poc, vah, val, current_price
         )
         log.info(
             "[SL_ENGINE_METHOD_WIN] method=%s sl=%.2f ticket=%s",
