@@ -1,6 +1,7 @@
 """Tests for app/agents/confluence_engine.py."""
 from __future__ import annotations
 
+import logging
 import unittest
 
 import pandas as pd
@@ -164,6 +165,51 @@ class TestConfluenceGradeThresholds(unittest.TestCase):
 
     def test_a_plus_at_100(self) -> None:
         self.assertEqual(self._score_to_grade(100.0), "A+")
+
+
+class TestStratAwareLog(unittest.TestCase):
+    """[CONFLUENCE_STRAT_AWARE] must appear for ORDER_FLOW_NATIVE strategies on any symbol."""
+
+    def _run_and_capture(self, symbol: str, strategy: str, ctx: dict) -> list[str]:
+        engine = ConfluenceEngine()
+        with self.assertLogs("hermes", level=logging.INFO) as cm:
+            engine.evaluate(symbol, strategy, _flat_frames(), ctx)
+        return [m for m in cm.output if "CONFLUENCE_STRAT_AWARE" in m]
+
+    def test_btcusd_of_agent_passes_when_smc_mtfa_both_positive(self) -> None:
+        """BTCUSD + ORDER_FLOW_EXECUTION_AGENT must log strat_aware even when SMC/MTFA are PASS."""
+        ctx = {
+            "smc_confluence_score": 80.0,   # → PASS → +10 (no penalty to clamp)
+            "mtfa_score": 80.0,              # → PASS → +10 (no penalty to clamp)
+            "order_flow_reader": {"grade": "A+", "score": 100.0, "signal": "BUY"},
+        }
+        msgs = self._run_and_capture("BTCUSD", "ORDER_FLOW_EXECUTION_AGENT", ctx)
+        self.assertTrue(msgs, "[CONFLUENCE_STRAT_AWARE] not emitted for BTCUSD")
+        self.assertIn("strat_aware=True", msgs[0])
+
+    def test_btcusd_of_agent_passes_when_smc_negative(self) -> None:
+        """BTCUSD + ORDER_FLOW_EXECUTION_AGENT must log strat_aware when SMC is penalising."""
+        ctx = {
+            "smc_confluence_score": 30.0,   # → STRONG_FAIL → -15
+            "mtfa_score": 80.0,
+            "order_flow_reader": {"grade": "A+", "score": 100.0, "signal": "BUY"},
+        }
+        msgs = self._run_and_capture("BTCUSD", "ORDER_FLOW_EXECUTION_AGENT", ctx)
+        self.assertTrue(msgs, "[CONFLUENCE_STRAT_AWARE] not emitted when SMC penalising")
+
+    def test_eurusd_of_agent_logs_strat_aware(self) -> None:
+        msgs = self._run_and_capture(
+            "EURUSD", "ORDER_FLOW_EXECUTION_AGENT",
+            {"smc_confluence_score": 80.0, "mtfa_score": 80.0},
+        )
+        self.assertTrue(msgs, "[CONFLUENCE_STRAT_AWARE] not emitted for EURUSD")
+
+    def test_non_of_native_strategy_does_not_log(self) -> None:
+        engine = ConfluenceEngine()
+        with self.assertLogs("hermes", level=logging.INFO) as cm:
+            engine.evaluate("BTCUSD", "BTC_SCALPING_AGENT", _flat_frames(), {})
+        strat_aware_msgs = [m for m in cm.output if "CONFLUENCE_STRAT_AWARE" in m]
+        self.assertFalse(strat_aware_msgs, "strat_aware log must not appear for non-OF_NATIVE strategy")
 
 
 class TestEvaluateConfluenceConvenienceFunction(unittest.TestCase):

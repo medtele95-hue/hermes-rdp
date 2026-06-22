@@ -187,14 +187,13 @@ class ConfluenceEngine:
         # Clamp is unconditional for ORDER_FLOW_NATIVE (not gated by strategy_aware param).
         _of_native = str(strategy or "").upper() in _ORDER_FLOW_NATIVE
         if _of_native:
-            if smc_contrib < 0.0 or mtfa_contrib < 0.0:
-                log.info(
-                    "[CONFLUENCE_STRAT_AWARE] symbol=%s strategy=%s"
-                    " smc_raw=%.1f→clamped=%.1f mtfa_raw=%.1f→clamped=%.1f strat_aware=True",
-                    symbol, strategy,
-                    smc_contrib, max(0.0, smc_contrib),
-                    mtfa_contrib, max(0.0, mtfa_contrib),
-                )
+            log.info(
+                "[CONFLUENCE_STRAT_AWARE] symbol=%s strategy=%s"
+                " smc_raw=%.1f→clamped=%.1f mtfa_raw=%.1f→clamped=%.1f strat_aware=True",
+                symbol, strategy,
+                smc_contrib, max(0.0, smc_contrib),
+                mtfa_contrib, max(0.0, mtfa_contrib),
+            )
             smc_contrib = max(0.0, smc_contrib)
             mtfa_contrib = max(0.0, mtfa_contrib)
             of_bonus = _order_flow_bonus_graded(ctx)
