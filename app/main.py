@@ -812,7 +812,18 @@ class HermesBackend:
                 log.info("Kelly risk written")
 
             decision = analysis["ai_decision"]
-            hunter = self.setup_hunter.evaluate(requested_symbol, broker_symbol, analysis, time_snapshot, latest_spread := self._latest_completed_spread(frames["M5"]), effective_max_spread)
+            hunter = self.setup_hunter.evaluate(
+                requested_symbol,
+                broker_symbol,
+                analysis,
+                time_snapshot,
+                latest_spread := self._latest_completed_spread(frames["M5"]),
+                effective_max_spread,
+                symbol_specs=symbol_specs,
+                tick=tick,
+                recent_candles=self._confirmed_candle_rows(frames["M5"]),
+                audit_cycle_id=cycle_start_utc.isoformat(),
+            )
             self.latest_setup_hunter = hunter.best_candidate
             self.latest_setup_hunter_candidates = hunter.candidates
             self._latest_candidates_all.extend(hunter.candidates)
@@ -1282,8 +1293,9 @@ class HermesBackend:
                     )
                 else:
                     log.info(
-                        "[ROUTER_BLOCK] symbol=%s strategy=%s reason=FINAL_CONFLUENCE_TOO_LOW score=%s grade=%s",
+                        "[ROUTER_BLOCK] symbol=%s strategy=%s reason=FINAL_CONFLUENCE_TOO_LOW score=%s grade=%s threshold=%s strat_aware=%s",
                         broker_symbol, handoff_strategy, _final_conf_score, _final_conf_grade,
+                        _conf_threshold, _conf_strat_aware,
                     )
                     self.ingest_client.emit_bot_log(
                         "ROUTER_BLOCK",
@@ -1570,6 +1582,45 @@ class HermesBackend:
             paper_closed,
             demo_orders,
         )
+        _cycle_candidates = [item for item in self._latest_candidates_all if isinstance(item, dict)]
+        _blocked_by_confirmation = sum(
+            1 for item in _cycle_candidates
+            if "CONFIRMATION_MATRIX_HARD_BLOCK" in {
+                *(item.get("failed_confirmations") or []),
+                *(item.get("failed_gates") or []),
+            }
+        )
+        _blocked_by_safety = sum(
+            1 for item in _cycle_candidates
+            if str(item.get("safety_guard_status") or "").upper() == "BLOCK"
+        )
+        _blocked_by_entry_guard = sum(
+            1 for item in _cycle_candidates
+            if any(
+                gate in {
+                    "ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B",
+                    "ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65",
+                }
+                for gate in (item.get("failed_gates") or [])
+            )
+        )
+        _analysis_only = sum(
+            1 for item in self._per_symbol_state.values()
+            if str((item or {}).get("latest_decision") or "").upper() == "WAIT_ANALYSIS_ONLY"
+        )
+        _summary_open = int(
+            self.latest_position_sync.get("hermes_mt5_open_positions_count")
+            or self.latest_position_sync.get("open_demo_trades_count")
+            or 0
+        )
+        _summary_closed_pnl = float(self.latest_position_sync.get("demo_closed_pnl_today") or 0.0)
+        _summary_floating_pnl = float(self.latest_position_sync.get("demo_floating_pnl") or 0.0)
+        log.info(
+            "[CYCLE_SUMMARY] analyzed=%s demo_orders=%s open=%s closed_pnl=%s floating_pnl=%s "
+            "blocked_by_confirmation=%s blocked_by_safety=%s blocked_by_entry_guard=%s analysis_only=%s",
+            analyzed, demo_orders, _summary_open, _summary_closed_pnl, _summary_floating_pnl,
+            _blocked_by_confirmation, _blocked_by_safety, _blocked_by_entry_guard, _analysis_only,
+        )
         self._cycle_status = {
             "last_cycle_start_utc": cycle_start_utc.isoformat(),
             "last_cycle_end_utc": cycle_end_utc.isoformat(),
@@ -1736,6 +1787,7 @@ class HermesBackend:
         account = self.reader.account_snapshot()
         effective_max_spread = float(getattr(self.settings, "simo_atm_max_spread_points", 120))
         time_snapshot = self.time_engine.evaluate(broker_symbol, frames, tick)
+        simo_audit_cycle_id = utc_now_iso()
 
         hunter = self.setup_hunter.evaluate(
             broker_symbol,
@@ -1744,6 +1796,10 @@ class HermesBackend:
             time_snapshot,
             self._latest_completed_spread(frames["M5"]),
             effective_max_spread,
+            symbol_specs=symbol_specs,
+            tick=tick,
+            recent_candles=self._confirmed_candle_rows(frames["M5"]),
+            audit_cycle_id=simo_audit_cycle_id,
         )
         decision = _routeable_setup_hunter_decision(hunter.decision, hunter.best_candidate)
 
@@ -2064,6 +2120,17 @@ class HermesBackend:
         row = candles.iloc[-2] if len(candles) >= 2 else candles.iloc[-1]
         return float(row.get("spread", 0.0) or 0.0)
 
+    def _confirmed_candle_rows(self, candles) -> list[dict] | None:
+        if candles is None or candles.empty:
+            return None
+        frame = candles.iloc[:-1] if len(candles) >= 2 else candles
+        if frame is None or frame.empty:
+            return None
+        try:
+            return frame.to_dict("records")
+        except Exception:
+            return None
+
     def _account_equity(self, account: dict | None) -> float | None:
         if not account:
             return None
@@ -2088,31 +2155,55 @@ class HermesBackend:
         tick: dict | None,
         max_spread: float,
     ) -> None:
-        spread_status = "OK" if spread <= max_spread else "MAX_SPREAD"
+        symbol_specs = symbol_specs or {}
         tick = tick or {}
+        point = float(symbol_specs.get("point") or 0.0)
+        bid = tick.get("bid")
+        ask = tick.get("ask")
+        spread_price = None
+        raw_spread_points = float(spread or 0.0)
+        if bid is not None and ask is not None:
+            try:
+                bid_f = float(bid)
+                ask_f = float(ask)
+                if bid_f > 0 and ask_f > 0 and ask_f >= bid_f:
+                    spread_price = abs(ask_f - bid_f)
+                    if point > 0:
+                        raw_spread_points = spread_price / point
+            except (TypeError, ValueError):
+                spread_price = None
+        if spread_price is None and point > 0:
+            spread_price = raw_spread_points * point
+        if spread_price is None:
+            spread_price = raw_spread_points
+        spread_status = "OK" if spread <= max_spread else "MAX_SPREAD"
         log.info(
-            "[SPREAD_DIAG] symbol=%s broker_symbol=%s spread=%s point=%s digits=%s bid=%s ask=%s max_spread=%s spread_status=%s",
+            "[SPREAD_DIAG] symbol=%s broker_symbol=%s spread=%s spread_price=%s raw_spread_points=%s point=%s digits=%s bid=%s ask=%s max_spread=%s spread_status=%s",
             symbol,
             broker_symbol,
             spread,
-            symbol_specs.get("point"),
+            round(float(spread_price), 6),
+            round(float(raw_spread_points), 6),
+            point if symbol_specs else None,
             symbol_specs.get("digits"),
-            tick.get("bid"),
-            tick.get("ask"),
+            bid,
+            ask,
             max_spread,
             spread_status,
         )
         self.ingest_client.emit_bot_log(
             "SPREAD_DIAG",
-            f"symbol={symbol} spread={spread} max={max_spread} status={spread_status}",
+            f"symbol={symbol} spread={spread} spread_price={round(float(spread_price), 6)} max={max_spread} status={spread_status}",
             {
                 "symbol": symbol,
                 "broker_symbol": broker_symbol,
                 "spread": spread,
+                "spread_price": round(float(spread_price), 6),
+                "raw_spread_points": round(float(raw_spread_points), 6),
                 "max_spread": max_spread,
                 "spread_status": spread_status,
-                "bid": tick.get("bid"),
-                "ask": tick.get("ask"),
+                "bid": bid,
+                "ask": ask,
             },
         )
 

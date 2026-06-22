@@ -2,13 +2,31 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import List
+from typing import List, Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
 
 load_dotenv()
+
+
+GEOMETRIC_FIB_HIT_TOLERANCE: float = 0.015
+GEOMETRIC_MODE_DEFAULT: str = "SHADOW"
+MAX_SPREAD_ATR_MULTIPLIER: float = 0.5
+BTC_WEEKEND_MAX_SPREAD_ATR: float = 0.5
+MULTI_TF_EMA_LENGTH: int = 20
+MULTI_TF_RSI_LENGTH: int = 14
+MULTI_TF_MIN_CONFLUENCE: int = 4
+MULTI_TF_DEFAULT_TFS: tuple[str, ...] = ("M1", "M5", "M15", "H1", "H4")
+MULTI_TF_ALIGNMENT_BONUS: float = 5.0
+MULTI_TF_DIVERGENCE_PENALTY: float = 10.0
+BTC_EXIT_QUICK_ATR_MAX: float = 20.0
+BTC_EXIT_DYNAMIC_ATR_MAX: float = 60.0
+BTC_SL_TRAIL_START_ATR: float = 2.0
+BTC_SL_TRAIL_GAP_ATR: float = 1.0
+BTC_SL_BREAKEVEN_BUFFER_ATR: float = 0.25
+SYMBOL_TRADE_COOLDOWN_MINUTES: int = 15
 
 
 def _bool_env(name: str, default: bool) -> bool:
@@ -65,7 +83,7 @@ class Settings(BaseModel):
     quick_exit_enabled: bool = True
     quick_exit_demo_only: bool = True
     quick_exit_magic_number: int = 909002
-    quick_exit_tp_usd: float = 1.50
+    quick_exit_tp_usd: float = 4.00
     quick_exit_lock_usd: float = 0.80
     quick_exit_be_buffer_usd: float = 0.10
     quick_exit_trail_start_usd: float = 1.00
@@ -158,6 +176,15 @@ class Settings(BaseModel):
     hermes_confluence_strategy_aware: bool = False
     of_native_key_level_tol_atr: float = 0.25
     geometric_confluence_mode: str = "SHADOW"
+    geometric_mode: Literal["SHADOW", "BONUS", "SOFT_CONFIRM", "EXECUTION_FILTER", "LIVE"] = "SHADOW"
+    multi_tf_momentum_enabled: bool = True
+    multi_tf_momentum_timeframes: str = "M1,M5,M15,H1,H4"
+    multi_tf_momentum_ema_length: int = MULTI_TF_EMA_LENGTH
+    multi_tf_momentum_rsi_length: int = MULTI_TF_RSI_LENGTH
+    multi_tf_momentum_min_confluence: int = MULTI_TF_MIN_CONFLUENCE
+    btc_exit_arbiter_enabled: bool = True
+    symbol_trade_cooldown_enabled: bool = True
+    symbol_trade_cooldown_minutes: int = SYMBOL_TRADE_COOLDOWN_MINUTES
     geometric_confirm_bonus: float = 5.0
     geometric_ratio_tolerance: float = 0.05
     geometric_fib_hit_tolerance: float = 0.015
@@ -702,6 +729,15 @@ def get_settings() -> Settings:
         hermes_confluence_strategy_aware=_bool_env("HERMES_CONFLUENCE_STRATEGY_AWARE", False),
         of_native_key_level_tol_atr=float(os.getenv("OF_NATIVE_KEY_LEVEL_TOL_ATR", "0.25")),
         geometric_confluence_mode=os.getenv("GEOMETRIC_CONFLUENCE_MODE", "SHADOW").strip().upper(),
+        geometric_mode=os.getenv("GEOMETRIC_MODE", GEOMETRIC_MODE_DEFAULT).strip().upper(),
+        multi_tf_momentum_enabled=_bool_env("MULTI_TF_MOMENTUM_ENABLED", True),
+        multi_tf_momentum_timeframes=os.getenv("MULTI_TF_MOMENTUM_TIMEFRAMES", ",".join(MULTI_TF_DEFAULT_TFS)),
+        multi_tf_momentum_ema_length=_int_env("MULTI_TF_MOMENTUM_EMA_LENGTH", MULTI_TF_EMA_LENGTH),
+        multi_tf_momentum_rsi_length=_int_env("MULTI_TF_MOMENTUM_RSI_LENGTH", MULTI_TF_RSI_LENGTH),
+        multi_tf_momentum_min_confluence=_int_env("MULTI_TF_MOMENTUM_MIN_CONFLUENCE", MULTI_TF_MIN_CONFLUENCE),
+        btc_exit_arbiter_enabled=_bool_env("BTC_EXIT_ARBITER_ENABLED", True),
+        symbol_trade_cooldown_enabled=_bool_env("SYMBOL_TRADE_COOLDOWN_ENABLED", True),
+        symbol_trade_cooldown_minutes=_int_env("SYMBOL_TRADE_COOLDOWN_MINUTES", SYMBOL_TRADE_COOLDOWN_MINUTES),
         geometric_confirm_bonus=float(os.getenv("GEOMETRIC_CONFIRM_BONUS", "5.0")),
         geometric_ratio_tolerance=float(os.getenv("GEOMETRIC_RATIO_TOLERANCE", "0.05")),
         geometric_fib_hit_tolerance=float(os.getenv("GEOMETRIC_FIB_HIT_TOLERANCE", "0.015")),

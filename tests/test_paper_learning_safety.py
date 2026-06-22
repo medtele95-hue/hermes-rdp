@@ -94,6 +94,7 @@ def demo_settings(**overrides) -> Settings:
         "demo_magic_number": 909002,
         "demo_comment": "HERMES_DEMO_KELLY_24H",
         "demo_max_lot": 0.01,
+        "symbol_trade_cooldown_enabled": False,
         "demo_max_open_trades": 1,
         "demo_max_trades_per_day": 5,
         "demo_max_trades_per_day_total": 15,
@@ -2619,13 +2620,13 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
     def quick_exit_symbol_info(self) -> SimpleNamespace:
         return SimpleNamespace(trade_tick_value=1.0, trade_tick_size=0.01, trade_contract_size=0.0, digits=2, point=0.01)
 
-    def test_quick_exit_closes_hermes_demo_position_at_one_fifty_profit(self) -> None:
+    def test_quick_exit_closes_hermes_demo_position_at_four_usd_tp(self) -> None:
         router = self.router()
         pos = self.quick_exit_position()
         fake_result = SimpleNamespace(retcode=10009, order=5001, deal=0)
         with (
             patch("app.mt5.demo_router.mt5.positions_get", return_value=[pos]),
-            patch("app.mt5.demo_router.mt5.symbol_info_tick", return_value=SimpleNamespace(bid=101.6, ask=101.7)),
+            patch("app.mt5.demo_router.mt5.symbol_info_tick", return_value=SimpleNamespace(bid=104.1, ask=104.2)),
             patch("app.mt5.demo_router.mt5.symbol_info", return_value=self.quick_exit_symbol_info()),
             patch("app.mt5.demo_router.mt5.order_send", return_value=fake_result) as send,
         ):

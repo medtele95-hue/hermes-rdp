@@ -24,6 +24,8 @@ from app.mt5.account_mode import is_mt5_demo_account
 from app.mt5.smart_rescue import is_hermes_btc_pos
 from app.mt5.btc_dynamic_exit import BtcDynamicExit
 from app.mt5.btc_sl_engine import BtcSlEngine
+from app.mt5.btc_exit_arbiter import select_exit_manager
+from app.utils.throttle import log_event_throttled
 
 _dynamic_exit = BtcDynamicExit()
 _sl_engine = BtcSlEngine()
@@ -164,9 +166,11 @@ class BtcFastExitDaemon:
             self._last_tick = now_ts
             self._fast_exit_positive_candidates = positive_count
 
-        log.info(
-            "[OLD_BTC_FAST_EXIT_TICK] open_count=%s positive_count=%s",
-            len(hermes_btc), positive_count,
+        _tick_state = (len(hermes_btc), positive_count)
+        log_event_throttled(
+            "OLD_BTC_FAST_EXIT_TICK_ZERO_STATE" if _tick_state == (0, 0) else "OLD_BTC_FAST_EXIT_TICK",
+            "[OLD_BTC_FAST_EXIT_TICK] open_count=%s positive_count=%s" % _tick_state,
+            state=_tick_state,
         )
 
         self._publish_state()
@@ -275,8 +279,10 @@ class BtcFastExitDaemon:
                 )
                 if _da_elapsed >= 5.0 or _da_changed:
                     log.info(
-                        "[OLD_BTC_DYNAMIC_EXIT_APPLIED] ticket=%s tp=%.3f rr=%.2f atr=%.2f trail=%.3f",
+                        "[BTC_DYNAMIC_EXIT_ADVISORY] ticket=%s tp_usd=%.3f rr_target=%.2f"
+                        " realized_rr=%.4f atr=%.4f trail=%.3f",
                         ticket, _da_tp, _dyn.get("rr_target") or 0,
+                        _dyn.get("realized_rr") or 0,
                         _dyn.get("atr_value") or 0, _da_trail,
                     )
                     self._dyn_applied_throttle[ticket] = {"ts": _da_now, "tp": _da_tp, "trail": _da_trail}
@@ -296,8 +302,28 @@ class BtcFastExitDaemon:
             _dyn = None
             _dyn_mode = "fallback"
 
+        _arbiter_enabled = getattr(self.settings, "btc_exit_arbiter_enabled", True) is True
+        if _arbiter_enabled:
+            _authority_result = select_exit_manager(
+                (_dyn or {}).get("atr_value"),
+                str(getattr(pos, "grade", "UNKNOWN") or "UNKNOWN"),
+            )
+            _exit_authority = str(_authority_result["manager"])
+        else:
+            _exit_authority = "DYNAMIC" if _dyn_mode == "dynamic" and _dyn is not None else "QUICK"
+            _authority_result = {"reason": "LEGACY_TEST_COMPATIBILITY"}
+        log.info(
+            "[BTC_EXIT_AUTHORITY] ticket=%s manager=%s reason=%s enabled_managers=%s",
+            ticket, _exit_authority, _authority_result.get("reason"), _exit_authority,
+        )
+
         # SL Engine — trailing SL/TP modification via MT5 (30 s throttle per ticket)
-        if not in_progress and _dyn_mode == "dynamic" and _dyn is not None:
+        if (
+            not in_progress
+            and _dyn_mode == "dynamic"
+            and _dyn is not None
+            and (not _arbiter_enabled or _exit_authority in {"SWING", "DYNAMIC"})
+        ):
             _atr_for_sl = float(_dyn.get("atr_value") or 0)
             if _atr_for_sl > 0:
                 _now = time.time()
@@ -315,6 +341,7 @@ class BtcFastExitDaemon:
                             exit_mode=_dyn_mode,
                             vwap=None,
                             candles_m5=rates_for_dynamic or [],
+                            current_price=float(getattr(pos, "price_current", 0) or 0) or None,
                         )
                         log.info(
                             "[SL_ENGINE_CYCLE] ticket=%s applied=%s method=%s sl=%s reason=%s",
@@ -338,7 +365,9 @@ class BtcFastExitDaemon:
             str(getattr(self.settings, "hermes_execution_profile", "") or "").upper().strip()
             == "LOVABLE_BTC_OLD_SYSTEM"
         )
-        if _dyn_mode == "dynamic" and _dyn is not None:
+        if _arbiter_enabled and _exit_authority == "SWING":
+            reason = None
+        elif _exit_authority == "DYNAMIC" and _dyn_mode == "dynamic" and _dyn is not None:
             _tp = float(_dyn["tp_usd"])
             _lock = float(_dyn["lock_usd"])
             _trail_start = float(_dyn["trail_start_usd"])
@@ -391,6 +420,10 @@ class BtcFastExitDaemon:
         if reason is None:
             return
 
+        log.info(
+            "[BTC_EXIT_DECISION] ticket=%s authority=%s action=CLOSE reason=%s",
+            ticket, _exit_authority, reason,
+        )
         log.info(
             "[OLD_BTC_FAST_EXIT_CLOSE_NOW] ticket=%s profit=%s reason=%s",
             ticket, round(profit, 4), reason,

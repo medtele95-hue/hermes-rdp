@@ -48,6 +48,7 @@ def _settings(**kwargs) -> SimpleNamespace:
         "demo_magic_number": 909002,
         "allow_live_trading": False,
         "demo_only": True,
+        "btc_exit_arbiter_enabled": False,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
