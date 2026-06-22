@@ -1158,6 +1158,7 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                 mtfa_score,
                 _of_setup_score,
                 rr,
+                of_score=_of_setup_score,
             )
             if _of_cm["hard_block"]:
                 failed.append("CONFIRMATION_MATRIX_HARD_BLOCK")
@@ -1245,6 +1246,7 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
             mtfa_score,
             _btc_setup,
             rr,
+            of_score=_btc_setup,
         )
         _btc_confluence = _btc_setup + _compute_penalty(smc_score) + _compute_penalty(mtfa_score)
         _btc_safety_pass = str(payload.get("safety_guard_status") or "").upper() == "PASS"

@@ -11,9 +11,9 @@ MTFA: PASS >= 60, SOFT_FAIL 35-59, STRONG_FAIL < 35
 Routing rules
 -------------
 SOFT_FAIL   -> warning + score penalty only; never hard-blocks.
-STRONG_FAIL -> hard block ONLY when setup_score < 75 OR rr < 1.5.
-               If setup_score >= 75 AND rr >= 1.5, STRONG_FAIL is
-               treated as a penalty, not a block.
+STRONG_FAIL -> hard-blocks by default.
+  Exception (§4.6): ORDER_FLOW_NATIVE strategies with of_score >= 90 convert
+  STRONG_FAIL from hard-block to soft penalty only ([SMC_ARBITRATOR_OF_OVERRIDE]).
 
 Confluence adjustments
 ----------------------
@@ -35,6 +35,14 @@ _MTFA_PASS_THRESHOLD = 60
 _MTFA_SOFT_FAIL_THRESHOLD = 35
 
 _ADJUSTMENTS = {"PASS": 10.0, "SOFT_FAIL": -5.0, "STRONG_FAIL": -15.0}
+
+# §4.6 — strategies that run on order-flow signals; STRONG_FAIL waivable at high OF score
+_ORDER_FLOW_NATIVE = frozenset({
+    "ORDER_FLOW_EXECUTION_AGENT",
+    "GOLD_LIQUIDITY_HUNTER_PRO",
+    "BTC_SCALPING_AGENT",
+    "GOLD_ORDER_FLOW_CVD_VWAP",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +88,7 @@ def evaluate(
     mtfa_score: float,
     setup_score: float,
     rr: float | None,
+    of_score: float = 0.0,
 ) -> dict:
     """Evaluate the confirmation matrix and emit required structured logs.
 
@@ -90,6 +99,7 @@ def evaluate(
         mtfa_score:  raw MTFA score 0-100
         setup_score: candidate setup/edge score 0-100 (proxy for total confluence)
         rr:          risk/reward ratio, or None if not computed
+        of_score:    order-flow agent score 0-100 (used for §4.6 override)
 
     Returns a dict with:
         smc_calibrated_status   PASS | SOFT_FAIL | STRONG_FAIL
@@ -103,26 +113,39 @@ def evaluate(
     rr_ok = rr is not None and rr >= 1.5
     confluence_ok = setup_score >= 75
 
-    # STRONG_FAIL only hard-blocks when the overall setup is weak
-    smc_hard = smc_status == "STRONG_FAIL" and not (confluence_ok and rr_ok)
-    mtfa_hard = mtfa_status == "STRONG_FAIL" and not (confluence_ok and rr_ok)
+    # §4.6 — ORDER_FLOW_NATIVE + of_score >= 90 converts STRONG_FAIL hard-block to soft penalty
+    _of_native = str(strategy or "").upper() in _ORDER_FLOW_NATIVE
+    _of_override = _of_native and float(of_score or 0.0) >= 90.0
+    if _of_override:
+        log.info(
+            "[SMC_ARBITRATOR_OF_OVERRIDE] symbol=%s strategy=%s"
+            " smc_status=%s mtfa_status=%s of_score=%.1f"
+            " → converting hard_block to soft_penalty",
+            symbol, strategy, smc_status, mtfa_status, float(of_score),
+        )
+        smc_hard = False
+        mtfa_hard = False
+    else:
+        order_flow = str(strategy or "").upper() == "ORDER_FLOW_EXECUTION_AGENT"
+        smc_hard = smc_status == "STRONG_FAIL" and (order_flow or not (confluence_ok and rr_ok))
+        mtfa_hard = mtfa_status == "STRONG_FAIL" and (order_flow or not (confluence_ok and rr_ok))
     hard_block = smc_hard or mtfa_hard
 
     reasons: list[str] = []
-    if smc_hard:
+    if _of_override:
+        reasons.append("OF_OVERRIDE_APPLIED")
+    elif smc_hard:
         reasons.append("SMC_STRONG_FAIL")
     if mtfa_hard:
         reasons.append("MTFA_STRONG_FAIL")
     hard_block_reason = ",".join(reasons) if reasons else "NONE"
 
     log.info(
-        "[CONFIRMATION_MATRIX] symbol=%s strategy=%s smc_score=%.1f smc_status=%s"
-        " mtfa_score=%.1f mtfa_status=%s hard_block=%s reason=%s",
+        "[CONFIRMATION_MATRIX] symbol=%s strategy=%s smc_status=%s"
+        " mtfa_status=%s hard_block=%s reason=%s",
         symbol,
         strategy,
-        float(smc_score),
         smc_status,
-        float(mtfa_score),
         mtfa_status,
         str(hard_block).lower(),
         hard_block_reason,
@@ -139,9 +162,10 @@ def evaluate(
     if hard_block:
         log.info(
             "[CONFIRMATION_BLOCK] symbol=%s strategy=%s"
-            " reason=SMC_MTFA_STRONG_FAIL_WITH_LOW_CONFLUENCE",
+            " reason=%s",
             symbol,
             strategy,
+            hard_block_reason,
         )
 
     return {

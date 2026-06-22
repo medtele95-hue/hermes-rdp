@@ -1006,7 +1006,14 @@ class HermesBackend:
 
             # Enrich best candidate with confluence score; also used by final confluence gate below
             _conf_strategy = str((hunter.best_candidate or {}).get("best_strategy") or "")
-            _conf_strat_aware = getattr(self.settings, "hermes_confluence_strategy_aware", False) is True
+            _of_native_strats = frozenset({
+                "ORDER_FLOW_EXECUTION_AGENT", "GOLD_LIQUIDITY_HUNTER_PRO",
+                "BTC_SCALPING_AGENT", "GOLD_ORDER_FLOW_CVD_VWAP",
+            })
+            _conf_strat_aware = (
+                getattr(self.settings, "hermes_confluence_strategy_aware", False) is True
+                or str(_conf_strategy or "").upper() in _of_native_strats
+            )
             _conf: dict = {}
             if _conf_strategy and _conf_strategy not in ("NONE", ""):
                 try:
