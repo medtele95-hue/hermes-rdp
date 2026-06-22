@@ -149,6 +149,16 @@ class ConfluenceEngine:
         smc_cal_status = str(ctx.get("smc_calibrated_status") or _smc_ctx.get("smc_calibrated_status") or _smc_cal(smc_raw))
         smc_contrib = _smc_adj(smc_cal_status)
 
+        # §4.5 SMC arbitrator: OF score >= 90 + SOFT_FAIL → halve penalty (-2.5 instead of -5)
+        if smc_cal_status == "SOFT_FAIL" and smc_contrib < 0.0:
+            _arb_score = float((ctx.get("order_flow_reader") or {}).get("score") or 0.0)
+            if _arb_score >= 90.0:
+                log.info(
+                    "[SMC_ARBITRATOR] symbol=%s smc_penalty=%.1f→%.1f of_score=%.1f",
+                    symbol, smc_contrib, smc_contrib / 2, _arb_score,
+                )
+                smc_contrib /= 2
+
         # --- MTFA contribution: PASS +10, SOFT_FAIL -5, STRONG_FAIL -15 ---
         _mtfa_ctx = ctx.get("mtfa") or {}
         mtfa_raw = float(ctx.get("mtfa_score") or _mtfa_ctx.get("mtfa_score") or 0.0)

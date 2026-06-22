@@ -980,26 +980,29 @@ class HermesBackend:
                 "route_status": "PENDING",  # updated to final value below
                 "last_update_utc": utc_now_iso(),
             }
-            # Inject BTC ORDER_FLOW_EXECUTION_AGENT bonus into analysis context for confluence engine
-            if str(requested_symbol or "").upper() in {"BTCUSD#", "BTCUSD"}:
-                _of_sig = next(
-                    (s for s in (analysis.get("strategy_signals") or [])
-                     if str((s or {}).get("strategy") or "").upper() == "ORDER_FLOW_EXECUTION_AGENT"),
-                    {},
-                )
+            # Inject ORDER_FLOW_EXECUTION_AGENT output into analysis for confluence engine (all symbols)
+            _of_sig = next(
+                (s for s in (analysis.get("strategy_signals") or [])
+                 if str((s or {}).get("strategy") or "").upper() == "ORDER_FLOW_EXECUTION_AGENT"),
+                {},
+            )
+            if _of_sig:
                 _of_grade = str(_of_sig.get("grade") or "").upper()
                 _of_score = float(_of_sig.get("confidence") or _of_sig.get("score") or _of_sig.get("edge_score") or 0)
-                _btc_of_bonus = 0.0
-                if _of_grade == "A" and _of_score >= 75:
-                    _btc_of_bonus = 8.0 + (_of_score - 75) * 0.4
-                elif _of_grade == "B" and _of_score >= 65:
-                    _btc_of_bonus = 4.0 + (_of_score - 65) * 0.2
-                if _btc_of_bonus > 0:
-                    analysis["btc_order_flow_bonus"] = _btc_of_bonus
-                    log.info(
-                        "[CONFLUENCE_BTC_OF_BONUS] symbol=%s of_grade=%s of_score=%s bonus=%.2f",
-                        requested_symbol, _of_grade, _of_score, _btc_of_bonus,
-                    )
+                _of_signal = str(_of_sig.get("signal") or "").upper()
+                analysis["order_flow_reader"] = {"grade": _of_grade, "score": _of_score, "signal": _of_signal}
+                if str(requested_symbol or "").upper() in {"BTCUSD#", "BTCUSD"}:
+                    _btc_of_bonus = 0.0
+                    if _of_grade in {"A", "A+"} and _of_score >= 75:
+                        _btc_of_bonus = 8.0 + (_of_score - 75) * 0.4
+                    elif _of_grade == "B" and _of_score >= 65:
+                        _btc_of_bonus = 4.0 + (_of_score - 65) * 0.2
+                    if _btc_of_bonus > 0:
+                        analysis["btc_order_flow_bonus"] = _btc_of_bonus
+                        log.info(
+                            "[CONFLUENCE_BTC_OF_BONUS] symbol=%s of_grade=%s of_score=%s bonus=%.2f",
+                            requested_symbol, _of_grade, _of_score, _btc_of_bonus,
+                        )
 
             # Enrich best candidate with confluence score; also used by final confluence gate below
             _conf_strategy = str((hunter.best_candidate or {}).get("best_strategy") or "")
