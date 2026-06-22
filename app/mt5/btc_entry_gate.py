@@ -6,7 +6,10 @@ No MT5 calls here. Order execution stays exclusively in app/mt5/demo_router.py.
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
+
+from app.logger import log
 
 _BTC_SYMBOLS: frozenset[str] = frozenset({"BTCUSD#", "BTCUSD"})
 _BTC_SCALPING = "BTC_SCALPING_AGENT"
@@ -31,6 +34,8 @@ def evaluate_btc_entry_gate(
     spread: float | None = None,
     max_spread: float | None = None,
     confidence: float | None = None,
+    closed_pnl_today: float | None = None,
+    recent_btc_results: list[dict] | None = None,
 ) -> dict:
     """Run all shared BTC entry checks and return PASS or BLOCK.
 
@@ -97,6 +102,28 @@ def evaluate_btc_entry_gate(
         conf_block = _market_confirmation_block(dirn, market_context)
         if conf_block:
             return _block(conf_block, "MARKET_CONFIRMATION_CHECK", strat)
+
+    # H. Daily loss limit — block new entries when day's closed P&L ≤ -$5
+    if closed_pnl_today is not None and closed_pnl_today <= -5.00:
+        log.info(
+            "[BTC_ENTRY_GUARD] status=BLOCK reason=DAILY_LOSS_LIMIT"
+            " closed_pnl_today=%.2f limit=-5.00 exits_allowed=true",
+            closed_pnl_today,
+        )
+        return _block("DAILY_LOSS_LIMIT", "DAILY_LOSS_CHECK", strat)
+
+    # I. Loss streak — block for 90 min when last 2 HERMES BTC closed trades are both losses
+    if recent_btc_results is not None and len(recent_btc_results) >= 2:
+        last_two = recent_btc_results[-2:]
+        if all(float(r.get("profit") or 0) < 0 for r in last_two):
+            streak_ts = float(last_two[-1].get("close_time") or 0)
+            elapsed_minutes = (time.time() - streak_ts) / 60.0
+            if elapsed_minutes < 90.0:
+                log.info(
+                    "[BTC_ENTRY_GUARD] status=BLOCK reason=LOSS_STREAK"
+                    " losses=2 cooldown_minutes=90 exits_allowed=true",
+                )
+                return _block("LOSS_STREAK", "LOSS_STREAK_CHECK", strat)
 
     # PASS
     score = _compute_score(confidence, market_context, dirn)

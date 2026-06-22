@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 
+from app.config import GEOMETRIC_FIB_HIT_TOLERANCE
 from app.logger import log
 
 # ---------------------------------------------------------------------------
@@ -22,7 +23,6 @@ from app.logger import log
 GEOMETRIC_CONFLUENCE_MODE: str = "SHADOW"
 GEOMETRIC_CONFIRM_BONUS: float = 5.0
 GEOMETRIC_RATIO_TOLERANCE: float = 0.05
-GEOMETRIC_FIB_HIT_TOLERANCE: float = 0.015
 
 SCHEMA_VERSION: str = "geometric_confluence.v1"
 
@@ -210,7 +210,7 @@ def _validate_harmonic(ratios: dict) -> tuple[bool, str, float]:
             (ratios["D_XC"],  spec["D_XC"]),
         ]
         total  = sum(1 for _, r in checks if r is not None)
-        passed = sum(1 for v, r in checks if _in_range(v, r))
+        passed = sum(1 for v, r in checks if r is not None and _in_range(v, r))
         if total == 0:
             continue
         if passed < total:
@@ -388,7 +388,7 @@ def _spiral_confluence(price: float, high: float, low: float) -> tuple[bool, flo
         return False, None
     rng = high - low
     phi = (1 + math.sqrt(5)) / 2
-    tol = rng * 0.015
+    tol = rng * GEOMETRIC_FIB_HIT_TOLERANCE
     for n in (1, 2):
         for base, sign in ((low, 1), (high, -1)):
             lvl = base + sign * rng / (phi ** n)
@@ -575,6 +575,12 @@ def analyze_geometric_confluence(
     sw_win = 5 if primary is not None and not getattr(primary, "empty", True) and len(primary) >= 50 else 3
     swing_pts = _detect_swing_points(primary, window=sw_win)
     alt_swings = _alternating_swings(swing_pts)
+    log.info(
+        "[GEOMETRIC_SWINGS] symbol=%s detected_swings=%s swings=%s",
+        symbol,
+        len(alt_swings),
+        [(index, round(price, 6), kind) for index, price, kind in alt_swings[-5:]],
+    )
 
     # ── Swing high/low for Fib reference range ───────────────────────────
     sh, sl = _recent_swing_range(fib_rates, window=5)
@@ -612,6 +618,10 @@ def analyze_geometric_confluence(
         _SPECS.update(_saved)
     else:
         harm_pattern, harm_grade, harm_score, harm_ratios = _detect_best_harmonic(swing_pts, direction)
+    log.info(
+        "[GEOMETRIC_RATIOS] symbol=%s pattern=%s quality=%s ratios=%s",
+        symbol, harm_pattern, harm_grade, harm_ratios,
+    )
 
     # ── Fibonacci ─────────────────────────────────────────────────────────
     ret_lvls, ext_lvls = _fib_levels(sh, sl)

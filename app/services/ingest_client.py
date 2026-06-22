@@ -342,7 +342,7 @@ class IngestClient:
             self._fail_soft_logged = False
 
     def _log_skip(self) -> None:
-        if should_emit("LOVABLE_INGEST_CB_SKIP"):
+        if should_emit("LOVABLE_INGEST_CB_SKIP", interval_seconds=300):
             log.warning("[LOVABLE_INGEST_HEALTH] status=SKIP reason=CIRCUIT_BREAKER_ACTIVE")
 
     def get_open_demo_trades(self, magic_number: int) -> dict:

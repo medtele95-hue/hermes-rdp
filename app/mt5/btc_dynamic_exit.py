@@ -74,6 +74,7 @@ class BtcDynamicExit:
         rr_target = 1.8 + (float(confluence_score) / 100.0) * 1.7
         sl_usd = max(0.8, min(3.0, atr * 1.5))
         tp_usd = max(1.0, min(6.0, sl_usd * rr_target))
+        realized_rr = round(tp_usd / sl_usd, 4)
         lock_usd = sl_usd * 0.5
         trail_gap_usd = max(0.3, min(1.5, atr * 0.3))
         trail_start_usd = tp_usd * 0.8
@@ -87,8 +88,8 @@ class BtcDynamicExit:
 
         if _log_key is None:
             log.info(
-                "[BTC_DYNAMIC_EXIT] atr=%.4f rr=%.2f sl=%.3f tp=%.3f trail=%.3f mode=dynamic",
-                atr, rr_target, sl_usd, tp_usd, trail_gap_usd,
+                "[BTC_DYNAMIC_EXIT] atr=%.4f rr_target=%.2f realized_rr=%.4f sl=%.3f tp=%.3f trail=%.3f mode=dynamic",
+                atr, rr_target, realized_rr, sl_usd, tp_usd, trail_gap_usd,
             )
         else:
             _now = time.monotonic()
@@ -101,8 +102,8 @@ class BtcDynamicExit:
             )
             if _elapsed >= _LOG_THROTTLE_S or _changed:
                 log.info(
-                    "[BTC_DYNAMIC_EXIT] atr=%.4f rr=%.2f sl=%.3f tp=%.3f trail=%.3f mode=dynamic",
-                    atr, rr_target, sl_usd, tp_usd, trail_gap_usd,
+                    "[BTC_DYNAMIC_EXIT] atr=%.4f rr_target=%.2f realized_rr=%.4f sl=%.3f tp=%.3f trail=%.3f mode=dynamic",
+                    atr, rr_target, realized_rr, sl_usd, tp_usd, trail_gap_usd,
                 )
                 self._dyn_last[_log_key] = {"ts": _now, "sl": sl_usd, "tp": tp_usd, "trail": trail_gap_usd}
 
@@ -114,6 +115,7 @@ class BtcDynamicExit:
             "trail_start_usd": round(trail_start_usd, 4),
             "atr_value": round(atr, 4),
             "rr_target": round(rr_target, 4),
+            "realized_rr": realized_rr,
             "mode": "dynamic",
         }
 

@@ -85,7 +85,7 @@ def _time_gate() -> dict:
 
 
 def _of_signal(score: float = 80.0, grade_score: float = 80.0, rr: float = 1.5) -> dict:
-    """Minimal ORDER_FLOW_EXECUTION_AGENT signal."""
+    """Minimal ORDER_FLOW_EXECUTION_AGENT signal with required confluence fields."""
     return {
         "strategy": "ORDER_FLOW_EXECUTION_AGENT",
         "setup_type": "ORDER_FLOW_EXECUTION_AGENT",
@@ -108,6 +108,8 @@ def _of_signal(score: float = 80.0, grade_score: float = 80.0, rr: float = 1.5) 
         "market_open": True,
         "order_flow_execution_agent_signal": "SELL",
         "order_flow_execution_agent_reason": "CVD_BEARISH_BELOW_VAL",
+        "final_confluence_grade": "A",
+        "final_confluence_score": 70.0,
     }
 
 

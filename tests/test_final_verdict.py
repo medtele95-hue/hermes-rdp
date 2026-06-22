@@ -102,6 +102,8 @@ def _of_signal(score: float = 80.0, rr: float = 1.5) -> dict:
         "market_open": True,
         "order_flow_execution_agent_signal": "SELL",
         "order_flow_execution_agent_reason": "CVD_BEARISH_BELOW_VAL",
+        "final_confluence_grade": "A",
+        "final_confluence_score": 70.0,
     }
 
 
@@ -116,6 +118,12 @@ def _run_hunter(symbol: str, broker_symbol: str, signals: list[dict], s=None):
 # ---------------------------------------------------------------------------
 
 class TestMLRFConfirmatorStub(unittest.TestCase):
+
+    def setUp(self) -> None:
+        from app.utils import throttle
+        throttle._event_state.pop("ML_RF_CONFIRMATOR:GOLD#", None)
+        for symbol in ("BTCUSD#", "GOLD#", "EURUSD"):
+            throttle._event_state.pop(f"FINAL_VERDICT_ML_UNAVAILABLE:{symbol}", None)
 
     def test_returns_unavailable(self) -> None:
         result = ml_confirm("BTCUSD#", {}, MagicMock())
@@ -168,6 +176,11 @@ class TestMLRFConfirmatorStub(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestSMCOBNarratorStub(unittest.TestCase):
+
+    def setUp(self) -> None:
+        from app.utils import throttle
+        for name in ("SMC_OB_NARRATOR", "SMC_OB_AVOID", "SMC_OB_ENTRY_WINDOW"):
+            throttle._event_state.pop(f"{name}:GOLD#", None)
 
     def test_smc_ob_avoid_is_false(self) -> None:
         result = smc_narrate("GOLD#", {}, MagicMock())

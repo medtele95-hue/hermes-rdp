@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -80,7 +81,22 @@ class SMCConfluenceTagger:
                 m1_confirmation,
                 setup_tags,
             )
-            status, reason = _status_reason(direction, score, missing, m15_confirmation, m5_confirmation, m1_confirmation)
+            weekend_fallback = (
+                _is_btc_symbol(symbol)
+                and _is_weekend_utc()
+                and any(name in missing for name in ("M15", "M5", "M1"))
+                and "H4" not in missing
+                and "H1" not in missing
+            )
+            if weekend_fallback:
+                score = 50
+                status, reason = "NEUTRAL", "SMC_WEEKEND_FALLBACK_H1"
+                log.info(
+                    "[SMC_WEEKEND_FALLBACK_H1] symbol=%s direction=%s h4=%s h1=%s missing=%s",
+                    symbol, direction or "WAIT", h4_direction, h1_trend, ",".join(missing),
+                )
+            else:
+                status, reason = _status_reason(direction, score, missing, m15_confirmation, m5_confirmation, m1_confirmation)
             out = {
                 "smc_h4_direction": h4_direction,
                 "smc_h4_key_level_nearby": bool(h4_key_level),
@@ -102,6 +118,7 @@ class SMCConfluenceTagger:
             self._log(symbol, direction or "WAIT", out)
             return out
         except Exception as exc:
+            log.error("[SMC_TAGGER_ERROR] symbol=%s error=%s", symbol, exc)
             status = "NOT_APPLICABLE" if direction in {"", "WAIT", "NONE", "NULL"} else "FAIL"
             out = _default(f"SMC_TAGGER_ERROR:{exc}", status)
             self._log(symbol, direction or "WAIT", out)
@@ -144,6 +161,14 @@ def _default(reason: str, status: str = "NOT_APPLICABLE") -> dict:
         "smc_confluence_reason": reason,
         "smc_calibrated_status": _calibrate_smc(0),
     }
+
+
+def _is_btc_symbol(symbol: object) -> bool:
+    return str(symbol or "").upper().rstrip("#").startswith("BTCUSD")
+
+
+def _is_weekend_utc() -> bool:
+    return datetime.now(timezone.utc).weekday() >= 5
 
 
 def _frame(frames: dict, key: str) -> pd.DataFrame | None:

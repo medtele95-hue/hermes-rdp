@@ -183,7 +183,7 @@ def _build_butterfly_bullish() -> tuple:
 def _build_bat_bullish() -> tuple:
     X, A = 100.0, 200.0
     B = A - 0.450 * (A - X)          # AB = 0.45 × XA (in 0.382-0.5)
-    C = B + 0.500 * (A - B)          # BC in 0.382-0.886
+    C = B + 0.886 * (A - B)          # BC upper bound keeps CD_BC within Bat range
     D = A - 0.886 * (A - X)          # D_XA = 0.886
     return X, A, B, C, D
 
@@ -981,3 +981,260 @@ class TestMainPyIntegrationPath:
             "force_active_handoff must remain False for a WAIT candidate. "
             "Bonus-inflated confluence score cannot open a trade by itself."
         )
+
+
+class TestGeometricEngineV2:
+    TOLERANCE = {"AB_XA": 0.10, "BC_AB": 0.10, "CD_BC": 0.10, "D_XA": 0.10}
+
+    def test_spread_metrics_convert_points_to_price_for_btc(self):
+        from app.mt5.geometric_engine_v2 import resolve_spread_metrics
+        metrics = resolve_spread_metrics(2250, atr=41.0, spread_points=2250, point=0.01, max_spread=2500)
+        assert metrics["spread_price"] == 22.5
+        assert round(metrics["spread_to_atr"], 4) == round(22.5 / 41.0, 4)
+
+    def test_spread_metrics_convert_points_to_price_for_gold(self):
+        from app.mt5.geometric_engine_v2 import resolve_spread_metrics
+        metrics = resolve_spread_metrics(25, atr=15.0, spread_points=25, point=0.01, max_spread=30)
+        assert metrics["spread_price"] == 0.25
+        assert metrics["broker_spread_status"] == "OK"
+
+    def test_spread_metrics_convert_points_to_price_for_eurusd(self):
+        from app.mt5.geometric_engine_v2 import resolve_spread_metrics
+        metrics = resolve_spread_metrics(43, atr=0.0012, spread_points=43, point=0.00001, max_spread=50)
+        assert round(metrics["spread_price"], 5) == 0.00043
+        assert metrics["spread_to_atr"] < 1.0
+
+    def test_detect_swings_returns_atr_qualified_alternating_points(self):
+        from app.mt5.geometric_engine_v2 import detect_swings
+        swings = detect_swings(
+            [1, 2, 5, 2, 1, 2, 6, 2, 1],
+            [0, 1, 2, 1, -2, 1, 2, 1, 0],
+            [0.5, 1.5, 3, 1.5, -0.5, 1.5, 3, 1.5, 0.5],
+            atr=1.0,
+        )
+        assert [(s.index, s.type) for s in swings] == [(2, "HIGH"), (4, "LOW"), (6, "HIGH")]
+
+    def test_detect_swings_rejects_invalid_or_sub_atr_input(self):
+        from app.mt5.geometric_engine_v2 import detect_swings
+        assert detect_swings([1, 2], [1], [1, 2], atr=1.0) == []
+        assert detect_swings([1, 1.1, 1], [0.9, 1, 0.9], [1, 1, 1], atr=10.0) == []
+
+    def test_gartley_perfect_ratios_quality_95(self):
+        from app.mt5.geometric_engine_v2 import classify_harmonic_pattern
+        result = classify_harmonic_pattern(0, 100, 38.2, 76.7014, 21.4, 10, self.TOLERANCE)
+        assert result is not None
+        assert result["pattern"] == "GARTLEY"
+        assert result["quality"] >= 95.0
+
+    def test_gartley_sloppy_ratios_quality_below_50(self):
+        from app.mt5.geometric_engine_v2 import classify_harmonic_pattern
+        result = classify_harmonic_pattern(0, 100, 90, 95, 94, 10, self.TOLERANCE)
+        assert result is None
+
+    def test_ratio_error_exact_is_lower_than_outside_range(self):
+        from app.mt5.geometric_engine_v2 import calculate_ratio_error
+        spec = {"AB_XA": (0.618, 0.618)}
+        exact, _ = calculate_ratio_error({"AB_XA": 0.618}, spec, {"AB_XA": 0.10})
+        outside, _ = calculate_ratio_error({"AB_XA": 0.20}, spec, {"AB_XA": 0.10})
+        assert exact == 0.0
+        assert outside > exact
+
+    def test_ratio_error_rejects_missing_ratio(self):
+        from app.mt5.geometric_engine_v2 import RATIO_ERROR_CAP, calculate_ratio_error
+        error, detail = calculate_ratio_error({}, {"AB_XA": (0.618, 0.618)}, {})
+        assert error == RATIO_ERROR_CAP
+        assert detail == {"missing_ratio": "AB_XA"}
+
+    def test_prz_cluster_dense_high_strength(self):
+        from app.mt5.geometric_engine_v2 import calculate_prz_cluster
+        result = calculate_prz_cluster(0, 100, 38.2, 76.7014, 21.4, 21.4, 15, "GARTLEY")
+        assert result["hits"] >= 2
+        assert result["prz_strength"] >= 30.0
+
+    def test_prz_cluster_sparse_low_strength(self):
+        from app.mt5.geometric_engine_v2 import calculate_prz_cluster
+        result = calculate_prz_cluster(0, 100, 38.2, 76.7014, 21.4, 200, 10, "GARTLEY")
+        assert result["hits"] == 0
+        assert result["prz_strength"] == 0.0
+
+    def test_prz_cluster_rejects_unknown_pattern(self):
+        from app.mt5.geometric_engine_v2 import calculate_prz_cluster
+        result = calculate_prz_cluster(0, 100, 40, 70, 20, 20, 10, "UNKNOWN")
+        assert result["prz_strength"] == 0.0
+
+    def test_geometric_score_mode_bonus_no_block(self):
+        from app.mt5.geometric_engine_v2 import geometric_score
+        result = geometric_score({"quality": 95}, {"prz_strength": 80, "distance_atr": 0.2}, 90, 80, 80, "BONUS")
+        assert result["score"] >= 80
+        assert result["decision"] == "SETUP_HUNTER"
+        assert result["passes_mode"] is True
+
+    def test_geometric_score_mode_live_blocks_low_quality(self):
+        from app.mt5.geometric_engine_v2 import geometric_score
+        result = geometric_score(None, None, 20, 0, 0, "LIVE")
+        assert result["decision"] == "BLOCK"
+        assert result["passes_mode"] is False
+
+    def test_geometric_score_shadow_low_quality_waits_not_blocks(self):
+        from app.mt5.geometric_engine_v2 import geometric_score
+        result = geometric_score(None, None, 0, 0, 0, "SHADOW")
+        assert result["decision"] == "WAIT"
+        assert result["blockers"] == []
+
+    def test_geometric_score_shadow_valid_pattern_remains_audit_only(self):
+        from app.mt5.geometric_engine_v2 import geometric_score
+        with_pattern = geometric_score({"quality": 95}, {"prz_strength": 90, "distance_atr": 0.2}, 80, 80, 80, "SHADOW")
+        without_pattern = geometric_score(None, None, 80, 80, 80, "SHADOW")
+        assert with_pattern["mode"] == "SHADOW"
+        assert with_pattern["decision"] != "BLOCK"
+        assert without_pattern["decision"] != "BLOCK"
+
+    def test_final_gate_hard_block_spread_killer(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=2250, spread_points=2250, point=0.01, atr=10, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="LIVE",
+        )
+        assert result["decision"] == "BLOCK"
+        assert "SPREAD_KILLER" in result["hard_block_reasons"]
+
+    def test_final_gate_spread_ok_does_not_return_spread_killer(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=2250, spread_points=2250, point=0.01, atr=41.0, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert result["spread_price"] == 22.5
+        assert result["hard_block"] is False
+        assert "SPREAD_KILLER" not in result["hard_block_reasons"]
+
+    def test_final_gate_atr_zero_uses_broker_fallback_without_spread_killer(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=2250, spread_points=2250, point=0.01, atr=0.0, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert result["spread_price"] == 22.5
+        assert result["spread_to_atr"] is None
+        assert result["atr_status"] in {"INVALID", "UNAVAILABLE"}
+        assert "SPREAD_KILLER" not in result["hard_block_reasons"]
+        assert result["final_spread_gate"] == "ATR_UNAVAILABLE"
+
+    def test_final_gate_atr_fallback_from_candles_is_finite(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        candles = []
+        for index in range(16):
+            base = 100.0 + index
+            candles.append({"high": base + 2.0, "low": base - 2.0, "close": base + 0.5})
+        result = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=0.25, spread_points=25, point=0.01, atr=0.0, session="LONDON", symbol="GOLD",
+            capital_risk_pct=0.5, mode="SHADOW", recent_candles=candles,
+        )
+        assert result["atr_status"] == "VALID"
+        assert result["spread_to_atr"] is not None
+        assert result["spread_to_atr"] < 1.0
+        assert "SPREAD_KILLER" not in result["hard_block_reasons"]
+
+    def test_final_gate_weekend_blocks_gold_and_eurusd(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        gold = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=0.25, spread_points=25, point=0.01, atr=15.0, session="WEEKEND", symbol="GOLD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        eur = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=0.00043, spread_points=43, point=0.00001, atr=0.0012, session="WEEKEND", symbol="EURUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert "WEEKEND_CLOSED" in gold["hard_block_reasons"]
+        assert "WEEKEND_CLOSED" in eur["hard_block_reasons"]
+
+    def test_final_gate_weekend_btc_only_blocks_when_btc_rule_fails(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        ok = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=0.25, spread_points=25, point=0.01, atr=41.0, session="WEEKEND", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        blocked = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=22.5, spread_points=2250, point=0.01, atr=41.0, session="WEEKEND", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert ok["hard_block"] is False
+        assert "BTC_WEEKEND_SPREAD" in blocked["hard_block_reasons"]
+
+    def test_final_gate_alignment_bonus_all_green(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 90, "gann_confluence": 90}, {"score": 95, "volume_score": 95},
+            {"status": "PASS", "score": 90}, {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=2, spread_points=200, point=0.01, atr=20, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert result["alignment_bonus"] == 15.0
+        assert result["hard_block"] is False
+        assert result["decision"] == "DEMO"
+
+    def test_final_gate_conflict_penalty_flow_vs_structure(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 70}, {"score": 85, "volume_score": 70},
+            {"status": "SOFT_FAIL", "score": 20}, {"status": "PASS", "score": 60, "trend_strength": 0.5},
+            spread_usd=2, spread_points=200, point=0.01, atr=20, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=0.5, mode="SHADOW",
+        )
+        assert result["conflict_penalty"] == 20.0
+
+    def test_final_gate_risk_cap_is_non_negotiable(self):
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        result = final_trade_gate(
+            {"score": 90}, {"score": 95}, {"status": "PASS", "score": 90},
+            {"status": "PASS", "score": 90, "trend_strength": 0.5},
+            spread_usd=1, spread_points=100, point=0.01, atr=20, session="LONDON", symbol="BTCUSD",
+            capital_risk_pct=1.01, mode="LIVE",
+        )
+        assert result["decision"] == "BLOCK"
+        assert "RISK_EXCEEDED" in result["hard_block_reasons"]
+
+    def test_config_fib_hit_tolerance_constant_exists(self):
+        from app.config import GEOMETRIC_FIB_HIT_TOLERANCE, Settings
+        assert GEOMETRIC_FIB_HIT_TOLERANCE == 0.015
+        assert Settings().geometric_mode == "SHADOW"
+
+    def test_v2_module_has_no_execution_calls(self):
+        import inspect
+        import app.mt5.geometric_engine_v2 as module
+        source = inspect.getsource(module)
+        assert "order_send" not in source
+        assert "MetaTrader5" not in source
+
+
+class TestGeometricAuditLogs:
+    def test_detected_swings_are_logged(self):
+        rates = _make_minimal_rates()
+        with pytest.MonkeyPatch.context():
+            import unittest
+            with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
+                analyze_geometric_confluence("BTCUSD#", "BUY", rates, rates, rates, rates)
+        assert any("[GEOMETRIC_SWINGS]" in line and "detected_swings=" in line for line in captured.output)
+
+    def test_harmonic_ratios_are_logged(self):
+        rates = _make_minimal_rates()
+        import unittest
+        with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
+            analyze_geometric_confluence("BTCUSD#", "BUY", rates, rates, rates, rates)
+        assert any("[GEOMETRIC_RATIOS]" in line and "ratios=" in line for line in captured.output)

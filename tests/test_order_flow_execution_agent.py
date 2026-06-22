@@ -424,12 +424,17 @@ class TestRoutingFlow(unittest.TestCase):
 
     def test_candidate_goes_to_setup_hunter_not_direct_to_demo_router(self):
         from app.agents.setup_hunter import SetupHunter
+        from unittest.mock import patch as _patch
         s = self._hunter_settings()
 
         snap = _fresh_snapshot(price=2281.0, val=2280.0, vwap=2295.0, vah=2310.0, delta=100.0)
         of_signal = evaluate("GOLD#", None, context={"order_flow_snapshot": snap}, settings=s)
         if of_signal["signal"] == "WAIT":
             self.skipTest("No signal produced at this min_score")
+
+        # Enrich with required confluence fields (normally injected by analysis pipeline)
+        of_signal["final_confluence_grade"] = "A"
+        of_signal["final_confluence_score"] = 70.0
 
         hunter = SetupHunter(s)
         analysis = {"ai_decision": {}, "strategy_signals": [of_signal]}
@@ -439,7 +444,9 @@ class TestRoutingFlow(unittest.TestCase):
             "symbol_market_open": True,
             "market_open": True,
         }
-        result = hunter.evaluate("GOLD", "GOLD#", analysis, time_gate, 10, 50)
+        _cm_pass = {"hard_block": False, "smc_calibrated_status": "PASS", "mtfa_calibrated_status": "PASS"}
+        with _patch("app.agents.setup_hunter._confirmation_matrix", return_value=_cm_pass):
+            result = hunter.evaluate("GOLD", "GOLD#", analysis, time_gate, 10, 50)
         best = result.best_candidate
         # Should be recognized as ORDER_FLOW_EXECUTION_AGENT
         self.assertEqual(best.get("best_strategy"), "ORDER_FLOW_EXECUTION_AGENT")
@@ -447,12 +454,17 @@ class TestRoutingFlow(unittest.TestCase):
     def test_setup_hunter_logs_router_handoff_when_eligible(self):
         """If demo_eligible, the signal went through SetupHunter gates."""
         from app.agents.setup_hunter import SetupHunter
+        from unittest.mock import patch as _patch
         s = self._hunter_settings()
 
         snap = _fresh_snapshot(price=2281.0, val=2280.0, vwap=2295.0, vah=2310.0, delta=100.0)
         of_signal = evaluate("GOLD#", None, context={"order_flow_snapshot": snap}, settings=s)
         if of_signal["signal"] == "WAIT":
             self.skipTest("No signal produced at this min_score")
+
+        # Enrich with required confluence fields (normally injected by analysis pipeline)
+        of_signal["final_confluence_grade"] = "A"
+        of_signal["final_confluence_score"] = 70.0
 
         hunter = SetupHunter(s)
         analysis = {"ai_decision": {}, "strategy_signals": [of_signal]}
@@ -462,7 +474,9 @@ class TestRoutingFlow(unittest.TestCase):
             "symbol_market_open": True,
             "market_open": True,
         }
-        result = hunter.evaluate("GOLD", "GOLD#", analysis, time_gate, 10, 50)
+        _cm_pass = {"hard_block": False, "smc_calibrated_status": "PASS", "mtfa_calibrated_status": "PASS"}
+        with _patch("app.agents.setup_hunter._confirmation_matrix", return_value=_cm_pass):
+            result = hunter.evaluate("GOLD", "GOLD#", analysis, time_gate, 10, 50)
         best = result.best_candidate
         # ORDER_FLOW_EXECUTION_AGENT should be executable
         self.assertEqual(best.get("execution_policy"), "EXECUTABLE")

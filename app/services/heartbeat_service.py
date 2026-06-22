@@ -10,6 +10,7 @@ from app.services.dashboard_snapshot import (
     live_snapshot_debug_line,
 )
 from app.services.ingest_client import IngestClient
+from app.utils.throttle import log_event_throttled
 
 
 def _enrich_account_snapshot(
@@ -58,6 +59,8 @@ class HeartbeatService:
     def __init__(self, settings: Settings, ingest_client: IngestClient) -> None:
         self.settings = settings
         self.ingest_client = ingest_client
+        self._last_live_snapshot_emit_state: tuple | None = None
+        self._last_live_snapshot_log_state: tuple | None = None
 
     def write(
         self,
@@ -133,14 +136,19 @@ class HeartbeatService:
             # Emit LIVE_SNAPSHOT structured token
             try:
                 pos = latest_position_sync or {}
-                self.ingest_client.emit_bot_log(
-                    "LIVE_SNAPSHOT",
-                    f"open={pos.get('hermes_mt5_open_positions_count', 0)} "
-                    f"closed_pnl={enriched.get('closed_pnl') if enriched.get('closed_pnl') is not None else 0.0} "
-                    f"floating_pnl={enriched.get('floating_pnl') if enriched.get('floating_pnl') is not None else 0.0} "
-                    f"total={enriched.get('total') if enriched.get('total') is not None else 0.0} "
-                    f"source={enriched.get('source') or 'UNKNOWN'}",
-                    {
+                snapshot_state = (
+                    enriched.get("open"),
+                    enriched.get("closed_pnl") if enriched.get("closed_pnl") is not None else 0.0,
+                    enriched.get("floating_pnl") if enriched.get("floating_pnl") is not None else 0.0,
+                )
+                if snapshot_state != self._last_live_snapshot_emit_state:
+                    self._last_live_snapshot_emit_state = snapshot_state
+                    self.ingest_client.emit_bot_log(
+                        "LIVE_SNAPSHOT",
+                        f"open={snapshot_state[0]} closed_pnl={snapshot_state[1]} "
+                        f"floating_pnl={snapshot_state[2]} total={enriched.get('total') or 0.0} "
+                        f"source={enriched.get('source') or 'UNKNOWN'}",
+                        {
                         "open": enriched.get("open"),
                         "closed_pnl": enriched.get("closed_pnl") if enriched.get("closed_pnl") is not None else 0.0,
                         "floating_pnl": enriched.get("floating_pnl") if enriched.get("floating_pnl") is not None else 0.0,
@@ -149,8 +157,8 @@ class HeartbeatService:
                         "total_pnl": enriched.get("total_pnl") if enriched.get("total_pnl") is not None else 0.0,
                         "source": enriched.get("source"),
                         "utc_time": enriched.get("utc_time") or now,
-                    },
-                )
+                        },
+                    )
             except Exception as exc:
                 log.warning("[LIVE_SNAPSHOT] emit failed reason=%s", exc)
         if all(result.get("ok") for result in results):
@@ -171,9 +179,19 @@ class HeartbeatService:
         )
 
     def write_dashboard_status(self, payload: dict) -> dict:
-        log.info(dashboard_status_debug_line(payload))
-        log.info(live_snapshot_debug_line(payload))
-        print(dashboard_status_debug_line(payload))
+        log_event_throttled(
+            "DASHBOARD_STATUS",
+            dashboard_status_debug_line(payload),
+            state=(payload.get("mode"), payload.get("account_type"), payload.get("demo_pilot_enabled"), payload.get("allow_live_trading")),
+        )
+        snapshot_state = (
+            payload.get("open_demo_trades_count") or 0,
+            payload.get("demo_closed_pnl_today") or 0.0,
+            payload.get("demo_floating_pnl") or 0.0,
+        )
+        if snapshot_state != self._last_live_snapshot_log_state:
+            self._last_live_snapshot_log_state = snapshot_state
+            log.info(live_snapshot_debug_line(payload))
         variants = [
             dashboard_status_row(payload),
             compact_dashboard_status_row(payload, json_field="raw_payload"),

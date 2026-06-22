@@ -113,6 +113,27 @@ class TestTrendNonRepainting(unittest.TestCase):
         self.assertEqual(_trend(df), "UNKNOWN")
 
 
+class TestBtcWeekendSmcFallback(unittest.TestCase):
+    def test_btc_weekend_missing_intraday_uses_h1_fallback(self) -> None:
+        from unittest.mock import patch
+        from app.agents.smc_confluence_tagger import SMCConfluenceTagger
+        frames = {"H4": _candles(20, trend="UP"), "H1": _candles(20, trend="UP")}
+        with patch("app.agents.smc_confluence_tagger._is_weekend_utc", return_value=True):
+            result = SMCConfluenceTagger(Settings()).evaluate("BTCUSD#", frames, "BUY")
+        self.assertEqual(result["smc_confluence_score"], 50)
+        self.assertEqual(result["smc_confluence_status"], "NEUTRAL")
+        self.assertEqual(result["smc_confluence_reason"], "SMC_WEEKEND_FALLBACK_H1")
+
+    def test_non_weekend_missing_intraday_remains_fail(self) -> None:
+        from unittest.mock import patch
+        from app.agents.smc_confluence_tagger import SMCConfluenceTagger
+        frames = {"H4": _candles(20, trend="UP"), "H1": _candles(20, trend="UP")}
+        with patch("app.agents.smc_confluence_tagger._is_weekend_utc", return_value=False):
+            result = SMCConfluenceTagger(Settings()).evaluate("BTCUSD#", frames, "BUY")
+        self.assertEqual(result["smc_confluence_status"], "FAIL")
+        self.assertIn("MISSING_DATA", result["smc_confluence_reason"])
+
+
 # ---------------------------------------------------------------------------
 # 2. _order_block() — non-repainting
 # ---------------------------------------------------------------------------

@@ -81,6 +81,29 @@ class TestCalculateSlPrice(unittest.TestCase):
         self.assertAlmostEqual(sl, cap, places=2)
         self.assertEqual(method, "ANTI_INVERSION")
 
+    def test_method_a_buy_trails_after_two_atr_profit(self) -> None:
+        sl, method = self.engine._calculate_sl_price(
+            65000.0, "BUY", 100.0, current_price=65250.0,
+        )
+        self.assertEqual(method, "A_TRAILING")
+        self.assertGreater(sl, 65000.0)
+        self.assertEqual(sl, 65150.0)
+
+    def test_method_a_does_not_trail_before_two_atr_profit(self) -> None:
+        sl, method = self.engine._calculate_sl_price(
+            65000.0, "BUY", 100.0, current_price=65199.0,
+        )
+        self.assertNotEqual(method, "A_TRAILING")
+        self.assertLess(sl, 65000.0)
+
+    def test_method_a_sell_trails_after_two_atr_profit(self) -> None:
+        sl, method = self.engine._calculate_sl_price(
+            65000.0, "SELL", 100.0, current_price=64750.0,
+        )
+        self.assertEqual(method, "A_TRAILING")
+        self.assertLess(sl, 65000.0)
+        self.assertEqual(sl, 64850.0)
+
 
 class TestMethodSelection(unittest.TestCase):
 

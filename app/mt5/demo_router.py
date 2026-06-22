@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ from app.services.top_down_market_reader import TopDownMarketReader
 from app.services.time_engine import TimeEngine, USER_DISABLED_TIME_BLOCK_LOG_REASONS, USER_DISABLED_TIME_BLOCK_REASONS
 from app.strategies.registry import ACTIVE_EXECUTION_STRATEGIES
 from app.utils.risk_math import reward_risk
+from app.utils.throttle import log_event_throttled
 
 
 ALLOWED_DEMO_SYMBOLS = {"BTCUSD#", "BTCUSD", "GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#", "EURUSD", "US100Cash#", "US100Cash", "US100", "NAS100", "USTEC"}
@@ -145,6 +147,7 @@ class DemoKellyRouter:
         self._rescue_states: dict[int, dict] = {}
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
         self._dynamic_exit_state: dict[int, dict] = {}  # §5 R-multiple exit state
+        self._events_lock = threading.RLock()
 
     @property
     def enabled(self) -> bool:
@@ -446,12 +449,18 @@ class DemoKellyRouter:
                     self._exit_states.pop(_et, None)
 
             _btc_open_cnt = count_hermes_btc_open(positions, int(getattr(self.settings, "demo_magic_number", 909002)))
-            log.info(
-                "[OLD_BTC_SMART_EXIT_SCAN] open_count=%s positive_candidates=%s emergency=%s",
-                _btc_open_cnt,
-                sum(1 for p in positions if is_hermes_btc_pos(p, int(getattr(self.settings, "demo_magic_number", 909002)))
-                    and float(getattr(p, "profit", 0) or 0) >= _danger_threshold),
-                str(_btc_open_cnt > int(getattr(self.settings, "old_btc_emergency_open_count", 1))).lower(),
+            _positive_candidates = sum(
+                1 for p in positions
+                if is_hermes_btc_pos(p, int(getattr(self.settings, "demo_magic_number", 909002)))
+                and float(getattr(p, "profit", 0) or 0) >= _danger_threshold
+            )
+            _scan_emergency = _btc_open_cnt > int(getattr(self.settings, "old_btc_emergency_open_count", 1))
+            _scan_state = (_btc_open_cnt, _positive_candidates, _scan_emergency)
+            log_event_throttled(
+                "OLD_BTC_SMART_EXIT_SCAN",
+                "[OLD_BTC_SMART_EXIT_SCAN] open_count=%s positive_candidates=%s emergency=%s"
+                % (_btc_open_cnt, _positive_candidates, str(_scan_emergency).lower()),
+                state=_scan_state,
             )
 
             for pos in positions:
@@ -614,7 +623,16 @@ class DemoKellyRouter:
         stats = self._stats(now_dt)
         positions = self._demo_positions()
         open_by_symbol = _positions_by_symbol(positions)
-        open_by_symbol_strategy = _open_orders_by_symbol_strategy(self._load_events(), positions)
+        loaded_events = self._load_events()
+        open_by_symbol_strategy = _open_orders_by_symbol_strategy(loaded_events, positions)
+        last_symbol_trade_at = _last_demo_order_at(loaded_events, symbol)
+        cooldown_minutes = int(getattr(self.settings, "symbol_trade_cooldown_minutes", 15))
+        cooldown_active = _is_symbol_trade_cooldown_active(
+            now_dt,
+            last_symbol_trade_at,
+            cooldown_minutes,
+            enabled=getattr(self.settings, "symbol_trade_cooldown_enabled", False) is True,
+        )
         symbol_strategy_key = _symbol_strategy_key(symbol, strategy)
         current_symbol_daily_count = stats["demo_trades_opened_by_symbol"].get(symbol, 0)
         current_symbol_strategy_daily_count = stats["demo_trades_opened_by_symbol_strategy"].get(symbol_strategy_key, 0)
@@ -656,9 +674,12 @@ class DemoKellyRouter:
             "ignored_time_blocks": bool(time_gate.get("ignored_time_blocks")),
             "ignored_time_block_reasons": time_gate.get("ignored_time_block_reasons") or [],
             "is_bad_hour": time_gate.get("is_bad_hour"),
+            "is_weekend": bool(time_gate.get("is_weekend")),
             "market_open": time_gate.get("symbol_market_open"),
             "btc_weekend_bad_hour_allowed": self.settings.demo_allow_btc_weekend_bad_hour,
             "spread_ok": spread <= max_spread,
+            "symbol_trade_cooldown_active": cooldown_active,
+            "last_symbol_trade_at": last_symbol_trade_at.isoformat() if last_symbol_trade_at else None,
             "open_demo_trades": len(positions),
             "open_demo_trades_total": len(positions),
             "open_demo_trades_by_symbol": open_by_symbol,
@@ -1411,6 +1432,12 @@ class DemoKellyRouter:
                 return "BTC_WEEKEND_BLOCKED"
             if time_gate.get("is_bad_hour"):
                 return "BTC_BAD_HOUR_BLOCKED"
+        weekend_reason = _weekend_symbol_block_reason(
+            gates.get("broker_symbol") or decision.get("symbol"),
+            bool(gates.get("is_weekend")),
+        )
+        if weekend_reason:
+            return weekend_reason
         if not gates["spread_ok"]:
             return "MAX_SPREAD"
         if gates["current_symbol_open_count"] >= self.settings.demo_max_open_trades_per_symbol:
@@ -1423,6 +1450,8 @@ class DemoKellyRouter:
             return "MAX_TRADES_PER_SYMBOL_PER_DAY"
         if gates["daily_demo_trades_total"] >= self.settings.demo_max_trades_per_day_total:
             return "MAX_TRADES_PER_DAY_TOTAL"
+        if gates.get("symbol_trade_cooldown_active"):
+            return "SYMBOL_TRADE_COOLDOWN"
         if gates["daily_demo_loss_pct"] >= self.settings.demo_max_daily_loss_pct:
             return "DEMO_DAILY_LOSS_STOP"
         if gates["consecutive_losses"] >= self.settings.demo_stop_after_consecutive_losses:
@@ -3064,9 +3093,11 @@ class DemoKellyRouter:
                 except Exception as rot_exc:
                     log.warning("[DEMO_ROUTER_EVENTS_SKIP] reason=MEMORY_SAFE_FALLBACK error=%s", rot_exc)
                 return []
-            log.info(
-                "[DEMO_ROUTER_EVENTS_TAIL] path=%s size_bytes=%s max_lines=%s",
-                self.events_path, file_size, max_lines,
+            log_event_throttled(
+                "DEMO_ROUTER_EVENTS_TAIL",
+                "[DEMO_ROUTER_EVENTS_TAIL] path=%s size_bytes=%s max_lines=%s"
+                % (self.events_path, file_size, max_lines),
+                state=(str(self.events_path), max_lines),
             )
             lines = _tail_lines(self.events_path, max_lines)
         except Exception as exc:
@@ -3081,12 +3112,65 @@ class DemoKellyRouter:
         return events
 
     def _record_event(self, event: dict) -> None:
-        self.events_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.events_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(event, sort_keys=True) + "\n")
+        with self._events_lock:
+            self.events_path.parent.mkdir(parents=True, exist_ok=True)
+            self._rotate_events_if_needed()
+            with self.events_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event, sort_keys=True) + "\n")
+
+    def _rotate_events_if_needed(self) -> None:
+        max_bytes = 20 * 1024 * 1024
+        if not self.events_path.exists() or self.events_path.stat().st_size <= max_bytes:
+            return
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        rotated = self.events_path.with_name(f"{self.events_path.stem}.{timestamp}.jsonl")
+        self.events_path.rename(rotated)
+        log.info("[DEMO_ROUTER_EVENTS_ROTATED] path=%s backup=%s", self.events_path, rotated)
+        backups = sorted(
+            self.events_path.parent.glob(f"{self.events_path.stem}.*.jsonl"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in backups[5:]:
+            try:
+                stale.unlink()
+            except OSError as exc:
+                log.warning("[DEMO_ROUTER_EVENTS_RETENTION_WARNING] path=%s error=%s", stale, exc)
 
     def _ingest_event(self, event: dict) -> dict:
         return {"table": "execution_events", "demo_action": event.get("event_type"), "data": event}
+
+
+def _last_demo_order_at(events: list[dict], symbol: str) -> datetime | None:
+    canonical = _canonical_trade_symbol(symbol)
+    timestamps = [
+        created
+        for event in events
+        if event.get("event_type") == "DEMO_ORDER"
+        and _canonical_trade_symbol(event.get("broker_symbol") or event.get("symbol")) == canonical
+        and (created := _parse_iso(str(event.get("created_at") or ""))) is not None
+    ]
+    return max(timestamps) if timestamps else None
+
+
+def _is_symbol_trade_cooldown_active(
+    now: datetime,
+    last_trade_at: datetime | None,
+    cooldown_minutes: int,
+    *,
+    enabled: bool,
+) -> bool:
+    if not enabled or last_trade_at is None or cooldown_minutes <= 0:
+        return False
+    return (now - last_trade_at).total_seconds() < cooldown_minutes * 60
+
+
+def _weekend_symbol_block_reason(symbol: object, is_weekend: bool) -> str | None:
+    if not is_weekend:
+        return None
+    if _is_btc(symbol):
+        return None
+    return "WEEKEND_CLOSED"
 
 
 def _tail_lines(path: Path, max_lines: int) -> list[str]:
