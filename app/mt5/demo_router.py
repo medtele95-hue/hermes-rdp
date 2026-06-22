@@ -1231,11 +1231,11 @@ class DemoKellyRouter:
             if gold_reason:
                 return gold_reason
         if bool(getattr(self.settings, "eur_ema_rsi_atr_enabled", True)) and _is_eurusd(gates.get("symbol_gate_canonical") or gates.get("broker_symbol") or gates.get("raw_symbol")):
-            if strategy not in {"SIMO_ATM_BREAKOUT", "EUR_EMA_RSI_ATR_CROSSOVER", "FIB_CONFLUENCE_EXECUTION_AGENT"}:
+            if strategy not in {"SIMO_ATM_BREAKOUT", "EUR_EMA_RSI_ATR_CROSSOVER", "FIB_CONFLUENCE_EXECUTION_AGENT", "ORDER_FLOW_EXECUTION_AGENT"}:
                 if strategy in EUR_GENERIC_DISABLED_STRATEGIES:
                     return "EUR_GENERIC_STRATEGY_DISABLED"
                 return "EUR_GENERIC_STRATEGY_DISABLED"
-            if strategy == "SIMO_ATM_BREAKOUT":
+            if strategy in {"SIMO_ATM_BREAKOUT", "ORDER_FLOW_EXECUTION_AGENT"}:
                 return None
             eur_reason = self._eur_ema_rsi_atr_block_reason(gates)
             if eur_reason:

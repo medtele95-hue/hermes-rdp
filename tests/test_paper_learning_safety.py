@@ -2818,6 +2818,42 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assertEqual(result.decision, "BLOCK")
         self.assertEqual(result.reason, "EUR_GENERIC_STRATEGY_DISABLED")
 
+    def test_order_flow_execution_agent_not_blocked_by_eur_generic_gate(self) -> None:
+        """ORDER_FLOW_EXECUTION_AGENT must not receive EUR_GENERIC_STRATEGY_DISABLED on EURUSD."""
+        router = self.eur_router()
+        of_payload = {
+            "strategy": "ORDER_FLOW_EXECUTION_AGENT",
+            "decision": "BUY",
+            "signal": "BUY",
+            "score": 85.0,
+            "grade": "A",
+            "confidence": 85.0,
+        }
+        decision = self.decision(
+            symbol="EURUSD",
+            strategy="ORDER_FLOW_EXECUTION_AGENT",
+            signal="BUY",
+            order_flow_execution_agent=of_payload,
+            order_flow_execution_agent_signal="BUY",
+            order_flow_execution_agent_score=85,
+        )
+        with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
+            result = router.evaluate(
+                decision,
+                {"approved_lot": 0.01},
+                self.account(),
+                "EURUSD",
+                {},
+                {"bid": 1.1, "ask": 1.10001},
+                self.specs(),
+                1,
+                30,
+                True,
+                "setup-eur-of",
+                self.now,
+            )
+        self.assertNotEqual(result.reason, "EUR_GENERIC_STRATEGY_DISABLED")
+
     def test_eur_strategy_can_pass_when_all_hard_gates_pass_and_caps_lot(self) -> None:
         router = self.eur_router()
         with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
