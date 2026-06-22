@@ -73,16 +73,16 @@ class TestOrderFlowNativeClamp(unittest.TestCase):
         self.assertEqual(result["components"]["smc"], 0.0)
         self.assertEqual(result["components"]["mtfa"], 0.0)
 
-    def test_of_native_not_clamped_when_flag_false(self) -> None:
-        """Without strategy_aware=True, OF clamping is NOT applied (default off)."""
+    def test_of_native_clamped_even_without_flag(self) -> None:
+        """Clamp is unconditional for ORDER_FLOW_NATIVE — strategy_aware param no longer gates it."""
         ctx = _range_context("GOLD")
         result = self.engine.evaluate(
             "GOLD", "GOLD_LIQUIDITY_HUNTER_PRO", _flat_frames(), ctx,
-            # strategy_aware defaults to False
+            # strategy_aware defaults to False — clamp still applies
         )
-        # With smc_confluence_score=15 → STRONG_FAIL → smc_contrib = -15
-        self.assertLess(result["components"]["smc"], 0.0,
-                        "clamping must be OFF when strategy_aware=False")
+        self.assertEqual(result["components"]["smc"], 0.0,
+                         "clamp must apply for OF_NATIVE regardless of strategy_aware param")
+        self.assertTrue(result["strategy_aware"], "strategy_aware must be True for OF_NATIVE")
 
     def test_of_native_cvd_vwap_clamped_when_flag_true(self) -> None:
         """GOLD_ORDER_FLOW_CVD_VWAP clamped when strategy_aware=True."""

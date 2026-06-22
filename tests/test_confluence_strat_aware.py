@@ -55,18 +55,32 @@ def test_strat_aware_not_applied_for_smc_native():
     assert result["components"]["mtfa"] == -15.0, "mtfa should remain -15 for SMC_NATIVE STRONG_FAIL"
 
 
-def test_strat_aware_false_no_clamp():
-    """strategy_aware=False → no clamp even for ORDER_FLOW_NATIVE."""
+def test_clamp_applied_regardless_of_strategy_aware_param():
+    """Clamp is now unconditional for ORDER_FLOW_NATIVE — strategy_aware param is irrelevant."""
     engine = ConfluenceEngine()
     result = engine.evaluate(
         symbol="BTCUSD#",
         strategy="ORDER_FLOW_EXECUTION_AGENT",
         frames=_dummy_frames(),
         context=_ctx_strong_fail(of_score=95.0),
-        strategy_aware=False,
+        strategy_aware=False,  # param no longer gates the clamp
     )
-    assert result["components"]["smc"] == -15.0
-    assert result["components"]["mtfa"] == -15.0
+    assert result["components"]["smc"] == 0.0, "clamp must apply even without strategy_aware=True"
+    assert result["components"]["mtfa"] == 0.0
+    assert result["strategy_aware"] is True
+
+
+def test_strategy_aware_field_false_for_non_of_native():
+    """Non-OF_NATIVE strategy returns strategy_aware=False."""
+    engine = ConfluenceEngine()
+    result = engine.evaluate(
+        symbol="BTCUSD#",
+        strategy="SIMO_ATM_BREAKOUT",
+        frames=_dummy_frames(),
+        context=_ctx_strong_fail(of_score=95.0),
+        strategy_aware=True,
+    )
+    assert result["strategy_aware"] is False
 
 
 def test_strat_aware_clamp_gold_of_native():

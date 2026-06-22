@@ -184,13 +184,13 @@ class ConfluenceEngine:
             mtfa_contrib = -5.0
 
         # --- §4.4 Strategy-aware confluence: ORDER_FLOW_NATIVE never penalized by SMC/MTFA ---
-        # Gated by strategy_aware=True (auto-set for ORDER_FLOW_NATIVE in main.py).
+        # Clamp is unconditional for ORDER_FLOW_NATIVE (not gated by strategy_aware param).
         _of_native = str(strategy or "").upper() in _ORDER_FLOW_NATIVE
-        if strategy_aware and _of_native:
+        if _of_native:
             if smc_contrib < 0.0 or mtfa_contrib < 0.0:
                 log.info(
                     "[CONFLUENCE_STRAT_AWARE] symbol=%s strategy=%s"
-                    " smc_raw=%.1f→clamped=%.1f mtfa_raw=%.1f→clamped=%.1f",
+                    " smc_raw=%.1f→clamped=%.1f mtfa_raw=%.1f→clamped=%.1f strat_aware=True",
                     symbol, strategy,
                     smc_contrib, max(0.0, smc_contrib),
                     mtfa_contrib, max(0.0, mtfa_contrib),
@@ -233,6 +233,7 @@ class ConfluenceEngine:
             "symbol": symbol,
             "strategy": strategy,
             "strategy_class": _strategy_class,
+            "strategy_aware": _of_native,
             "score": final_score,
             "grade": grade,
             "components": components,
