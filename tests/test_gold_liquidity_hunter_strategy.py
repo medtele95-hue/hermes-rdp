@@ -283,6 +283,37 @@ class GoldLiquidityRouterTests(unittest.TestCase):
         result = self.evaluate(router, self.decision(strategy="BREAKOUT_RETEST"))
         self.assertEqual(result.reason, "GOLD_GENERIC_STRATEGY_DISABLED")
 
+    def test_order_flow_execution_agent_not_blocked_by_gold_liquidity_gate(self) -> None:
+        """ORDER_FLOW_EXECUTION_AGENT on GOLD must not receive GOLD_LIQUIDITY_WAIT.
+
+        The gold liquidity gate reads gold_liquidity_hunter payload that
+        ORDER_FLOW_EXECUTION_AGENT never populates.  The two strategies are
+        independent and must not be coupled.
+        """
+        router = DemoKellyRouter(settings())
+        of_payload = {
+            "strategy": "ORDER_FLOW_EXECUTION_AGENT",
+            "decision": "BUY",
+            "signal": "BUY",
+            "score": 100.0,
+            "grade": "A",
+            "confidence": 100.0,
+        }
+        decision = self.decision(
+            strategy="ORDER_FLOW_EXECUTION_AGENT",
+            signal="BUY",
+            entry=2300.0,
+            sl=2299.0,
+            tp=2302.0,
+            reward_risk=2.0,
+            order_flow_execution_agent=of_payload,
+            order_flow_execution_agent_signal="BUY",
+            order_flow_execution_agent_score=100,
+            gold_liquidity_hunter=None,
+        )
+        result = self.evaluate(router, decision)
+        self.assertNotEqual(result.reason, "GOLD_LIQUIDITY_WAIT")
+
     def test_gold_liquidity_valid_can_pass_gate(self) -> None:
         router = DemoKellyRouter(settings())
         result = self.evaluate(router, self.decision())

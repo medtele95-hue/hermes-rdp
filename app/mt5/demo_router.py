@@ -1227,6 +1227,8 @@ class DemoKellyRouter:
                 if order_flow_reason:
                     return order_flow_reason
                 return None
+            if strategy == "ORDER_FLOW_EXECUTION_AGENT":
+                return None
             gold_reason = self._gold_liquidity_block_reason(gates)
             if gold_reason:
                 return gold_reason
