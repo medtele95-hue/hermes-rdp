@@ -606,7 +606,8 @@ class DemoKellyRouter:
                     "[KELLY_LOVABLE_FIXED_LOT] kelly_was_zero_or_none overridden to fixed_lot=%s",
                     kelly_lot,
                 )
-            capped_lot = min(value for value in [v for v in [kelly_lot, self.settings.demo_max_lot, 0.01, risk_lot] if v is not None])
+            _risk_lot_for_cap = risk_lot if (risk_lot is not None and risk_lot > 0) else None
+            capped_lot = min(value for value in [v for v in [kelly_lot, self.settings.demo_max_lot, 0.01, _risk_lot_for_cap] if v is not None])
             risk_pct = self._risk_pct(decision, capped_lot, account, symbol_specs or {})
         rr = _to_float(decision.get("reward_risk") or decision.get("risk_reward"))
         if rr is None:
