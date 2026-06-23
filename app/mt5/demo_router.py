@@ -167,6 +167,14 @@ class DemoKellyRouter:
             account_type,
             str(self.settings.allow_live_trading).lower(),
         )
+        log.info(
+            "[CONFIG_LOADED] max_tp_usd=%s max_tp_applies_to=%s max_money_tp_enabled=%s demo_max_lot=%s demo_magic=%s",
+            self.settings.max_tp_usd,
+            self.settings.max_tp_applies_to,
+            str(self.settings.max_money_tp_enabled).lower(),
+            self.settings.demo_max_lot,
+            self.settings.demo_magic_number,
+        )
 
     def mark_backend_started(self, now: datetime | None = None) -> datetime:
         return mark_backend_started(now)
@@ -614,16 +622,18 @@ class DemoKellyRouter:
                 _kelly_br = str((kelly_risk or {}).get("blocked_reason") or "")
                 _prob_blocks = {"INVALID_PROBABILITY", "NO_POSITIVE_EDGE"}
                 _min_lot_blocks = {"MIN_LOT_EXCEEDS_RISK"}
+                _rr_blocks = {"REWARD_RISK_BELOW_1_5"}
                 _hard_safety_blocks = {"MISSING_EQUITY", "MAX_DAILY_LOSS", "MAX_DRAWDOWN", "READ_ONLY"}
                 _actual_kelly_blocks = {b.strip() for b in _kelly_br.split(",") if b.strip()} if _kelly_br else set()
                 _has_prob_block = bool(_actual_kelly_blocks & _prob_blocks)
                 _has_min_lot = bool(_actual_kelly_blocks & _min_lot_blocks)
+                _has_rr_block = bool(_actual_kelly_blocks & _rr_blocks)
                 _has_hard_safety = bool(_actual_kelly_blocks & _hard_safety_blocks)
                 log.info(
-                    "[KELLY_FALLBACK_CHECK] symbol=%s blocked_reason=%r has_prob=%s has_min_lot=%s has_hard_safety=%s",
-                    symbol, _kelly_br, _has_prob_block, _has_min_lot, _has_hard_safety,
+                    "[KELLY_FALLBACK_CHECK] symbol=%s blocked_reason=%r has_prob=%s has_min_lot=%s has_rr=%s has_hard_safety=%s",
+                    symbol, _kelly_br, _has_prob_block, _has_min_lot, _has_rr_block, _has_hard_safety,
                 )
-                if (_has_prob_block or _has_min_lot) and not _has_hard_safety:
+                if (_has_prob_block or _has_min_lot or _has_rr_block) and not _has_hard_safety:
                     kelly_lot = float(getattr(self.settings, "demo_max_lot", 0.01))
                     log.info(
                         "[KELLY_FALLBACK_TRIGGERED] symbol=%s blocked_by=%s override_to=%.3f",
@@ -647,6 +657,11 @@ class DemoKellyRouter:
         stats = self._stats(now_dt)
         positions = self._demo_positions()
         open_by_symbol = _positions_by_symbol(positions)
+        _mt5_open_for_symbol = open_by_symbol.get(symbol, 0)
+        log.info(
+            "[POSITION_SYNC_DIAG] symbol=%s mt5_live_open=%s total_mt5_hermes_positions=%s",
+            symbol, _mt5_open_for_symbol, len(positions),
+        )
         loaded_events = self._load_events()
         open_by_symbol_strategy = _open_orders_by_symbol_strategy(loaded_events, positions)
         last_symbol_trade_at = _last_demo_order_at(loaded_events, symbol)
@@ -2402,7 +2417,7 @@ class DemoKellyRouter:
             )
             if _ob_raw_tp is not None:
                 event["tp"] = _ob_raw_tp
-            _ob_max_tp = float(getattr(self.settings, "max_tp_usd", 2.0) or 2.0)
+            _ob_max_tp = self.settings.max_tp_usd
             log.info(
                 "[OLD_BTC_MAX_TP] strategy=%s max_tp_usd=%s rr_based_tp=%s",
                 _ob_strategy, _ob_max_tp, _ob_raw_tp,
@@ -2433,10 +2448,44 @@ class DemoKellyRouter:
                 "order_success": False,
                 "order_failure_reason": reason,
             }
+        _order_symbol = event["broker_symbol"]
+        _sym_info = None
+        try:
+            _sym_info = mt5.symbol_info(_order_symbol)
+        except Exception:
+            pass
+        _trade_mode = int(getattr(_sym_info, "trade_mode", -1) or -1) if _sym_info is not None else -1
+        _trade_allowed = getattr(_sym_info, "trade_allowed", None) if _sym_info is not None else None
+        _filling_mask = int(getattr(_sym_info, "filling_mode", 0) or 0) if _sym_info is not None else 0
+        _acct_trade_allowed = (mt5.account_info() or object())
+        _acct_trade_allowed_flag = getattr(_acct_trade_allowed, "trade_allowed", None)
+        log.info(
+            "[SYMBOL_TRADE_DIAG] symbol=%s trade_mode=%s trade_allowed=%s filling_modes=%s account_trade_allowed=%s",
+            _order_symbol, _trade_mode, _trade_allowed, _filling_mask, _acct_trade_allowed_flag,
+        )
+        _SYMBOL_TRADE_MODE_FULL = 4
+        if _sym_info is not None and _trade_mode != _SYMBOL_TRADE_MODE_FULL and _trade_mode != -1:
+            log.warning(
+                "[SYMBOL_TRADE_DISABLED] symbol=%s trade_mode=%s — symbol is not in FULL trade mode, skipping order",
+                _order_symbol, _trade_mode,
+            )
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": "SYMBOL_TRADE_DISABLED",
+                "failed_gate": "SYMBOL_TRADE_DISABLED",
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": None,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": f"SYMBOL_TRADE_DISABLED_trade_mode={_trade_mode}",
+            }
+        _filling_mode = _detect_filling_mode(_order_symbol)
         order_type = getattr(mt5, "ORDER_TYPE_BUY", 0) if event.get("direction") == "BUY" else getattr(mt5, "ORDER_TYPE_SELL", 1)
         request = {
             "action": getattr(mt5, "TRADE_ACTION_DEAL", 1),
-            "symbol": event["broker_symbol"],
+            "symbol": _order_symbol,
             "volume": event["final_capped_lot"],
             "type": order_type,
             "price": event["entry"],
@@ -2445,7 +2494,7 @@ class DemoKellyRouter:
             "magic": self.settings.demo_magic_number,
             "comment": self.settings.demo_comment,
             "type_time": getattr(mt5, "ORDER_TIME_GTC", 0),
-            "type_filling": getattr(mt5, "ORDER_FILLING_IOC", 1),
+            "type_filling": _filling_mode,
         }
         precheck = validate_mt5_stops(
             event["broker_symbol"],
@@ -2889,7 +2938,7 @@ class DemoKellyRouter:
         entry = _to_float(event.get("entry"))
         sl = _to_float(event.get("sl"))
         lot = _to_float(event.get("final_capped_lot"))
-        max_tp_usd = float(getattr(self.settings, "max_tp_usd", 2.0))
+        max_tp_usd = float(getattr(self.settings, "max_tp_usd", 5.0))
         payload = {
             "enabled": enabled,
             "max_tp_usd": max_tp_usd,
@@ -3851,6 +3900,26 @@ def _valid_sl_tp(direction: str, entry: float | None, sl: float | None, tp: floa
     if direction == "SELL":
         return tp < entry < sl
     return False
+
+
+def _detect_filling_mode(symbol: str) -> int:
+    """Return the best supported ORDER_FILLING_* constant for the given symbol.
+
+    MT5 symbol_info.filling_mode is a bitmask:
+      bit 0 (value 1) = FOK allowed  → ORDER_FILLING_FOK = 0
+      bit 1 (value 2) = IOC allowed  → ORDER_FILLING_IOC = 1
+    When neither bit is set the broker requires RETURN mode   → ORDER_FILLING_RETURN = 2
+    """
+    try:
+        info = mt5.symbol_info(symbol)
+    except Exception:
+        info = None
+    filling_mask = int(getattr(info, "filling_mode", 0) or 0) if info is not None else 0
+    if filling_mask & 1:
+        return getattr(mt5, "ORDER_FILLING_FOK", 0)
+    if filling_mask & 2:
+        return getattr(mt5, "ORDER_FILLING_IOC", 1)
+    return getattr(mt5, "ORDER_FILLING_RETURN", 2)
 
 
 def validate_mt5_stops(

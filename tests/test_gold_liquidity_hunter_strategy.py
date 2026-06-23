@@ -57,6 +57,7 @@ def settings(**overrides) -> Settings:
         "timezone_local": "UTC",
         "btc_weekend_analysis_only": False,
         "bad_hour_analysis_only": False,
+        "symbol_trade_cooldown_enabled": False,
     }
     values.update(overrides)
     return Settings(**values)
