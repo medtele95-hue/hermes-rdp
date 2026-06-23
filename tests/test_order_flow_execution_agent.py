@@ -136,7 +136,8 @@ class TestMissingOrStaleData(unittest.TestCase):
 
 class TestScoreThreshold(unittest.TestCase):
     def test_low_score_blocks(self):
-        s = _settings(order_flow_min_score=100)
+        # snapshot yields score=100; use min_score=101 so 100 < 101 triggers SCORE_BELOW_THRESHOLD
+        s = _settings(order_flow_min_score=101)
         snap = _fresh_snapshot(price=2281.0, val=2280.0, vwap=2295.0, vah=2310.0, delta=100.0)
         result = evaluate("GOLD#", None, context={"order_flow_snapshot": snap}, settings=s)
         self.assertEqual(result["signal"], "WAIT")

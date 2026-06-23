@@ -607,17 +607,23 @@ class DemoKellyRouter:
                     kelly_lot,
                 )
             elif kelly_lot is None or kelly_lot <= 0:
-                # Kelly blocked only for probabilistic reasons (empty Markov → probability=0 →
-                # NO_POSITIVE_EDGE). Hard safety blocks (MISSING_EQUITY, MAX_DAILY_LOSS, etc.)
-                # are NOT in this set and continue to block normally.
+                # Probabilistic Kelly fallback: override to demo_max_lot when the root cause
+                # is empty Markov (INVALID_PROBABILITY) or zero-edge (NO_POSITIVE_EDGE),
+                # provided no hard safety block is present (those must still block).
                 _kelly_br = str((kelly_risk or {}).get("blocked_reason") or "")
-                _prob_only_blocks = {"INVALID_PROBABILITY", "NO_POSITIVE_EDGE"}
+                _prob_blocks = {"INVALID_PROBABILITY", "NO_POSITIVE_EDGE"}
+                _hard_safety_blocks = {"MISSING_EQUITY", "MAX_DAILY_LOSS", "MAX_DRAWDOWN", "READ_ONLY"}
                 _actual_kelly_blocks = {b.strip() for b in _kelly_br.split(",") if b.strip()} if _kelly_br else set()
-                if _actual_kelly_blocks and _actual_kelly_blocks.issubset(_prob_only_blocks):
+                _has_prob_block = bool(_actual_kelly_blocks & _prob_blocks)
+                _has_hard_safety = bool(_actual_kelly_blocks & _hard_safety_blocks)
+                log.info(
+                    "[KELLY_FALLBACK_CHECK] symbol=%s blocked_reason=%r has_prob=%s has_hard_safety=%s",
+                    symbol, _kelly_br, _has_prob_block, _has_hard_safety,
+                )
+                if _has_prob_block and not _has_hard_safety:
                     kelly_lot = float(getattr(self.settings, "demo_max_lot", 0.01))
                     log.info(
-                        "[KELLY_PROB_FALLBACK] symbol=%s kelly_blocked_only_for_probability"
-                        " reason=%s override_to=%.3f",
+                        "[KELLY_FALLBACK_TRIGGERED] symbol=%s blocked_by=%s override_to=%.3f",
                         symbol, _kelly_br, kelly_lot,
                     )
             _risk_lot_for_cap = risk_lot if (risk_lot is not None and risk_lot > 0) else None
