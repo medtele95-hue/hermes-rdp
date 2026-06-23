@@ -1171,8 +1171,17 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                     "[BTC_ENTRY_GUARD] status=BLOCK reason=CONFIRMATION_MATRIX_HARD_BLOCK"
                     " strategy=ORDER_FLOW_EXECUTION_AGENT exits_allowed=true",
                 )
-            _of_grade = str(payload.get("final_confluence_grade") or "D").upper()
-            _of_cscore = _to_float(payload.get("final_confluence_score")) or 0.0
+            # Derive grade directly from _of_setup_score (= order_flow_execution_agent_score).
+            # final_confluence_grade is not available here — confluence engine runs after
+            # setup_hunter in main.py, so that field is always D/0 at this stage.
+            _of_cscore = _of_setup_score
+            _of_grade = _grade(int(_of_cscore))
+            log.info(
+                "[BTC_ENTRY_GUARD_INPUT] symbol=%s of_score=%.1f of_grade=%s",
+                str(payload.get("symbol") or ""),
+                _of_cscore,
+                _of_grade,
+            )
             _of_high_quality_legacy_bypass = _of_setup_score >= 90.0 and _of_grade == "A"
             if not _of_high_quality_legacy_bypass and _grade_rank(_of_grade) < _grade_rank("B"):
                 failed.append("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B")

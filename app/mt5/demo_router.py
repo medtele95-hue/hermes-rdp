@@ -606,6 +606,20 @@ class DemoKellyRouter:
                     "[KELLY_LOVABLE_FIXED_LOT] kelly_was_zero_or_none overridden to fixed_lot=%s",
                     kelly_lot,
                 )
+            elif kelly_lot is None or kelly_lot <= 0:
+                # Kelly blocked only for probabilistic reasons (empty Markov → probability=0 →
+                # NO_POSITIVE_EDGE). Hard safety blocks (MISSING_EQUITY, MAX_DAILY_LOSS, etc.)
+                # are NOT in this set and continue to block normally.
+                _kelly_br = str((kelly_risk or {}).get("blocked_reason") or "")
+                _prob_only_blocks = {"INVALID_PROBABILITY", "NO_POSITIVE_EDGE"}
+                _actual_kelly_blocks = {b.strip() for b in _kelly_br.split(",") if b.strip()} if _kelly_br else set()
+                if _actual_kelly_blocks and _actual_kelly_blocks.issubset(_prob_only_blocks):
+                    kelly_lot = float(getattr(self.settings, "demo_max_lot", 0.01))
+                    log.info(
+                        "[KELLY_PROB_FALLBACK] symbol=%s kelly_blocked_only_for_probability"
+                        " reason=%s override_to=%.3f",
+                        symbol, _kelly_br, kelly_lot,
+                    )
             _risk_lot_for_cap = risk_lot if (risk_lot is not None and risk_lot > 0) else None
             capped_lot = min(value for value in [v for v in [kelly_lot, self.settings.demo_max_lot, 0.01, _risk_lot_for_cap] if v is not None])
             risk_pct = self._risk_pct(decision, capped_lot, account, symbol_specs or {})

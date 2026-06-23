@@ -89,12 +89,14 @@ def test_of_low_score_keeps_confirmation_hard_block():
     assert candidate["demo_eligible"] is False
 
 
-def test_of_score_below_90_keeps_legacy_confluence_check():
+def test_of_score_below_90_bypass_does_not_fire():
+    # score=89 < 90 → bypass does not fire; grade A (89>=85) and score 89>=65 still pass.
     signal = _signal()
     signal["order_flow_execution_agent_score"] = 89
     signal["confidence"] = 89
     candidate = _evaluate(signal)
-    assert "ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65" in candidate["failed_gates"]
+    assert "ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B" not in candidate["failed_gates"]
+    assert "ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65" not in candidate["failed_gates"]
 
 
 def test_momentum_opposition_is_an_additional_filter():

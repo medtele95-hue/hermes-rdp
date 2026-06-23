@@ -203,33 +203,39 @@ class TestOrderFlowConfluenceRequirements(unittest.TestCase):
     """Test 2: ORDER_FLOW with final grade < B or score < 65 is analysis-only."""
 
     def test_grade_c_blocked(self):
-        """final_confluence_grade=C → ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B in failed_gates."""
+        """score=70 → _grade(70)=C < B → ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B.
+        order_flow_min_score=65 so score=70 reaches the guard (70>=65 passes exec_ready)."""
+        s = _sh_settings(order_flow_min_score=65)
         with patch("app.agents.setup_hunter._confirmation_matrix", return_value=_CM_PASS):
-            result = _run_hunter([_of_signal(final_confluence_grade="C", final_confluence_score=70.0)])
+            result = _run_hunter([_of_signal(score=70.0)], s=s)
         best = result.best_candidate
         self.assertIn("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B", best["failed_gates"],
                       f"Grade C must fail, got: {best['failed_gates']}")
         self.assertFalse(best["demo_eligible"])
 
     def test_grade_d_blocked(self):
-        """final_confluence_grade=D → blocked."""
+        """score=55 → _grade(55)=D < B → blocked.
+        order_flow_min_score=50 so score=55 reaches the guard."""
+        s = _sh_settings(order_flow_min_score=50)
         with patch("app.agents.setup_hunter._confirmation_matrix", return_value=_CM_PASS):
-            result = _run_hunter([_of_signal(final_confluence_grade="D", final_confluence_score=70.0)])
+            result = _run_hunter([_of_signal(score=55.0)], s=s)
         best = result.best_candidate
         self.assertIn("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B", best["failed_gates"])
 
     def test_score_below_65_blocked(self):
-        """final_confluence_score=60 < 65 → ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65."""
+        """score=60 < 65 → ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65.
+        order_flow_min_score=55 so score=60 reaches the guard."""
+        s = _sh_settings(order_flow_min_score=55)
         with patch("app.agents.setup_hunter._confirmation_matrix", return_value=_CM_PASS):
-            result = _run_hunter([_of_signal(final_confluence_grade="A", final_confluence_score=60.0)])
+            result = _run_hunter([_of_signal(score=60.0)], s=s)
         best = result.best_candidate
         self.assertIn("ORDER_FLOW_CONFLUENCE_SCORE_BELOW_65", best["failed_gates"],
                       f"Score 60 < 65 must fail, got: {best['failed_gates']}")
 
     def test_grade_b_score_65_not_blocked_by_confluence(self):
-        """grade=B and score=65 → grade/score gates do not block."""
+        """score=75 → _grade(75)=B, score 75 >= 65 → grade/score gates do not block."""
         with patch("app.agents.setup_hunter._confirmation_matrix", return_value=_CM_PASS):
-            result = _run_hunter([_of_signal(final_confluence_grade="B", final_confluence_score=65.0)])
+            result = _run_hunter([_of_signal(score=75.0)])
         best = result.best_candidate
         self.assertNotIn("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B", best["failed_gates"],
                          f"Grade B must pass, got: {best['failed_gates']}")
