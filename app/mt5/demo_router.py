@@ -608,19 +608,22 @@ class DemoKellyRouter:
                 )
             elif kelly_lot is None or kelly_lot <= 0:
                 # Probabilistic Kelly fallback: override to demo_max_lot when the root cause
-                # is empty Markov (INVALID_PROBABILITY) or zero-edge (NO_POSITIVE_EDGE),
+                # is empty Markov (INVALID_PROBABILITY), zero-edge (NO_POSITIVE_EDGE), or
+                # MIN_LOT_EXCEEDS_RISK (risk amount too small for broker minimum lot),
                 # provided no hard safety block is present (those must still block).
                 _kelly_br = str((kelly_risk or {}).get("blocked_reason") or "")
                 _prob_blocks = {"INVALID_PROBABILITY", "NO_POSITIVE_EDGE"}
+                _min_lot_blocks = {"MIN_LOT_EXCEEDS_RISK"}
                 _hard_safety_blocks = {"MISSING_EQUITY", "MAX_DAILY_LOSS", "MAX_DRAWDOWN", "READ_ONLY"}
                 _actual_kelly_blocks = {b.strip() for b in _kelly_br.split(",") if b.strip()} if _kelly_br else set()
                 _has_prob_block = bool(_actual_kelly_blocks & _prob_blocks)
+                _has_min_lot = bool(_actual_kelly_blocks & _min_lot_blocks)
                 _has_hard_safety = bool(_actual_kelly_blocks & _hard_safety_blocks)
                 log.info(
-                    "[KELLY_FALLBACK_CHECK] symbol=%s blocked_reason=%r has_prob=%s has_hard_safety=%s",
-                    symbol, _kelly_br, _has_prob_block, _has_hard_safety,
+                    "[KELLY_FALLBACK_CHECK] symbol=%s blocked_reason=%r has_prob=%s has_min_lot=%s has_hard_safety=%s",
+                    symbol, _kelly_br, _has_prob_block, _has_min_lot, _has_hard_safety,
                 )
-                if _has_prob_block and not _has_hard_safety:
+                if (_has_prob_block or _has_min_lot) and not _has_hard_safety:
                     kelly_lot = float(getattr(self.settings, "demo_max_lot", 0.01))
                     log.info(
                         "[KELLY_FALLBACK_TRIGGERED] symbol=%s blocked_by=%s override_to=%.3f",
@@ -2511,6 +2514,11 @@ class DemoKellyRouter:
             event["sl"],
             event["tp"],
         )
+        if order_result.get("retcode") == 10017:
+            log.warning(
+                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 — enable AutoTrading in MT5 terminal",
+                event["symbol"],
+            )
         if success:
             _sent_mode = event.get("old_btc_mode") or event.get("mode") or "DEMO"
             _sent_trace = event.get("trace_id") or ""
@@ -2655,6 +2663,11 @@ class DemoKellyRouter:
             lot,
             order_result.get("retcode"),
         )
+        if order_result.get("retcode") == 10017:
+            log.warning(
+                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 — enable AutoTrading in MT5 terminal",
+                broker_symbol,
+            )
         return {
             "event_type": event_type,
             "status": status,

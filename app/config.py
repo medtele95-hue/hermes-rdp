@@ -109,7 +109,7 @@ class Settings(BaseModel):
     demo_ignore_duration_blocks: bool = True
     demo_ignore_setup_wait_hours: bool = True
     max_money_tp_enabled: bool = True
-    max_tp_usd: float = 2.0
+    max_tp_usd: float = 5.0
     max_tp_applies_to: str = "BTCUSD#,BTCUSD,GOLD#,GOLD,XAUUSD,EURUSD"
     demo_strong_setup_learning_mode: bool = False
     demo_strong_setup_min_edge: float = 95.0
@@ -521,7 +521,7 @@ def get_settings() -> Settings:
         demo_ignore_duration_blocks=_bool_env("DEMO_IGNORE_DURATION_BLOCKS", True),
         demo_ignore_setup_wait_hours=_bool_env("DEMO_IGNORE_SETUP_WAIT_HOURS", True),
         max_money_tp_enabled=_bool_env("MAX_MONEY_TP_ENABLED", True),
-        max_tp_usd=float(os.getenv("MAX_TP_USD", "2.00")),
+        max_tp_usd=float(os.getenv("MAX_TP_USD", "5.00")),
         max_tp_applies_to=os.getenv("MAX_TP_APPLIES_TO", "BTCUSD#,BTCUSD,GOLD#,GOLD,XAUUSD,EURUSD"),
         demo_strong_setup_learning_mode=_bool_env("DEMO_STRONG_SETUP_LEARNING_MODE", False),
         demo_strong_setup_min_edge=float(os.getenv("DEMO_STRONG_SETUP_MIN_EDGE", "95")),

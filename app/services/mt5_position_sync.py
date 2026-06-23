@@ -182,6 +182,11 @@ def _close_missing_lovable_trades(
         if ticket in local_closed_tickets or _row_is_closed(row):
             already_closed.append(ticket)
             continue
+        log.warning(
+            "[POSITION_SYNC_STALE_CLEARED] ticket=%s symbol=%s reason=NOT_IN_MT5",
+            ticket,
+            row.get("symbol") or "",
+        )
         close_row = _close_trade_payload(row, now)
         update = _update_closed_trade(ingest_client, settings, ticket, close_row)
         if update.get("ok"):
