@@ -1147,7 +1147,16 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
         and _to_float(payload.get("tp")) is not None
     )
     if order_flow_exec_ready:
-        _of_setup_score = float(_setup_score("ORDER_FLOW_EXECUTION_AGENT", payload))
+        # Read OF score using same fallback chain as FINAL_GATE (line 352):
+        # order_flow_execution_agent_score → order_flow_score → confidence
+        # Bug: previously only read order_flow_execution_agent_score, missing the fallback.
+        _of_raw = (
+            _to_float(payload.get("order_flow_execution_agent_score"))
+            or _to_float(payload.get("order_flow_score"))
+            or _to_float(payload.get("confidence"))
+            or 0.0
+        )
+        _of_setup_score = float(min(100.0, max(0.0, _of_raw)))
         _of_symbol_raw = str(payload.get("broker_symbol") or payload.get("symbol") or "").upper()
         _is_btc_of = _of_symbol_raw.startswith("BTCUSD")
         if _is_btc_of:
@@ -1171,11 +1180,13 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                     "[BTC_ENTRY_GUARD] status=BLOCK reason=CONFIRMATION_MATRIX_HARD_BLOCK"
                     " strategy=ORDER_FLOW_EXECUTION_AGENT exits_allowed=true",
                 )
-            # Derive grade directly from _of_setup_score (= order_flow_execution_agent_score).
-            # final_confluence_grade is not available here — confluence engine runs after
-            # setup_hunter in main.py, so that field is always D/0 at this stage.
             _of_cscore = _of_setup_score
             _of_grade = _grade(int(_of_cscore))
+            log.info(
+                "[BTC_GUARD_SCORE_READ] symbol=%s field=payload.of_score value=%.1f",
+                str(payload.get("symbol") or ""),
+                _of_cscore,
+            )
             log.info(
                 "[BTC_ENTRY_GUARD_INPUT] symbol=%s of_score=%.1f of_grade=%s",
                 str(payload.get("symbol") or ""),
@@ -1183,6 +1194,20 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                 _of_grade,
             )
             _of_high_quality_legacy_bypass = _of_setup_score >= 90.0 and _of_grade == "A"
+            # Hard block for very low OF score (< 40): fails before grade/65 checks
+            if not _of_high_quality_legacy_bypass and _of_cscore < 40.0:
+                failed.append("OF_SCORE_TOO_LOW")
+                log.info(
+                    "[BTC_ENTRY_GUARD_BLOCK] score=%.1f reason=LOW_OF_SCORE"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT exits_allowed=true",
+                    _of_cscore,
+                )
+            elif not _of_high_quality_legacy_bypass and _of_cscore < 60.0:
+                log.info(
+                    "[BTC_ENTRY_GUARD_WARN] score=%.1f grade=%s"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT reason=OF_SCORE_CAUTION",
+                    _of_cscore, _of_grade,
+                )
             if not _of_high_quality_legacy_bypass and _grade_rank(_of_grade) < _grade_rank("B"):
                 failed.append("ORDER_FLOW_CONFLUENCE_GRADE_BELOW_B")
                 log.info(
@@ -1198,6 +1223,11 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
                     _of_cscore,
                 )
             if _of_high_quality_legacy_bypass:
+                log.info(
+                    "[BTC_ENTRY_GUARD_PASS] score=%.1f grade=%s"
+                    " strategy=ORDER_FLOW_EXECUTION_AGENT",
+                    _of_setup_score, _of_grade,
+                )
                 log.info(
                     "[BTC_ENTRY_GUARD] status=PASS reason=OF_BYPASS_SAFETY_CHECK "
                     "strategy=ORDER_FLOW_EXECUTION_AGENT grade=%s score=%.1f",

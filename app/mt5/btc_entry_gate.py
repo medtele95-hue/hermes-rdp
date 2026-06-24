@@ -80,6 +80,19 @@ def evaluate_btc_entry_gate(
                     strat,
                 )
         elif strat == _ORDER_FLOW:
+            _of_val = float(confidence)
+            _of_gr = _of_grade(_of_val)
+            log.info("[BTC_GUARD_SCORE_READ] field=payload.of_score value=%.1f", _of_val)
+            if _of_val < 40.0:
+                log.info("[BTC_ENTRY_GUARD_BLOCK] score=%.1f reason=LOW_OF_SCORE", _of_val)
+                return _block("LOW_OF_SCORE", "OF_SCORE_GUARD_CHECK", strat)
+            elif _of_val < 60.0:
+                log.info(
+                    "[BTC_ENTRY_GUARD_WARN] score=%.1f grade=%s reason=OF_SCORE_CAUTION",
+                    _of_val, _of_gr,
+                )
+            else:
+                log.info("[BTC_ENTRY_GUARD_PASS] score=%.1f grade=%s", _of_val, _of_gr)
             min_score = int(
                 getattr(settings, "old_btc_entry_gate_order_flow_min_score", None)
                 or getattr(settings, "order_flow_min_score", _DEFAULT_ORDER_FLOW_MIN)
@@ -192,6 +205,14 @@ def _compute_score(confidence: float | None, ctx: dict | None, direction: str) -
 
 def _block(reason: str, failed_check: str, strategy: str) -> dict:
     return {"decision": "BLOCK", "reason": reason, "failed_check": failed_check, "strategy": strategy}
+
+
+def _of_grade(score: float) -> str:
+    """Grade the OF score for BTC entry gate logging (A/B/C/D)."""
+    if score >= 80: return "A"
+    if score >= 60: return "B"
+    if score >= 40: return "C"
+    return "D"
 
 
 def _f(value: object) -> float | None:
