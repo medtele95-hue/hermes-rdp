@@ -1076,7 +1076,7 @@ def _candidate_geometric_v2(payload: dict, mode: str) -> dict:
     }
     if prz["distance_atr"] is None:
         prz["distance_atr"] = float("inf")
-    return geometric_score(
+    result = geometric_score(
         pattern,
         prz,
         _to_float(payload.get("htf_alignment_score")) or 0.0,
@@ -1084,6 +1084,16 @@ def _candidate_geometric_v2(payload: dict, mode: str) -> dict:
         _to_float(payload.get("vwap_score")) or 0.0,
         mode,
     )
+    # Fix 3: H4 RANGE + no harmonic pattern + grade D → neutral 5.0 (not penalizing range markets)
+    _h4_bias = str(payload.get("h4_main_bias") or payload.get("h4_bias") or "").upper()
+    if _h4_bias == "RANGE" and pattern["quality"] == 0.0 and float(result.get("score") or 0.0) < 50.0:
+        result = dict(result)
+        result["score"] = 5.0
+        log.info(
+            "[GEO_RANGE_NEUTRAL] symbol=%s score_applied=5.0",
+            str(payload.get("symbol") or ""),
+        )
+    return result
 
 
 def _edge_score(setup_score: int, role: str, payload: dict) -> int:
