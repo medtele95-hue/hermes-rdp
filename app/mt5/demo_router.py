@@ -53,7 +53,7 @@ EUR_GENERIC_DISABLED_STRATEGIES = {
     "CRT_TBS_REVERSAL",
 }
 ENTRY_STRATEGIES = set(ACTIVE_EXECUTION_STRATEGIES)
-ALLOWED_GOLD_EXECUTION_STRATEGIES = {"SIMO_ATM_BREAKOUT", "FIB_CONFLUENCE_EXECUTION_AGENT", "GOLD_LIQUIDITY_HUNTER_PRO", "GOLD_M1_M5_EMA_SWEEP_SCALPER", "GOLD_ORDER_FLOW_CVD_VWAP", "ORDER_FLOW_EXECUTION_AGENT"}
+ALLOWED_GOLD_EXECUTION_STRATEGIES = {"SIMO_ATM_BREAKOUT", "FIB_CONFLUENCE_EXECUTION_AGENT", "GOLD_LIQUIDITY_HUNTER_PRO", "GOLD_M1_M5_EMA_SWEEP_SCALPER", "GOLD_ORDER_FLOW_CVD_VWAP", "GOLD_RANGE_BREAKOUT", "ORDER_FLOW_EXECUTION_AGENT"}
 OBSERVER_ONLY_STRATEGIES = {"SECOND_ENTRY", "SCALPING_AGENT"}
 CONFIRMATION_ONLY_STRATEGIES = {"EMA_PULLBACK"}
 EXPLORATION_SESSIONS = {"ASIA_MAIN", "LONDON", "OVERLAP", "NEW_YORK"}
@@ -1270,6 +1270,11 @@ class DemoKellyRouter:
                 if order_flow_reason:
                     return order_flow_reason
                 return None
+            if strategy == "GOLD_RANGE_BREAKOUT":
+                range_reason = self._gold_range_breakout_block_reason(gates)
+                if range_reason:
+                    return range_reason
+                return None
             if strategy == "ORDER_FLOW_EXECUTION_AGENT":
                 return None
             gold_reason = self._gold_liquidity_block_reason(gates)
@@ -1393,6 +1398,27 @@ class DemoKellyRouter:
                 return str(gates.get("time_gate_reason") or "TIME_GATE_BLOCK")
             if gates.get("time_gate_reason") == "BAD_LIQUIDITY_HOUR" or gates.get("is_bad_hour"):
                 return "BAD_LIQUIDITY_HOUR"
+        if int(gates.get("current_symbol_open_count") or 0) >= self.settings.gold_max_open_trades:
+            return "MAX_OPEN_TRADES_PER_SYMBOL"
+        return None
+
+    def _gold_range_breakout_block_reason(self, gates: dict) -> str | None:
+        if not bool(getattr(self.settings, "gold_range_breakout_enabled", False)):
+            return "GOLD_RANGE_BREAKOUT_DISABLED"
+        if not bool(gates.get("gold_range_breakout_ready")):
+            return "GOLD_RANGE_BREAKOUT_NOT_READY"
+        direction = str(gates.get("direction") or gates.get("signal") or "").upper()
+        if direction not in {"BUY", "SELL"}:
+            return "GOLD_RANGE_BREAKOUT_NO_SIGNAL"
+        rr = _to_float(gates.get("risk_reward") or gates.get("reward_risk") or gates.get("rr"))
+        if rr is None or rr < 1.5:
+            return "GOLD_RANGE_BREAKOUT_RR_TOO_LOW"
+        score = _to_float(gates.get("gold_range_breakout_score") or gates.get("confidence"))
+        if score is None or score < 65.0:
+            return "GOLD_RANGE_BREAKOUT_SCORE_TOO_LOW"
+        if not _demo_ignore_time_blocks(self.settings):
+            if gates.get("time_gate_status") != "PASS":
+                return str(gates.get("time_gate_reason") or "TIME_GATE_BLOCK")
         if int(gates.get("current_symbol_open_count") or 0) >= self.settings.gold_max_open_trades:
             return "MAX_OPEN_TRADES_PER_SYMBOL"
         return None
@@ -2449,11 +2475,55 @@ class DemoKellyRouter:
                 "order_failure_reason": reason,
             }
         _order_symbol = event["broker_symbol"]
+        # Remap logical EURUSD to broker-specific symbol name if configured
+        _eurusd_broker = getattr(self.settings, "eurusd_broker_symbol", "EURUSD") or "EURUSD"
+        if _order_symbol.upper().startswith("EURUSD") and _eurusd_broker.upper() != _order_symbol.upper():
+            log.info("[SYMBOL_REMAP] %s → %s (EURUSD_BROKER_SYMBOL)", _order_symbol, _eurusd_broker)
+            _order_symbol = _eurusd_broker
         _sym_info = None
         try:
             _sym_info = mt5.symbol_info(_order_symbol)
         except Exception:
             pass
+        # Symbol not in MarketWatch — select it and retry
+        if _sym_info is None:
+            _sel_result = False
+            _sel_error = None
+            try:
+                _sel_fn = getattr(mt5, "symbol_select", None)
+                if callable(_sel_fn):
+                    _sel_result = _sel_fn(_order_symbol, True)
+                try:
+                    _sel_error = mt5.last_error()
+                except Exception:
+                    pass
+                log.info(
+                    "[SYMBOL_SELECT_ATTEMPT] symbol=%s select_result=%s last_error=%s",
+                    _order_symbol, _sel_result, _sel_error,
+                )
+                _sym_info = mt5.symbol_info(_order_symbol)
+            except Exception:
+                pass
+            if _sym_info is None:
+                _last_err = None
+                try:
+                    _last_err = mt5.last_error()
+                except Exception:
+                    pass
+                _eur_variants: list[str] = []
+                try:
+                    _all_syms = mt5.symbols_get()
+                    if _all_syms:
+                        _eur_variants = [
+                            s.name for s in _all_syms
+                            if "EUR" in str(getattr(s, "name", "")).upper()
+                        ]
+                except Exception:
+                    pass
+                log.warning(
+                    "[SYMBOL_SELECT_FAILED] symbol=%s last_error=%s eur_broker_variants=%s",
+                    _order_symbol, _last_err, _eur_variants[:10],
+                )
         _trade_mode = int(getattr(_sym_info, "trade_mode", -1) or -1) if _sym_info is not None else -1
         _trade_allowed = getattr(_sym_info, "trade_allowed", None) if _sym_info is not None else None
         _filling_mask = int(getattr(_sym_info, "filling_mode", 0) or 0) if _sym_info is not None else 0
@@ -3912,6 +3982,11 @@ def _detect_filling_mode(symbol: str) -> int:
     """
     try:
         info = mt5.symbol_info(symbol)
+        if info is None:
+            _sel = getattr(mt5, "symbol_select", None)
+            if callable(_sel):
+                _sel(symbol, True)
+            info = mt5.symbol_info(symbol)
     except Exception:
         info = None
     filling_mask = int(getattr(info, "filling_mode", 0) or 0) if info is not None else 0

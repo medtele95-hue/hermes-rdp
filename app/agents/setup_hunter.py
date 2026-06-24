@@ -533,6 +533,12 @@ class SetupHunter:
             "gold_order_flow_cvd_vwap": merged.get("gold_order_flow_cvd_vwap"),
             "gold_order_flow_signal": merged.get("gold_order_flow_signal"),
             "gold_order_flow_score": merged.get("gold_order_flow_score"),
+            "gold_range_breakout_score": merged.get("gold_range_breakout_score"),
+            "gold_range_breakout_grade": merged.get("gold_range_breakout_grade"),
+            "gold_range_breakout_ready": merged.get("gold_range_breakout_ready"),
+            "range_active": merged.get("range_active"),
+            "range_high": merged.get("range_high"),
+            "range_low": merged.get("range_low"),
             "order_flow_execution_agent": merged.get("order_flow_execution_agent"),
             "order_flow_execution_agent_score": merged.get("order_flow_execution_agent_score"),
             "order_flow_execution_agent_signal": merged.get("order_flow_execution_agent_signal"),
@@ -642,6 +648,12 @@ class SetupHunter:
                 "gold_order_flow_signal",
                 "gold_order_flow_score",
                 "gold_order_flow_reason",
+                "gold_range_breakout_score",
+                "gold_range_breakout_grade",
+                "gold_range_breakout_ready",
+                "range_active",
+                "range_high",
+                "range_low",
                 "simo_atm_breakout",
                 "simo_atm_signal",
                 "simo_atm_score",
@@ -1024,6 +1036,7 @@ def _setup_score(strategy: str, payload: dict) -> int:
             "GOLD_LIQUIDITY_HUNTER_PRO": "gold_liquidity_score",
             "GOLD_M1_M5_EMA_SWEEP_SCALPER": "gold_m1m5_scalper_score",
             "GOLD_ORDER_FLOW_CVD_VWAP": "gold_order_flow_score",
+            "GOLD_RANGE_BREAKOUT": "gold_range_breakout_score",
             "ORDER_FLOW_EXECUTION_AGENT": "order_flow_execution_agent_score",
             "EUR_EMA_RSI_ATR_CROSSOVER": "confidence",
             "BTC_SCALPING_AGENT": "confidence",
@@ -1134,6 +1147,18 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
         and str(payload.get("signal") or "").upper() in {"BUY", "SELL"}
         and (_to_float(payload.get("gold_order_flow_score")) or _to_float(payload.get("confidence")) or 0.0) >= int(getattr(settings, "gold_order_flow_min_confidence", 70))
         and (rr or 0.0) >= 1.5
+    )
+    gold_range_strategy = strategy == "GOLD_RANGE_BREAKOUT"
+    gold_range_ready = (
+        gold_range_strategy
+        and bool(getattr(settings, "gold_range_breakout_enabled", False))
+        and bool(payload.get("gold_range_breakout_ready"))
+        and str(payload.get("signal") or "").upper() in {"BUY", "SELL"}
+        and (_to_float(payload.get("gold_range_breakout_score")) or _to_float(payload.get("confidence")) or 0.0) >= 65.0
+        and (rr or 0.0) >= 1.5
+        and _to_float(payload.get("entry")) is not None
+        and _to_float(payload.get("sl")) is not None
+        and _to_float(payload.get("tp")) is not None
     )
     order_flow_exec_strategy = strategy == "ORDER_FLOW_EXECUTION_AGENT"
     order_flow_exec_ready = (
@@ -1339,7 +1364,7 @@ def _failed_gates(role: str, payload: dict, spread: float, max_spread: float, se
         and _to_float(payload.get("tp")) is not None
     )
     statistical_quant_ready = quant_ready or quant_pro_ready
-    strategy_ready_without_confluence = statistical_quant_ready or gold_ready or gold_m1m5_ready or gold_order_flow_ready or btc_scalping_ready or _btc_lovable_bypass or simo_ready or strategy_pack_ready or fib_ready
+    strategy_ready_without_confluence = statistical_quant_ready or gold_ready or gold_m1m5_ready or gold_order_flow_ready or gold_range_ready or btc_scalping_ready or _btc_lovable_bypass or simo_ready or strategy_pack_ready or fib_ready
     if not strategy_ready_without_confluence and not order_flow_exec_ready:
         # Task 4: skip confirmation matrix for symbol-mismatched strategies to avoid noisy logs.
         # order_flow_exec_ready has its own dedicated CM check above — skip the general check.

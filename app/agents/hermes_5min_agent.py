@@ -21,7 +21,7 @@ from app.quant.absorption_detector import detect_absorption_context as _detect_a
 from app.services import eur_ema_rsi_atr_strategy, gold_liquidity_hunter_strategy, gold_m1m5_ema_sweep_scalper_strategy
 from app.services.wsp_intelligence_overlay import evaluate_wsp_intelligence
 from app.services.top_down_market_reader import TopDownMarketReader
-from app.strategies import breakout_retest, ema_pullback, fib_confluence_agent, gold_order_flow_cvd_vwap, order_flow_execution_agent, scalping, second_entry, simo_atm_breakout
+from app.strategies import breakout_retest, ema_pullback, fib_confluence_agent, gold_order_flow_cvd_vwap, gold_range_breakout, order_flow_execution_agent, scalping, second_entry, simo_atm_breakout
 from app.mt5.btc_market_narrator import BtcNarratorInput
 
 _BTC_SYMBOLS: frozenset[str] = frozenset({"BTCUSD#", "BTCUSD"})
@@ -92,6 +92,7 @@ class Hermes5MinAgent:
             gold_liquidity_hunter_strategy.evaluate(symbol, frames, base_context, self.settings),
             gold_m1m5_ema_sweep_scalper_strategy.evaluate(symbol, frames, base_context, self.settings),
             gold_order_flow_cvd_vwap.evaluate(symbol, frames, base_context, self.settings),
+            gold_range_breakout.evaluate(symbol, frames, base_context, self.settings),
             order_flow_execution_agent.evaluate(symbol, frames, base_context, self.settings),
             fib_confluence_agent.evaluate(symbol, frames, base_context, self.settings),
             eur_ema_rsi_atr_strategy.evaluate(symbol, frames, base_context, self.settings),
