@@ -1238,3 +1238,110 @@ class TestGeometricAuditLogs:
         with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
             analyze_geometric_confluence("BTCUSD#", "BUY", rates, rates, rates, rates)
         assert any("[GEOMETRIC_RATIOS]" in line and "ratios=" in line for line in captured.output)
+
+
+# ---------------------------------------------------------------------------
+# §12 GEO_RANGE_NEUTRAL — neutral floor in FINAL_GATE components['geometry']
+# ---------------------------------------------------------------------------
+
+class TestGeoRangeNeutral:
+    """Verify that the geometry-neutral floor (score=5.0) fires and reaches
+    the FINAL_GATE components dict when H4 is RANGE, no harmonic pattern, grade D.
+
+    Tests both the _candidate_geometric_v2 path (which feeds FINAL_GATE) and the
+    analyze_geometric_confluence path (which feeds the [GEOMETRIC_CONFLUENCE] log).
+    """
+
+    def _candidate_geo(self, payload: dict) -> dict:
+        from app.agents.setup_hunter import _candidate_geometric_v2
+        return _candidate_geometric_v2(payload, "SHADOW")
+
+    # --- _candidate_geometric_v2 (FINAL_GATE path) ---
+
+    def test_range_no_pattern_sets_score_5(self):
+        """RANGE + no harmonic + grade-D score → result['score'] == 5.0."""
+        payload = {"symbol": "GOLD#", "smc_h4_direction": "RANGE"}
+        result = self._candidate_geo(payload)
+        assert result["score"] == 5.0, f"Expected 5.0, got {result['score']}"
+
+    def test_range_no_pattern_logs_geo_range_neutral(self):
+        """RANGE condition must emit [GEO_RANGE_NEUTRAL] with all required fields."""
+        import unittest
+        payload = {"symbol": "GOLD#", "smc_h4_direction": "RANGE"}
+        with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
+            self._candidate_geo(payload)
+        matching = [l for l in captured.output if "[GEO_RANGE_NEUTRAL]" in l]
+        assert matching, "Expected [GEO_RANGE_NEUTRAL] log line"
+        line = matching[0]
+        assert "h4_bias=RANGE" in line
+        assert "pattern=NONE" in line
+        assert "grade=D" in line
+        assert "score_applied=5.0" in line
+
+    def test_range_no_pattern_via_h4_bias_fallback(self):
+        """h4_bias string fallback (no smc_h4_direction) also triggers neutral floor."""
+        payload = {"symbol": "GOLD#", "h4_bias": "RANGE"}
+        result = self._candidate_geo(payload)
+        assert result["score"] == 5.0
+
+    def test_non_range_market_score_unchanged(self):
+        """Non-RANGE market must NOT apply the neutral floor."""
+        payload_bull = {"symbol": "GOLD#", "smc_h4_direction": "BULLISH"}
+        payload_bear = {"symbol": "GOLD#", "smc_h4_direction": "BEARISH"}
+        result_bull = self._candidate_geo(payload_bull)
+        result_bear = self._candidate_geo(payload_bear)
+        # Without pattern/prz data these will be 0.0, not 5.0
+        assert result_bull["score"] != 5.0 or result_bull["score"] == 0.0
+        assert result_bear["score"] != 5.0 or result_bear["score"] == 0.0
+
+    def test_range_with_harmonic_pattern_score_unchanged(self):
+        """RANGE but WITH a harmonic pattern quality → neutral floor must NOT apply."""
+        payload = {
+            "symbol": "GOLD#",
+            "smc_h4_direction": "RANGE",
+            "harmonic_score": 80.0,  # non-zero pattern quality
+        }
+        result = self._candidate_geo(payload)
+        # harmonic_score=80 → pattern["quality"]=80 → condition is False → no override
+        assert result["score"] != 5.0
+
+    def test_final_gate_geometry_is_5_in_range(self):
+        """End-to-end: final_trade_gate components['geometry'] == 5.0 when RANGE + no pattern."""
+        from app.mt5.geometric_engine_v2 import final_trade_gate
+        geo_v2 = self._candidate_geo({"symbol": "GOLD#", "smc_h4_direction": "RANGE"})
+        assert geo_v2["score"] == 5.0
+        result = final_trade_gate(
+            geo_v2,
+            {"score": 0.0},
+            {"status": "PASS", "score": 50.0},
+            {"status": "PASS", "score": 50.0, "trend_strength": 0.3},
+            spread_usd=1.0,
+            atr=2.0,
+            session="LONDON",
+            symbol="GOLD#",
+            capital_risk_pct=0.5,
+            mode="SHADOW",
+        )
+        assert result["component_scores"]["geometry"] == 5.0, (
+            f"Expected geometry=5.0 in FINAL_GATE, got {result['component_scores']['geometry']}"
+        )
+
+    # --- analyze_geometric_confluence path ([GEOMETRIC_CONFLUENCE] log) ---
+
+    def test_analyze_geo_range_neutral_with_smc_h4_direction(self):
+        """analyze_geometric_confluence picks up smc_h4_direction='RANGE' from setup_context."""
+        import unittest
+        rates = _make_minimal_rates(80)
+        ctx = {"smc_h4_direction": "RANGE"}
+        with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
+            result = analyze_geometric_confluence(
+                "GOLD#", "BUY", rates, rates, rates, rates, setup_context=ctx
+            )
+        if result["harmonic_pattern"] == "NONE" and result["geometric_grade"] == "D":
+            assert result["geometric_score"] == 5.0, (
+                f"Expected geometric_score=5.0 in RANGE+NONE+D, got {result['geometric_score']}"
+            )
+            matching = [l for l in captured.output if "[GEO_RANGE_NEUTRAL]" in l]
+            assert matching, "[GEO_RANGE_NEUTRAL] must be logged"
+            line = matching[0]
+            assert "grade=D" in line and "score_applied=5.0" in line

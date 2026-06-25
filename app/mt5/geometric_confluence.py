@@ -697,11 +697,20 @@ def analyze_geometric_confluence(
 
     # Fix 3: Neutral geometry in H4 RANGE regime — no harmonic pattern → score 5.0
     # Without this, range markets always score 0 (no pattern) which kills composite.
-    _h4_bias_ctx = str((setup_context or {}).get("h4_main_bias") or (setup_context or {}).get("h4_bias") or "").upper()
+    # smc_h4_direction is the authoritative string from the SMC tagger; h4_main_bias is a float
+    # score from top_down_market_reader and must NOT be used for this string comparison.
+    _h4_bias_ctx = str(
+        (setup_context or {}).get("smc_h4_direction")
+        or (setup_context or {}).get("h4_bias")
+        or ""
+    ).upper()
     if _h4_bias_ctx == "RANGE" and harm_pattern == "NONE" and grade == "D":
         score = 5.0
         grade = _geometric_grade(score)  # still D but score is neutral, not 0
-        log.info("[GEO_RANGE_NEUTRAL] symbol=%s score_applied=5.0 h4_bias=RANGE pattern=NONE", symbol)
+        log.info(
+            "[GEO_RANGE_NEUTRAL] symbol=%s h4_bias=RANGE pattern=NONE grade=D score_applied=5.0",
+            symbol,
+        )
 
     decision, reason = _geometric_decision(score, direction, setup_dir)
 

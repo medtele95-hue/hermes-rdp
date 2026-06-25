@@ -569,6 +569,7 @@ class SetupHunter:
             "score_breakdown": merged.get("score_breakdown"),
             "d1_macro_bias": merged.get("d1_macro_bias"),
             "h4_main_bias": merged.get("h4_main_bias"),
+            "smc_h4_direction": merged.get("smc_h4_direction"),
             "h1_internal_structure": merged.get("h1_internal_structure"),
             "m5_context_status": merged.get("m5_context_status"),
             "metadata": merged.get("metadata") or {},
@@ -1085,12 +1086,14 @@ def _candidate_geometric_v2(payload: dict, mode: str) -> dict:
         mode,
     )
     # Fix 3: H4 RANGE + no harmonic pattern + grade D → neutral 5.0 (not penalizing range markets)
-    _h4_bias = str(payload.get("h4_main_bias") or payload.get("h4_bias") or "").upper()
+    # smc_h4_direction is the authoritative string source ("RANGE"/"BULLISH"/"BEARISH") from the
+    # SMC tagger. h4_main_bias is a float score from top_down_market_reader — never use it here.
+    _h4_bias = str(payload.get("smc_h4_direction") or payload.get("h4_bias") or "").upper()
     if _h4_bias == "RANGE" and pattern["quality"] == 0.0 and float(result.get("score") or 0.0) < 50.0:
         result = dict(result)
         result["score"] = 5.0
         log.info(
-            "[GEO_RANGE_NEUTRAL] symbol=%s score_applied=5.0",
+            "[GEO_RANGE_NEUTRAL] symbol=%s h4_bias=RANGE pattern=NONE grade=D score_applied=5.0",
             str(payload.get("symbol") or ""),
         )
     return result
