@@ -183,9 +183,17 @@ def evaluate(
     min_rr = float(getattr(settings, "order_flow_min_rr", 1.5))
     levels = _calc_sltp(direction, price, vwap, poc, vah, val, min_rr)
     if levels is None:
+        log.info(
+            "[OF_SLTP] symbol=%s verdict=INVALID direction=%s price=%s val=%s vah=%s",
+            symbol, direction, price, val, vah,
+        )
         return _wait(symbol, "ORDER_FLOW_INVALID_SLTP", score=score)
 
     entry, sl, tp, rr = levels
+    log.info(
+        "[OF_SLTP] symbol=%s verdict=%s direction=%s entry=%s sl=%s tp=%s rr=%s",
+        symbol, "VALID" if rr >= min_rr else "RR_BELOW_MIN", direction, entry, sl, tp, rr,
+    )
     if rr < min_rr:
         return _wait(symbol, "ORDER_FLOW_RR_BELOW_MIN", score=score)
 
@@ -362,15 +370,18 @@ def _calc_sltp(
 ) -> tuple[float, float, float, float] | None:
     buffer = price * 0.001
 
+    # Anchor the SL on the far side of BOTH the value level and the current
+    # price. Anchoring on VAL/VAH alone put the SL on the wrong side whenever
+    # price swept beyond the level - rejecting exactly the best sweep setups.
     if direction == "BUY":
-        sl = val - buffer
+        sl = min(val, price) - buffer
         risk = price - sl
         if risk <= 0:
             return None
         tp = price + risk * min_rr
         rr = (tp - price) / risk
     else:
-        sl = vah + buffer
+        sl = max(vah, price) + buffer
         risk = sl - price
         if risk <= 0:
             return None

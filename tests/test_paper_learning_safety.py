@@ -3146,23 +3146,23 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assert_tp_money_capped(request, 100000.0, 0.01, 1.0)
         self.assertTrue(items[0]["data"]["max_money_tp"]["applied"])
 
-    def test_max_money_tp_caps_gold_buy_and_sell_to_two_usd(self) -> None:
+    def test_max_money_tp_gold_hard_excluded_never_capped(self) -> None:
+        # BLOC 2: GOLD is hard-excluded from money-TP capping (it produced
+        # TP $5 / SL $69 penny grabs). TP must pass through untouched.
         info = self.max_tp_symbol_info(1.0, 0.01, 2, 0.01)
         buy = self.gold_m1m5_scalper_decision(entry=2300.0, sl=2299.0, tp=2310.0, reward_risk=10.0)
         buy_items, buy_send = self.process_with_max_tp(buy, "GOLD#", info, {"tick_value": 1.0, "tick_size": 0.01, "volume_step": 0.01})
         buy_request = buy_send.call_args.args[0]
-        self.assertEqual(buy_request["tp"], 2302.0)
+        self.assertEqual(buy_request["tp"], 2310.0)
         self.assertEqual(buy_request["sl"], 2299.0)
-        self.assert_tp_money_capped(buy_request, 2300.0, 1.0, 0.01)
         sell_payload = {**self.gold_m1m5_scalper_decision()["gold_m1m5_scalper"], "decision": "SELL"}
         sell = self.gold_m1m5_scalper_decision(signal="SELL", entry=2300.0, sl=2301.0, tp=2290.0, reward_risk=10.0, gold_m1m5_scalper=sell_payload, gold_m1m5_scalper_decision="SELL")
         sell_items, sell_send = self.process_with_max_tp(sell, "GOLD#", info, {"tick_value": 1.0, "tick_size": 0.01, "volume_step": 0.01})
         sell_request = sell_send.call_args.args[0]
-        self.assertEqual(sell_request["tp"], 2298.0)
+        self.assertEqual(sell_request["tp"], 2290.0)
         self.assertEqual(sell_request["sl"], 2301.0)
-        self.assert_tp_money_capped(sell_request, 2300.0, 1.0, 0.01)
-        self.assertTrue(buy_items[0]["data"]["max_money_tp"]["applied"])
-        self.assertTrue(sell_items[0]["data"]["max_money_tp"]["applied"])
+        self.assertFalse(buy_items[0]["data"]["max_money_tp"]["applied"])
+        self.assertFalse(sell_items[0]["data"]["max_money_tp"]["applied"])
 
     def test_max_money_tp_caps_eur_buy_and_sell_to_two_usd(self) -> None:
         info = self.max_tp_symbol_info(1.0, 0.00001, 5, 0.00001)
@@ -3210,12 +3210,15 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assertEqual(items[0]["data"]["reason"], "MAX_TP_SYMBOL_SPEC_INVALID")
 
     def test_max_money_tp_broker_stop_distance_blocks_before_order_send(self) -> None:
-        decision = self.gold_m1m5_scalper_decision(entry=2300.0, sl=2299.0, tp=2310.0, reward_risk=10.0)
+        # GOLD is hard-excluded from money-TP, so the stop-distance safety
+        # check is exercised on EURUSD instead.
+        decision = self.eur_strategy_decision(entry=1.1, sl=1.099, tp=1.105, reward_risk=5.0)
         items, send = self.process_with_max_tp(
             decision,
-            "GOLD#",
-            self.max_tp_symbol_info(1.0, 0.01, 2, 0.01, stops_level=300),
-            {"tick_value": 1.0, "tick_size": 0.01, "volume_step": 0.01},
+            "EURUSD",
+            self.max_tp_symbol_info(1.0, 0.00001, 5, 0.00001, stops_level=300),
+            self.specs(),
+            self.eur_router(max_money_tp_enabled=True),
         )
         send.assert_not_called()
         self.assertEqual(items[0]["data"]["reason"], "MAX_TP_TOO_CLOSE_TO_MARKET")

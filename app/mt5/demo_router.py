@@ -123,8 +123,34 @@ def _with_user_disabled_time_blocks(settings: Settings, time_gate: dict | None) 
 
 
 def _max_money_tp_symbol_allowed(settings: Settings, symbol: object) -> bool:
+    normalized = str(symbol or "").upper()
+    # GOLD hard-excluded whatever the env says: money-TP capping produced
+    # TP $5 / SL $69 setups (RR 0.07) on GOLD#.
+    if normalized.startswith("GOLD") or normalized.startswith("XAUUSD"):
+        return False
     allowed = {item.strip().upper() for item in str(getattr(settings, "max_tp_applies_to", "") or "").split(",") if item.strip()}
-    return str(symbol or "").upper() in allowed
+    return normalized in allowed
+
+
+def _final_rr(direction: object, entry: object, sl: object, tp: object) -> float | None:
+    """Reward/risk from the FINAL request values; None when not computable."""
+    try:
+        entry_f = float(entry)
+        sl_f = float(sl)
+        tp_f = float(tp)
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in (entry_f, sl_f, tp_f)):
+        return None
+    if str(direction or "").upper() == "BUY":
+        risk = entry_f - sl_f
+        reward = tp_f - entry_f
+    else:
+        risk = sl_f - entry_f
+        reward = entry_f - tp_f
+    if risk <= 0:
+        return None
+    return reward / risk
 
 
 @dataclass(frozen=True)
@@ -2596,6 +2622,29 @@ class DemoKellyRouter:
             request["sl"] = event["sl"] = precheck["normalized_sl"]
         if precheck.get("normalized_tp") is not None:
             request["tp"] = event["tp"] = precheck["normalized_tp"]
+        # RR floor at the FINAL choke-point, after every TP modification
+        # (money-TP cap, old-btc TP, stop normalization). A capped TP must
+        # never turn a validated setup into a sub-1.0 RR penny grab.
+        final_rr = _final_rr(event.get("direction"), request.get("price"), request.get("sl"), request.get("tp"))
+        event["final_rr_at_send"] = final_rr
+        if final_rr is not None and final_rr < 1.0 - 1e-9:
+            log.warning(
+                "[OF_SLTP] verdict=RR_FLOOR_BLOCK symbol=%s direction=%s entry=%s sl=%s tp=%s rr=%.3f",
+                _order_symbol, event.get("direction"), request.get("price"), request.get("sl"), request.get("tp"), final_rr,
+            )
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": "RR_FLOOR_BELOW_1_0",
+                "failed_gate": "RR_FLOOR_BELOW_1_0",
+                "order_precheck": precheck,
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": request,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": f"RR_FLOOR_BELOW_1_0_rr={final_rr:.3f}",
+            }
         order_check = _safe_order_check(request)
         event["order_check"] = order_check
         if order_check and order_check.get("decision") == "BLOCK":
@@ -2723,6 +2772,26 @@ class DemoKellyRouter:
                 "order_retcode": None,
                 "order_success": False,
                 "order_failure_reason": "MISSING_ENTRY_SL_TP",
+            }
+
+        final_rr = _final_rr(direction, entry, sl, tp)
+        event["final_rr_at_send"] = final_rr
+        if final_rr is not None and final_rr < 1.0 - 1e-9:
+            log.warning(
+                "[OF_SLTP] verdict=RR_FLOOR_BLOCK symbol=%s direction=%s entry=%s sl=%s tp=%s rr=%.3f path=PENDING",
+                broker_symbol, direction, entry, sl, tp, final_rr,
+            )
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": "RR_FLOOR_BELOW_1_0",
+                "failed_gate": "RR_FLOOR_BELOW_1_0",
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": None,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": f"RR_FLOOR_BELOW_1_0_rr={final_rr:.3f}",
             }
 
         expiry_dt = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=expiry_minutes)
