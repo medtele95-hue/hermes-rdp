@@ -102,6 +102,9 @@ class Settings(BaseModel):
     # login and server match; anything else is REAL_UNKNOWN (fail-closed).
     real_declared_login: str = ""
     real_declared_server: str = ""
+    # Broker clock offset vs UTC (XM = UTC+3): the daily kill-switch window
+    # is anchored on BROKER midnight (== 21:00 UTC the previous day).
+    broker_utc_offset_hours: float = 3.0
     demo_pilot_started_at: str = ""
     demo_exploration_mode: bool = True
     demo_exploration_max_lot: float = 0.01
@@ -525,6 +528,7 @@ def get_settings() -> Settings:
         demo_allowed_login=os.getenv("DEMO_ALLOWED_LOGIN", "").strip(),
         real_declared_login=os.getenv("REAL_DECLARED_LOGIN", "").strip(),
         real_declared_server=os.getenv("REAL_DECLARED_SERVER", "").strip(),
+        broker_utc_offset_hours=float(os.getenv("BROKER_UTC_OFFSET_HOURS", "3")),
         demo_pilot_started_at=os.getenv("DEMO_PILOT_STARTED_AT", ""),
         demo_exploration_mode=_bool_env("DEMO_EXPLORATION_MODE", True),
         demo_exploration_max_lot=float(os.getenv("DEMO_EXPLORATION_MAX_LOT", "0.01")),

@@ -24,6 +24,7 @@ from app.mt5.smart_rescue import (
     is_hermes_btc_pos,
 )
 from app.services.adaptive_account_policy import AccountPolicy, resolve_account_policy, trading_authorized
+from app.services.daily_killswitch import evaluate_daily_killswitch
 from app.services.exit_v2 import ExitV2Config, evaluate_exit_v2, is_gold_symbol as _exit_v2_is_gold
 from app.services.adaptive_confluence_threshold import evaluate_adaptive_confluence
 from app.services.mt5_pnl_truth import get_mt5_hermes_pnl_truth
@@ -1006,6 +1007,23 @@ class DemoKellyRouter:
                 )
                 if _gate_decision == "BLOCK":
                     reason = _gate_reason
+        # DAILY_KILLSWITCH — broker-day window, deals re-read on every
+        # evaluation (nothing in memory), quota by account policy.
+        daily_killswitch = None
+        if not reason and mt5_connected:
+            try:
+                daily_killswitch = evaluate_daily_killswitch(
+                    account_policy,
+                    self.settings,
+                    self.settings.demo_magic_number,
+                    account=account,
+                    now_utc=now_dt,
+                )
+                if daily_killswitch.get("triggered"):
+                    reason = str(daily_killswitch.get("reason") or "DAILY_KILLSWITCH_TRIGGERED")
+            except Exception as _ks_exc:
+                reason = "DAILY_KILLSWITCH_HISTORY_UNREADABLE"
+                log.warning("[DAILY_KILLSWITCH] evaluate_failed error=%s -> FAIL_CLOSED", str(_ks_exc)[:200])
         # ADAPTIVE_ACCOUNT_POLICY constraints (REAL_UNKNOWN: cap 2%, confluence >= 80)
         if not reason:
             if account_policy.risk_cap_percent is not None and risk_pct is not None and risk_pct > account_policy.risk_cap_percent:
@@ -1097,6 +1115,7 @@ class DemoKellyRouter:
             "account_diagnostics": account_diag,
             "account_policy": account_policy.level,
             "account_policy_detail": account_policy.as_payload(),
+            "daily_killswitch": daily_killswitch,
             "strict_block_reason": strict_block_reason,
             "exploration_mode_enabled": bool(self.settings.demo_exploration_mode),
             "demo_strong_setup_learning_mode_enabled": bool(self.settings.demo_strong_setup_learning_mode),
