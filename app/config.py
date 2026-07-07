@@ -105,6 +105,14 @@ class Settings(BaseModel):
     # Broker clock offset vs UTC (XM = UTC+3): the daily kill-switch window
     # is anchored on BROKER midnight (== 21:00 UTC the previous day).
     broker_utc_offset_hours: float = 3.0
+    # PROTECTED CALENDAR (weekend flat + news shield, all UTC)
+    weekend_flat_enabled: bool = True
+    news_shield_enabled: bool = True
+    news_blackout_window_minutes: int = 10
+    news_preclose_window_minutes: int = 10
+    news_major_titles: str = "NON-FARM,NFP,FOMC,CPI"
+    news_feed_url: str = ""
+    news_cache_path: str = ""
     demo_pilot_started_at: str = ""
     demo_exploration_mode: bool = True
     demo_exploration_max_lot: float = 0.01
@@ -529,6 +537,13 @@ def get_settings() -> Settings:
         real_declared_login=os.getenv("REAL_DECLARED_LOGIN", "").strip(),
         real_declared_server=os.getenv("REAL_DECLARED_SERVER", "").strip(),
         broker_utc_offset_hours=float(os.getenv("BROKER_UTC_OFFSET_HOURS", "3")),
+        weekend_flat_enabled=_bool_env("WEEKEND_FLAT_ENABLED", True),
+        news_shield_enabled=_bool_env("NEWS_SHIELD_ENABLED", True),
+        news_blackout_window_minutes=int(os.getenv("NEWS_BLACKOUT_WINDOW_MINUTES", "10")),
+        news_preclose_window_minutes=int(os.getenv("NEWS_PRECLOSE_WINDOW_MINUTES", "10")),
+        news_major_titles=os.getenv("NEWS_MAJOR_TITLES", "NON-FARM,NFP,FOMC,CPI"),
+        news_feed_url=os.getenv("NEWS_FEED_URL", ""),
+        news_cache_path=os.getenv("NEWS_CACHE_PATH", ""),
         demo_pilot_started_at=os.getenv("DEMO_PILOT_STARTED_AT", ""),
         demo_exploration_mode=_bool_env("DEMO_EXPLORATION_MODE", True),
         demo_exploration_max_lot=float(os.getenv("DEMO_EXPLORATION_MAX_LOT", "0.01")),

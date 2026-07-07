@@ -378,6 +378,12 @@ class HermesBackend:
         )
         self.account_policy = resolve_account_policy(startup_account, self.settings)
         log_adaptive_policy(self.account_policy, startup_account)
+        # NEWS shield: load the weekly calendar at boot (fail-safe on error)
+        if bool(getattr(self.settings, "news_shield_enabled", True)):
+            try:
+                self.demo_router.news_calendar.refresh(force=True)
+            except Exception as _news_exc:
+                log.warning("[NEWS_CALENDAR] boot_refresh_failed error=%s", _news_exc)
         self.heartbeat.write(
             startup_account, self.resolved_symbols, self.latest_agent_state,
             self.latest_demo_event, self.mt5.connected, self.latest_setup_hunter,
@@ -685,6 +691,12 @@ class HermesBackend:
         )
         account = self.reader.account_snapshot()
         if self.mt5.connected:
+            # NEWS shield daily refresh (internally throttled, fail-safe)
+            if bool(getattr(self.settings, "news_shield_enabled", True)):
+                try:
+                    self.demo_router.news_calendar.refresh()
+                except Exception as _news_exc:
+                    log.warning("[NEWS_CALENDAR] cycle_refresh_failed error=%s", _news_exc)
             self.latest_position_sync = self.sync_open_mt5_positions_to_lovable()
             self.write_ingest_items(self.demo_router.process_quick_exits(
                 account,

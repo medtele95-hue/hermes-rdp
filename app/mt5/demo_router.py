@@ -25,6 +25,11 @@ from app.mt5.smart_rescue import (
 )
 from app.services.adaptive_account_policy import AccountPolicy, resolve_account_policy, trading_authorized
 from app.services.daily_killswitch import evaluate_daily_killswitch
+from app.services.protected_calendar import (
+    NewsCalendar,
+    weekend_entry_block,
+    weekend_flat_close_due,
+)
 from app.services.exit_v2 import ExitV2Config, evaluate_exit_v2, is_gold_symbol as _exit_v2_is_gold
 from app.services.adaptive_confluence_threshold import evaluate_adaptive_confluence
 from app.services.mt5_pnl_truth import get_mt5_hermes_pnl_truth
@@ -173,6 +178,7 @@ class DemoKellyRouter:
         self.pilot_started_at = _parse_iso(settings.demo_pilot_started_at) or datetime.now(timezone.utc)
         self._startup_logged = False
         self._active_policy: AccountPolicy | None = None
+        self.news_calendar = NewsCalendar(settings)
         self._exit_v2_state: dict[int, dict] = {}
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
@@ -350,10 +356,78 @@ class DemoKellyRouter:
         items: list[dict] = []
         _quick_exit_closed: set[int] = set()
 
+        # PROTECTED CALENDAR maintenance (positions side, explicit UTC).
+        # The network refresh lives in main (boot + daily) — never here.
+        _cal_now = now or datetime.now(timezone.utc)
+        _hermes_positions = [
+            pos for pos in positions
+            if int(getattr(pos, "magic", -1) or -1) == cfg.magic_number
+        ]
+        if bool(getattr(self.settings, "weekend_flat_enabled", True)) and weekend_flat_close_due(_cal_now):
+            for pos in _hermes_positions:
+                _wf_ticket = int(getattr(pos, "ticket", 0) or 0)
+                if _wf_ticket in _quick_exit_closed:
+                    continue
+                log.info(
+                    "[WEEKEND_FLAT] action=CLOSE_ALL ticket=%s symbol=%s profit=%s now_utc=%s",
+                    _wf_ticket, getattr(pos, "symbol", None), getattr(pos, "profit", None), _cal_now.isoformat(),
+                )
+                _wf_action = {
+                    "action": "CLOSE",
+                    "reason": "WEEKEND_FLAT_CLOSE_ALL",
+                    "side": "BUY" if int(getattr(pos, "type", 0) or 0) == 0 else "SELL",
+                    "ticket": _wf_ticket,
+                }
+                try:
+                    _wf_event = self._quick_exit_close(pos, _wf_action, now)
+                    _wf_event["event_type"] = "WEEKEND_FLAT"
+                    self._record_event(_wf_event)
+                    items.append(self._ingest_event(_wf_event))
+                    _quick_exit_closed.add(_wf_ticket)
+                except Exception as _wf_exc:
+                    log.warning("[WEEKEND_FLAT] close_failed ticket=%s error=%s", _wf_ticket, str(_wf_exc)[:200])
+            return items
+        if bool(getattr(self.settings, "news_shield_enabled", True)) and _hermes_positions:
+            try:
+                _major = self.news_calendar.major_preclose_event(_cal_now)
+            except Exception:
+                _major = None  # FAIL-SAFE
+            if _major:
+                for pos in _hermes_positions:
+                    _np_ticket = int(getattr(pos, "ticket", 0) or 0)
+                    if _np_ticket in _quick_exit_closed:
+                        continue
+                    if self._position_armed(pos):
+                        log.info(
+                            "[NEWS_PRECLOSE] ticket=%s decision=KEEP reason=POSITION_ARMED event=%s",
+                            _np_ticket, _major.get("title"),
+                        )
+                        continue
+                    log.info(
+                        "[NEWS_PRECLOSE] ticket=%s decision=CLOSE reason=NON_ARMED_BEFORE_MAJOR event=%s event_time_utc=%s",
+                        _np_ticket, _major.get("title"), _major.get("time_utc"),
+                    )
+                    _np_action = {
+                        "action": "CLOSE",
+                        "reason": "NEWS_PRECLOSE_NON_ARMED",
+                        "side": "BUY" if int(getattr(pos, "type", 0) or 0) == 0 else "SELL",
+                        "ticket": _np_ticket,
+                    }
+                    try:
+                        _np_event = self._quick_exit_close(pos, _np_action, now)
+                        _np_event["event_type"] = "NEWS_PRECLOSE"
+                        self._record_event(_np_event)
+                        items.append(self._ingest_event(_np_event))
+                        _quick_exit_closed.add(_np_ticket)
+                    except Exception as _np_exc:
+                        log.warning("[NEWS_PRECLOSE] close_failed ticket=%s error=%s", _np_ticket, str(_np_exc)[:200])
+
         for pos in positions:
             _pos_magic = int(getattr(pos, "magic", -1) or -1)
             _pos_comment = str(getattr(pos, "comment", "") or "")
             _pos_ticket = int(getattr(pos, "ticket", 0) or 0)
+            if _pos_ticket in _quick_exit_closed:
+                continue  # already closed by calendar maintenance this cycle
             _pos_symbol = str(getattr(pos, "symbol", "") or "")
             _pos_profit = float(getattr(pos, "profit", 0) or 0)
             _is_hermes_pos = _pos_magic == cfg.magic_number or "HERMES" in _pos_comment.upper()
@@ -1007,6 +1081,33 @@ class DemoKellyRouter:
                 )
                 if _gate_decision == "BLOCK":
                     reason = _gate_reason
+        # PROTECTED CALENDAR — weekend flat / post-weekend blackout / news
+        # shield. Entry blocks only; position maintenance lives in
+        # process_quick_exits. All checks in explicit UTC.
+        news_blackout_event = None
+        _generic_market_closed = {"MARKET_CLOSED", "WEEKEND_MARKET_CLOSED"}
+        if (not reason or reason in _generic_market_closed) and bool(getattr(self.settings, "weekend_flat_enabled", True)):
+            weekend_reason = weekend_entry_block(now_dt)
+            if weekend_reason:
+                reason = weekend_reason
+                log.info(
+                    "[%s] symbol=%s strategy=%s decision=BLOCK now_utc=%s",
+                    "WEEKEND_FLAT" if weekend_reason.startswith("WEEKEND") else "POST_WEEKEND_BLACKOUT",
+                    symbol, strategy, now_dt.isoformat(),
+                )
+        if not reason and bool(getattr(self.settings, "news_shield_enabled", True)):
+            try:
+                news_blackout_event = self.news_calendar.news_blackout(now_dt)
+            except Exception as _news_exc:
+                news_blackout_event = None  # FAIL-SAFE: dead feed never blocks
+                log.warning("[NEWS_CALENDAR] blackout_check_failed error=%s", str(_news_exc)[:200])
+            if news_blackout_event:
+                reason = "NEWS_BLACKOUT"
+                log.info(
+                    "[NEWS_BLACKOUT] symbol=%s strategy=%s decision=BLOCK event=%s event_time_utc=%s",
+                    symbol, strategy, news_blackout_event.get("title"),
+                    news_blackout_event.get("time_utc"),
+                )
         # DAILY_KILLSWITCH — broker-day window, deals re-read on every
         # evaluation (nothing in memory), quota by account policy.
         daily_killswitch = None
@@ -2967,6 +3068,21 @@ class DemoKellyRouter:
             "order_success": success,
             "order_failure_reason": failure_reason,
         }
+
+    def _position_armed(self, pos: Any) -> bool:
+        """Armed = profit already locked: Exit V2 BE armed, or broker SL
+        moved beyond the entry in the profit direction. Armed positions keep
+        their lock through news; only NON-armed ones are pre-closed."""
+        ticket = int(getattr(pos, "ticket", 0) or 0)
+        state = self._exit_v2_state.get(ticket) or {}
+        if state.get("be_armed"):
+            return True
+        sl = _to_float(getattr(pos, "sl", None))
+        entry = _to_float(getattr(pos, "price_open", None))
+        if sl is None or entry is None or sl <= 0:
+            return False
+        is_buy = int(getattr(pos, "type", 0) or 0) == 0
+        return sl >= entry if is_buy else sl <= entry
 
     def _process_exit_v2_position(self, pos: Any, account: dict | None, now: datetime | None = None) -> list[dict]:
         """Exit V2 — single exit authority for GOLD positions.
