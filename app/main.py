@@ -368,6 +368,16 @@ class HermesBackend:
         if not self.mt5.connect():
             raise SystemExit(1)
         startup_account = self.reader.account_snapshot()
+        # BLOC 11e — refuse to start when an instance already runs for the
+        # same account + magic
+        from app.utils.single_instance import SingleInstanceError, acquire_single_instance_lock
+        try:
+            acquire_single_instance_lock(
+                (startup_account or {}).get("login"), self.settings.demo_magic_number
+            )
+        except SingleInstanceError as _lock_exc:
+            log.error("[SINGLE_INSTANCE] %s", _lock_exc)
+            raise SystemExit(1)
         self.demo_router.log_startup(startup_account)
         # ADAPTIVE_ACCOUNT_POLICY stage 1 (BOOT): resolve the policy level
         # from the live trade_mode. Stage 2 re-checks per order in the router.

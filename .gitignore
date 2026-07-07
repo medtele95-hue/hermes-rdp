@@ -13,3 +13,5 @@ backups/
 
 # Learning dataset: preserved by the daily backup job, not by git
 app/data/decision_dataset.jsonl
+app/data/position_closed_seen.json
+app/data/hermes_instance_*.lock

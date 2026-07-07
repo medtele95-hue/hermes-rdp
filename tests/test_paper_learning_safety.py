@@ -137,6 +137,9 @@ def demo_settings(**overrides) -> Settings:
         "demo_smoke_test_24h": False,
         "demo_smoke_test_max_confirmed_orders": 1,
         "demo_smoke_test_end_after_hours": 24,
+        # legacy Lovable mirror kept ON in these tests (purged by default in
+        # production since BLOC 11b — see tests/test_bloc11_hygiene.py)
+        "position_sync_lovable_enabled": True,
         "hermes_free_demo_discovery_mode": False,
         "hermes_demo_topdown_fallback_mode": False,
         "hermes_demo_micro_discovery_mode": False,
@@ -1355,6 +1358,15 @@ class BtcScalpingAgentStrategyTests(unittest.TestCase):
 
 
 class Mt5PositionSyncTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # BLOC 11a: the [POSITION_CLOSED] idempotence set is PERSISTENT by
+        # design — reset it so each test sees a fresh state.
+        from app.services.mt5_position_sync import POSITION_SYNC_EVENTS_PATH, _closed_seen_path
+
+        seen = _closed_seen_path(POSITION_SYNC_EVENTS_PATH)
+        if seen.exists():
+            seen.unlink()
+
     class FakeIngest:
         def __init__(self, open_rows: list[dict] | None = None) -> None:
             self.enabled = True
@@ -1907,14 +1919,21 @@ class Mt5PositionSyncTests(unittest.TestCase):
     def test_sync_once_cli_closes_stale_open_trade_when_mt5_empty(self) -> None:
         ingest = self.FakeIngest(open_rows=[{"ticket": "328961620", "magic_number": 909002, "result": "OPEN", "symbol": "GOLD#"}])
         mt5_conn = SimpleNamespace(connect=lambda: True, shutdown=lambda: None)
+        # the CLI reads env-based settings: enable the legacy Lovable mirror
+        # for this test (purged by default since BLOC 11b)
         with (
+            patch.dict(os.environ, {"POSITION_SYNC_LOVABLE_ENABLED": "true"}),
             patch("sys.argv", ["app/main.py", "--sync-mt5-positions-once"]),
             patch("app.main.IngestClient", return_value=ingest),
             patch("app.mt5.connection.MT5Connection", return_value=mt5_conn),
             patch("app.services.mt5_position_sync.mt5.positions_get", return_value=[]),
             patch("builtins.print") as printer,
         ):
-            main_module.main()
+            get_settings.cache_clear()
+            try:
+                main_module.main()
+            finally:
+                get_settings.cache_clear()
         close_updates = [data for table, match, data in ingest.updated if table == "trades" and data.get("result") == "CLOSED"]
         self.assertEqual(len(close_updates), 1)
         self.assertEqual(close_updates[0]["reason"], "MT5_POSITION_MISSING_CLOSED")

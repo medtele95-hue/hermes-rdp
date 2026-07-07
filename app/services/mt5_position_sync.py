@@ -19,6 +19,36 @@ _MISSING_TRADE_ROW_WARNED: set[str] = set()
 _MISSING_TRADE_DIR_WARNED: set[str] = set()
 
 
+def _lovable_enabled(settings: Settings) -> bool:
+    """BLOC 11b: Lovable/ingest network calls are PURGED by default.
+    POSITION_SYNC reads MT5 directly (by magic); the remote mirror only
+    runs when POSITION_SYNC_LOVABLE_ENABLED=true."""
+    return bool(getattr(settings, "position_sync_lovable_enabled", False))
+
+
+def _closed_seen_path(events_path: Path) -> Path:
+    return Path(events_path).parent / "position_closed_seen.json"
+
+
+def _load_closed_seen(events_path: Path) -> dict[str, str]:
+    """BLOC 11a: PERSISTENT idempotence set for [POSITION_CLOSED].
+    {ticket: "final" | "provisional"} — survives restarts by construction."""
+    try:
+        payload = json.loads(_closed_seen_path(events_path).read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in payload.items()} if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_closed_seen(events_path: Path, seen: dict[str, str]) -> None:
+    try:
+        path = _closed_seen_path(events_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(seen, sort_keys=True), encoding="utf-8")
+    except Exception as exc:
+        log.debug("[POSITION_SYNC] closed_seen_write_failed error=%s", str(exc)[:120])
+
+
 def sync_open_mt5_positions_to_lovable(
     settings: Settings,
     ingest_client: IngestClient,
@@ -43,10 +73,14 @@ def sync_open_mt5_positions_to_lovable(
     synced = 0
     events: list[dict] = []
 
+    lovable_on = _lovable_enabled(settings)
     for row in hermes_rows:
-        result = _upsert_trade_row(ingest_client, row)
-        if result.get("ok"):
-            synced += 1
+        if lovable_on:
+            result = _upsert_trade_row(ingest_client, row)
+            if result.get("ok"):
+                synced += 1
+        else:
+            synced += 1  # local-only sync: MT5 direct read is the truth
         event = _position_sync_event(row, now_dt)
         event["mt5_open_positions_count"] = len(positions)
         event["mt5_positions_raw_count"] = len(positions)
@@ -55,7 +89,8 @@ def sync_open_mt5_positions_to_lovable(
         events.append(event)
         if record_event:
             record_event(event)
-        ingest_client.send_row("execution_events", event)
+        if lovable_on:
+            ingest_client.send_row("execution_events", event)
 
     closed, close_events, already_closed_tickets = _close_missing_lovable_trades(settings, ingest_client, {str(row["ticket"]) for row in hermes_rows}, now_dt, fallback_events_path)
     for event in close_events:
@@ -65,7 +100,8 @@ def sync_open_mt5_positions_to_lovable(
         events.append(event)
         if record_event:
             record_event(event)
-        ingest_client.send_row("execution_events", event)
+        if lovable_on:
+            ingest_client.send_row("execution_events", event)
     latest = events[-1] if events else None
     floating_pnl = round(sum((_float_value(row.get("pnl")) or 0.0) for row in hermes_rows), 6)
     events_path = fallback_events_path or POSITION_SYNC_EVENTS_PATH
@@ -152,26 +188,38 @@ def _close_missing_lovable_trades(
     fallback_events_path: Path | None = None,
 ) -> tuple[int, list[dict], list[str]]:
     events_path = fallback_events_path or POSITION_SYNC_EVENTS_PATH
-    result = ingest_client.get_open_demo_trades(settings.demo_magic_number)
     using_local_fallback = False
-    if not result.get("ok"):
-        log.warning("[POSITION_SYNC] open demo read unavailable reason=%s", result.get("error") or result.get("body"))
-        if not open_tickets and getattr(ingest_client, "fail_soft_skip_active", lambda: False)():
-            log.warning("[POSITION_SYNC] fallback confirmed demo order scan skipped reason=LOVABLE_INGEST_FAIL_SOFT")
-            return 0, [], []
+    if not _lovable_enabled(settings):
+        # BLOC 11b: no remote read — the local events are the open-rows source
         using_local_fallback = True
         rows = _fallback_open_rows_from_position_sync_events(settings, events_path)
-        if rows:
-            log.warning("[POSITION_SYNC] fallback local POSITION_SYNC open rows=%s", len(rows))
-        elif not open_tickets:
+        if not rows and not open_tickets:
             rows = _fallback_confirmed_order_rows(settings, events_path)
-            if rows:
-                log.warning("[POSITION_SYNC] fallback confirmed demo order rows=%s", len(rows))
-        else:
-            return 0, [], []
     else:
-        rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+        result = ingest_client.get_open_demo_trades(settings.demo_magic_number)
+        if not result.get("ok"):
+            log.warning("[POSITION_SYNC] open demo read unavailable reason=%s", result.get("error") or result.get("body"))
+            if not open_tickets and getattr(ingest_client, "fail_soft_skip_active", lambda: False)():
+                log.warning("[POSITION_SYNC] fallback confirmed demo order scan skipped reason=LOVABLE_INGEST_FAIL_SOFT")
+                return 0, [], []
+            using_local_fallback = True
+            rows = _fallback_open_rows_from_position_sync_events(settings, events_path)
+            if rows:
+                log.warning("[POSITION_SYNC] fallback local POSITION_SYNC open rows=%s", len(rows))
+            elif not open_tickets:
+                rows = _fallback_confirmed_order_rows(settings, events_path)
+                if rows:
+                    log.warning("[POSITION_SYNC] fallback confirmed demo order rows=%s", len(rows))
+            else:
+                return 0, [], []
+        else:
+            rows = result.get("rows") if isinstance(result.get("rows"), list) else []
     local_closed_tickets = _closed_demo_tickets_from_events(settings, events_path) if using_local_fallback else set()
+    # BLOC 11a: PERSISTENT idempotence — a ticket already finalized can never
+    # re-emit [POSITION_CLOSED]; a provisional one only re-emits once, as a
+    # CORRECTED event carrying the REAL pnl from the broker deal.
+    closed_seen = _load_closed_seen(events_path)
+    seen_dirty = False
     closed = 0
     already_closed: list[str] = []
     events: list[dict] = []
@@ -179,8 +227,38 @@ def _close_missing_lovable_trades(
         ticket = str(row.get("ticket") or row.get("position_ticket") or "")
         if not ticket or ticket in open_tickets:
             continue
-        if ticket in local_closed_tickets or _row_is_closed(row):
+        seen_status = closed_seen.get(ticket)
+        if seen_status == "final":
             already_closed.append(ticket)
+            continue
+        if seen_status is None and (ticket in local_closed_tickets or _row_is_closed(row)):
+            already_closed.append(ticket)
+            closed_seen[ticket] = "final"
+            seen_dirty = True
+            continue
+        history = _mt5_history_deal_for_ticket(ticket, settings.demo_magic_number, now)
+        real_pnl = history.get("net_pnl") if isinstance(history, dict) else None
+        if seen_status == "provisional":
+            if real_pnl is None:
+                continue  # keep waiting for the real deal, silently
+            events.append(
+                {
+                    "event_type": "POSITION_SYNC",
+                    "status": "CLOSED",
+                    "result": "CLOSED_CORRECTED",
+                    "source": "MT5_HISTORY_DEALS",
+                    "ticket": ticket,
+                    "symbol": row.get("symbol"),
+                    "magic_number": settings.demo_magic_number,
+                    "close_reason": "PROVISIONAL_CORRECTED_BY_REAL_DEAL",
+                    "pnl": real_pnl,
+                    "pnl_source": "MT5_HISTORY_DEALS",
+                    "created_at": now.isoformat(),
+                }
+            )
+            closed_seen[ticket] = "final"
+            seen_dirty = True
+            closed += 1
             continue
         log.warning(
             "[POSITION_SYNC_STALE_CLEARED] ticket=%s symbol=%s reason=NOT_IN_MT5",
@@ -188,7 +266,10 @@ def _close_missing_lovable_trades(
             row.get("symbol") or "",
         )
         close_row = _close_trade_payload(row, now)
-        update = _update_closed_trade(ingest_client, settings, ticket, close_row)
+        if _lovable_enabled(settings):
+            update = _update_closed_trade(ingest_client, settings, ticket, close_row)
+        else:
+            update = {"ok": True, "skipped": "LOVABLE_DISABLED"}
         if update.get("ok"):
             closed += 1
             events.append(
@@ -202,10 +283,16 @@ def _close_missing_lovable_trades(
                     "display_symbol": close_row["raw_payload"].get("display_symbol"),
                     "magic_number": settings.demo_magic_number,
                     "close_reason": "MT5_POSITION_MISSING_CLOSED",
+                    "pnl": real_pnl,
+                    "pnl_source": "MT5_HISTORY_DEALS" if real_pnl is not None else "PROVISIONAL_PENDING_DEAL",
                     "payload": close_row["raw_payload"],
                     "created_at": now.isoformat(),
                 }
             )
+            closed_seen[ticket] = "final" if real_pnl is not None else "provisional"
+            seen_dirty = True
+    if seen_dirty:
+        _save_closed_seen(events_path, closed_seen)
     return closed, events, sorted(set(already_closed), key=already_closed.index)
 
 
