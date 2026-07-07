@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import threading
+import time as _time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -2789,6 +2790,58 @@ class DemoKellyRouter:
             "type_time": getattr(mt5, "ORDER_TIME_GTC", 0),
             "type_filling": _filling_mode,
         }
+        # BLOC 8 — execution at the tick: re-read the market at the INSTANT
+        # of the send (BUY@ask, SELL@bid), abort if the price drifted more
+        # than EXEC_MAX_DRIFT_POINTS since validation.
+        _validation_entry = _to_float(event.get("entry"))
+        _send_tick = mt5.symbol_info_tick(_order_symbol)
+        _tick_bid = _to_float(getattr(_send_tick, "bid", None))
+        _tick_ask = _to_float(getattr(_send_tick, "ask", None))
+        if _tick_bid is None or _tick_ask is None:
+            log.warning("[ORDER_ABORT_PRICE_MOVED] symbol=%s reason=NO_TICK_AT_SEND", _order_symbol)
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": "ORDER_ABORT_NO_TICK",
+                "failed_gate": "ORDER_ABORT_NO_TICK",
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": request,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": "ORDER_ABORT_NO_TICK",
+            }
+        _send_price = _tick_ask if event.get("direction") == "BUY" else _tick_bid
+        _point = _to_float((event.get("symbol_specs") or {}).get("point"))
+        if _point is None or _point <= 0:
+            _point = _to_float(getattr(mt5.symbol_info(_order_symbol), "point", None)) if mt5.symbol_info(_order_symbol) else None
+        _max_drift_points = float(getattr(self.settings, "exec_max_drift_points", 300))
+        _drift_points = None
+        if _validation_entry is not None and _point and _point > 0:
+            _drift_points = abs(_send_price - _validation_entry) / _point
+            if _drift_points > _max_drift_points:
+                log.warning(
+                    "[ORDER_ABORT_PRICE_MOVED] symbol=%s direction=%s validation_entry=%s tick_price=%s drift_points=%.1f max=%s",
+                    _order_symbol, event.get("direction"), _validation_entry, _send_price, _drift_points, _max_drift_points,
+                )
+                return {
+                    "event_type": "DEMO_SKIP",
+                    "status": "BLOCK",
+                    "reason": "ORDER_ABORT_PRICE_MOVED",
+                    "failed_gate": "ORDER_ABORT_PRICE_MOVED",
+                    "drift_points": _drift_points,
+                    "raw_payload": _demo_order_raw_payload(event),
+                    "order_request": request,
+                    "order_result": None,
+                    "order_retcode": None,
+                    "order_success": False,
+                    "order_failure_reason": f"ORDER_ABORT_PRICE_MOVED_drift={_drift_points:.1f}pts",
+                }
+        request["price"] = _send_price
+        request["deviation"] = int(getattr(self.settings, "exec_deviation_points", 50))
+        event["tick_price_at_send"] = _send_price
+        event["spread_at_send_points"] = ((_tick_ask - _tick_bid) / _point) if _point and _point > 0 else None
+        event["drift_points_at_send"] = _drift_points
         precheck = validate_mt5_stops(
             event["broker_symbol"],
             event.get("direction"),
@@ -2829,6 +2882,10 @@ class DemoKellyRouter:
                 "[OF_SLTP] verdict=RR_FLOOR_BLOCK symbol=%s direction=%s entry=%s sl=%s tp=%s rr=%.3f",
                 _order_symbol, event.get("direction"), request.get("price"), request.get("sl"), request.get("tp"), final_rr,
             )
+            log.warning(
+                "[ORDER_ABORT_PRICE_MOVED] symbol=%s reason=RR_AT_TICK_BELOW_1_0 rr=%.3f",
+                _order_symbol, final_rr,
+            )
             return {
                 "event_type": "DEMO_SKIP",
                 "status": "BLOCK",
@@ -2860,10 +2917,35 @@ class DemoKellyRouter:
                 "order_success": False,
                 "order_failure_reason": reason,
             }
+        _send_started = _time.perf_counter()
         result = mt5.order_send(request)
+        _fill_latency_ms = (_time.perf_counter() - _send_started) * 1000.0
         order_result = _order_result_payload(result)
         ticket = order_result.get("ticket")
         success = _order_result_confirmed(result, ticket)
+        # BLOC 8 — [EXEC_QUALITY]: measure what the broker actually did.
+        _fill_price = _to_float(getattr(result, "price", None))
+        _slippage_vs_tick = None
+        _slippage_vs_request = None
+        if _fill_price is not None and _point and _point > 0 and _fill_price > 0:
+            _slippage_vs_tick = (_fill_price - _send_price) / _point
+            _slippage_vs_request = (_fill_price - _to_float(request.get("price"))) / _point
+        event["exec_quality"] = {
+            "fill_price": _fill_price,
+            "tick_price_at_send": _send_price,
+            "requested_price": request.get("price"),
+            "slippage_vs_tick_points": _slippage_vs_tick,
+            "slippage_vs_request_points": _slippage_vs_request,
+            "spread_at_send_points": event.get("spread_at_send_points"),
+            "drift_points_at_send": event.get("drift_points_at_send"),
+            "fill_latency_ms": round(_fill_latency_ms, 2),
+            "deviation_points": request.get("deviation"),
+        }
+        log.info(
+            "[EXEC_QUALITY] symbol=%s slippage_vs_tick=%s slippage_vs_request=%s spread_at_send=%s fill_latency_ms=%.2f",
+            _order_symbol, _slippage_vs_tick, _slippage_vs_request,
+            event.get("spread_at_send_points"), _fill_latency_ms,
+        )
         event_type = "DEMO_ORDER" if success else "DEMO_ORDER_FAILED"
         status = "ORDER_CONFIRMED" if success else "ORDER_FAILED"
         failure_reason = None if success else _order_failure_reason(result, ticket)
@@ -2913,6 +2995,10 @@ class DemoKellyRouter:
             "max_money_tp": max_tp,
             "order_precheck": precheck,
             "order_check": order_check,
+            "exec_quality": event.get("exec_quality"),
+            "tick_price_at_send": event.get("tick_price_at_send"),
+            "spread_at_send_points": event.get("spread_at_send_points"),
+            "drift_points_at_send": event.get("drift_points_at_send"),
             "raw_payload": _demo_order_raw_payload(event),
             "order_request": request,
             "order_result": order_result,

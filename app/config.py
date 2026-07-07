@@ -106,6 +106,9 @@ class Settings(BaseModel):
     # is anchored on BROKER midnight (== 21:00 UTC the previous day).
     broker_utc_offset_hours: float = 3.0
     # PROTECTED CALENDAR (weekend flat + news shield, all UTC)
+    # BLOC 8 — execution at the tick
+    exec_deviation_points: int = 50
+    exec_max_drift_points: float = 300.0
     weekend_flat_enabled: bool = True
     news_shield_enabled: bool = True
     news_blackout_window_minutes: int = 10
@@ -537,6 +540,8 @@ def get_settings() -> Settings:
         real_declared_login=os.getenv("REAL_DECLARED_LOGIN", "").strip(),
         real_declared_server=os.getenv("REAL_DECLARED_SERVER", "").strip(),
         broker_utc_offset_hours=float(os.getenv("BROKER_UTC_OFFSET_HOURS", "3")),
+        exec_deviation_points=int(os.getenv("EXEC_DEVIATION_POINTS", "50")),
+        exec_max_drift_points=float(os.getenv("EXEC_MAX_DRIFT_POINTS", "300")),
         weekend_flat_enabled=_bool_env("WEEKEND_FLAT_ENABLED", True),
         news_shield_enabled=_bool_env("NEWS_SHIELD_ENABLED", True),
         news_blackout_window_minutes=int(os.getenv("NEWS_BLACKOUT_WINDOW_MINUTES", "10")),
