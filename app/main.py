@@ -369,6 +369,15 @@ class HermesBackend:
             raise SystemExit(1)
         startup_account = self.reader.account_snapshot()
         self.demo_router.log_startup(startup_account)
+        # ADAPTIVE_ACCOUNT_POLICY stage 1 (BOOT): resolve the policy level
+        # from the live trade_mode. Stage 2 re-checks per order in the router.
+        from app.services.adaptive_account_policy import (
+            build_account_profile,
+            log_adaptive_policy,
+            resolve_account_policy,
+        )
+        self.account_policy = resolve_account_policy(startup_account, self.settings)
+        log_adaptive_policy(self.account_policy, startup_account)
         self.heartbeat.write(
             startup_account, self.resolved_symbols, self.latest_agent_state,
             self.latest_demo_event, self.mt5.connected, self.latest_setup_hunter,
@@ -442,6 +451,14 @@ class HermesBackend:
         if not self.resolved_symbols:
             log.error("No symbols resolved; stopping")
             raise SystemExit(1)
+        # ACCOUNT_PROFILE at boot: live specs, max fundable SL, TRADABLE flags
+        try:
+            self.account_profile = build_account_profile(
+                startup_account, self.resolved_symbols, self.account_policy
+            )
+        except Exception as _apex:
+            self.account_profile = None
+            log.warning("[ACCOUNT_PROFILE] build_failed reason=%s", _apex)
         if self.paper_trader.enabled:
             recovery = self.recover_paper_open_trades()
             self.reconcile_recovered_paper_trades(recovery)

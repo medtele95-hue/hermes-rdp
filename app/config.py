@@ -91,6 +91,10 @@ class Settings(BaseModel):
     demo_allow_btc_weekend_bad_hour: bool = False
     demo_allow_contest: bool = False
     demo_allowed_login: str = ""
+    # ADAPTIVE_ACCOUNT_POLICY: a REAL account is REAL_DECLARED only when BOTH
+    # login and server match; anything else is REAL_UNKNOWN (fail-closed).
+    real_declared_login: str = ""
+    real_declared_server: str = ""
     demo_pilot_started_at: str = ""
     demo_exploration_mode: bool = True
     demo_exploration_max_lot: float = 0.01
@@ -506,6 +510,8 @@ def get_settings() -> Settings:
         demo_allow_btc_weekend_bad_hour=_bool_env("DEMO_ALLOW_BTC_WEEKEND_BAD_HOUR", False),
         demo_allow_contest=_bool_env("DEMO_ALLOW_CONTEST", False),
         demo_allowed_login=os.getenv("DEMO_ALLOWED_LOGIN", "").strip(),
+        real_declared_login=os.getenv("REAL_DECLARED_LOGIN", "").strip(),
+        real_declared_server=os.getenv("REAL_DECLARED_SERVER", "").strip(),
         demo_pilot_started_at=os.getenv("DEMO_PILOT_STARTED_AT", ""),
         demo_exploration_mode=_bool_env("DEMO_EXPLORATION_MODE", True),
         demo_exploration_max_lot=float(os.getenv("DEMO_EXPLORATION_MAX_LOT", "0.01")),

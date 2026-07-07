@@ -23,6 +23,7 @@ from app.mt5.smart_rescue import (
     evaluate_rescue,
     is_hermes_btc_pos,
 )
+from app.services.adaptive_account_policy import AccountPolicy, resolve_account_policy, trading_authorized
 from app.services.adaptive_confluence_threshold import evaluate_adaptive_confluence
 from app.services.mt5_pnl_truth import get_mt5_hermes_pnl_truth
 from app.services.quick_exit_manager import QuickExitConfig, hermes_dynamic_exit, manage_quick_exit_position
@@ -169,6 +170,7 @@ class DemoKellyRouter:
         self.top_down_reader = TopDownMarketReader()
         self.pilot_started_at = _parse_iso(settings.demo_pilot_started_at) or datetime.now(timezone.utc)
         self._startup_logged = False
+        self._active_policy: AccountPolicy | None = None
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
@@ -245,6 +247,32 @@ class DemoKellyRouter:
             "[DEMO_ROUTER_REACHED] symbol=%s strategy=%s magic=%s",
             _dr_symbol, _dr_strategy, self.settings.demo_magic_number,
         )
+        # ADAPTIVE_ACCOUNT_POLICY stage 2: per-order authorization. The boot
+        # check alone was the historical trap — both stages must gate.
+        auth_ok, auth_reason, auth_policy = trading_authorized(account, self.settings)
+        log.info(
+            "[ORDER_AUTH] decision=%s reason=%s level=%s symbol=%s strategy=%s",
+            "ALLOW" if auth_ok else "BLOCK", auth_reason, auth_policy.level, _dr_symbol, _dr_strategy,
+        )
+        if not auth_ok:
+            event = {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "decision": "BLOCK",
+                "reason": auth_reason,
+                "failed_gate": auth_reason,
+                "symbol": _dr_symbol,
+                "broker_symbol": _dr_symbol,
+                "strategy": _dr_strategy,
+                "direction": decision.get("signal"),
+                "account_policy": auth_policy.level,
+                "account_policy_detail": auth_policy.as_payload(),
+                "setup_id": setup_id,
+                "created_at": (now or datetime.now(timezone.utc)).isoformat(),
+            }
+            self._record_event(event)
+            return [self._ingest_event(event)]
+        self._active_policy = auth_policy
         evaluated = self.evaluate(
             decision,
             kelly_risk,
@@ -618,6 +646,7 @@ class DemoKellyRouter:
         strategy = str(decision.get("strategy") or "").upper()
         account_diag = self.account_diagnostics(account)
         account_type = account_diag["account_type"]
+        account_policy = resolve_account_policy(account, self.settings)
         time_gate = _with_user_disabled_time_blocks(self.settings, self.time_engine.evaluate(symbol, frames, tick, now_dt))
         safety = self.safety_guard.evaluate({**decision, **time_gate})
         entry_block_reason = self._entry_candidate_block_reason(decision)
@@ -667,6 +696,14 @@ class DemoKellyRouter:
                     )
             _risk_lot_for_cap = risk_lot if (risk_lot is not None and risk_lot > 0) else None
             capped_lot = min(value for value in [v for v in [kelly_lot, self.settings.demo_max_lot, 0.01, _risk_lot_for_cap] if v is not None])
+            if account_policy.enforce_volume_min and capped_lot is not None:
+                _policy_vol_min = _to_float((symbol_specs or {}).get("volume_min")) or 0.01
+                if capped_lot > _policy_vol_min:
+                    log.info(
+                        "[ADAPTIVE_POLICY] level=%s lot_capped_to_volume_min from=%s to=%s",
+                        account_policy.level, capped_lot, _policy_vol_min,
+                    )
+                    capped_lot = _policy_vol_min
             risk_pct = self._risk_pct(decision, capped_lot, account, symbol_specs or {})
         rr = _to_float(decision.get("reward_risk") or decision.get("risk_reward"))
         if rr is None:
@@ -954,6 +991,26 @@ class DemoKellyRouter:
                 )
                 if _gate_decision == "BLOCK":
                     reason = _gate_reason
+        # ADAPTIVE_ACCOUNT_POLICY constraints (REAL_UNKNOWN: cap 2%, confluence >= 80)
+        if not reason:
+            if account_policy.risk_cap_percent is not None and risk_pct is not None and risk_pct > account_policy.risk_cap_percent:
+                reason = "POLICY_RISK_CAP_EXCEEDED"
+                log.info(
+                    "[ADAPTIVE_POLICY] level=%s decision=BLOCK reason=POLICY_RISK_CAP_EXCEEDED risk_pct=%s cap=%s",
+                    account_policy.level, risk_pct, account_policy.risk_cap_percent,
+                )
+            elif account_policy.min_confluence is not None:
+                _policy_confluence = _to_float(
+                    decision.get("final_confluence_score")
+                    or decision.get("confluence_score")
+                    or decision.get("confidence")
+                )
+                if _policy_confluence is None or _policy_confluence < account_policy.min_confluence:
+                    reason = "POLICY_MIN_CONFLUENCE_NOT_MET"
+                    log.info(
+                        "[ADAPTIVE_POLICY] level=%s decision=BLOCK reason=POLICY_MIN_CONFLUENCE_NOT_MET confluence=%s required=%s",
+                        account_policy.level, _policy_confluence, account_policy.min_confluence,
+                    )
         final_reason = self._final_demo_block_reason(reason, exploration, gates, strategy)
         if final_reason:
             reason = final_reason
@@ -1023,6 +1080,8 @@ class DemoKellyRouter:
             "safety_guard": safety,
             "account_type": account_type,
             "account_diagnostics": account_diag,
+            "account_policy": account_policy.level,
+            "account_policy_detail": account_policy.as_payload(),
             "strict_block_reason": strict_block_reason,
             "exploration_mode_enabled": bool(self.settings.demo_exploration_mode),
             "demo_strong_setup_learning_mode_enabled": bool(self.settings.demo_strong_setup_learning_mode),
@@ -1205,9 +1264,12 @@ class DemoKellyRouter:
             block_reason = block_reason or "TRADE_ALLOWED_FALSE"
         if payload.get("trade_expert") is False:
             block_reason = block_reason or "TRADE_EXPERT_FALSE"
+        # ADAPTIVE_ACCOUNT_POLICY: a DEMO account (trade_mode) carries no login
+        # pin — trade_mode detection IS the protection. The allowlist only
+        # still applies to non-DEMO accounts as a legacy belt.
         allowed_login = str(self.settings.demo_allowed_login or "").strip()
         login = payload.get("login")
-        if allowed_login and str(login or "") != allowed_login:
+        if account_type != "DEMO" and allowed_login and str(login or "") != allowed_login:
             block_reason = block_reason or "LOGIN_NOT_ALLOWLISTED"
         return {
             "login": login,

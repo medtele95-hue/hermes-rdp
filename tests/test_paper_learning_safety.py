@@ -2967,7 +2967,10 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
             )
         self.assertEqual(result.reason, "ACCOUNT_TRADE_MODE_UNKNOWN")
 
-    def test_login_allowlist_blocks_mismatched_login(self) -> None:
+    def test_login_allowlist_no_longer_pins_demo_accounts(self) -> None:
+        # BLOC 3 (ADAPTIVE_ACCOUNT_POLICY): a DEMO account carries no login
+        # pin — trade_mode detection is the protection. The allowlist only
+        # applies to non-DEMO accounts.
         router = self.router(demo_allowed_login="345297734")
         with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
             result = router.evaluate(
@@ -2983,7 +2986,9 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
                 True,
                 now=self.now,
             )
-        self.assertEqual(result.reason, "LOGIN_NOT_ALLOWLISTED")
+        self.assertNotEqual(result.reason, "LOGIN_NOT_ALLOWLISTED")
+        diag = router.account_diagnostics({"trade_mode": 2, "login": 999})
+        self.assertEqual(diag["block_reason"], "ACCOUNT_TRADE_MODE_REAL")
 
     def test_login_allowlist_allows_matching_demo_login(self) -> None:
         result = self.evaluate(router=self.router(demo_allowed_login="345297734"))
