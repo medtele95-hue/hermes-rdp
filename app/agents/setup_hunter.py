@@ -6,6 +6,7 @@ from typing import Iterable
 
 from app.agents.big_setup_detector import BigSetupDetector
 from app.agents.confirmation_matrix import evaluate as _confirmation_matrix
+from app.agents.ees import compute_ees
 from app.agents.hermes_entry_gate import evaluate_entry_gates as _hermes_entry_gates
 from app.agents.setup_quality_tier import evaluate_setup_quality as _hermes_tier, tier_to_gate_failures as _tier_to_gate_failures
 from app.agents.safety_guard import SafetyGuard
@@ -333,6 +334,36 @@ class SetupHunter:
                 failed.append("MOMENTUM_DIVERGENCE")
         merged["momentum_aligned"] = momentum_aligned
         merged["momentum_alignment_adjustment"] = momentum_adjustment
+        # EES guard — graduated exhaustion filter, symmetric for BUY and SELL.
+        # BUY kills top-chasing (validated on a real -40.86 at 73.7 EXTREME);
+        # SELL is the byte-identical mirror (sign flip inside compute_ees).
+        ees = compute_ees(direction, recent_candles, merged)
+        merged["ees_side"] = ees.get("side")
+        merged["ees_score"] = ees.get("score")
+        merged["ees_band"] = ees.get("band")
+        merged["ees_buy"] = ees.get("score") if direction == "BUY" else None
+        merged["ees_sell"] = ees.get("score") if direction == "SELL" else None
+        merged["ees_penalty"] = ees.get("penalty")
+        merged["ees_components"] = ees.get("components")
+        if direction in {"BUY", "SELL"} and ees.get("score") is not None:
+            if ees.get("blocked"):
+                failed.append("EES_EXTREME_BLOCK")
+                log.info(
+                    "[EES] symbol=%s side=%s score=%s band=%s action=EES_EXTREME_BLOCK strategy=%s",
+                    symbol, direction, ees.get("score"), ees.get("band"), strategy,
+                )
+            elif ees.get("penalty"):
+                edge_score = max(0.0, edge_score + float(ees["penalty"]))
+                grade = _candidate_grade(strategy, setup_score, edge_score, self.settings)
+                log.info(
+                    "[EES] symbol=%s side=%s score=%s band=%s penalty=%s edge_score=%s strategy=%s",
+                    symbol, direction, ees.get("score"), ees.get("band"), ees.get("penalty"), edge_score, strategy,
+                )
+            else:
+                log.info(
+                    "[EES] symbol=%s side=%s score=%s band=%s action=NONE strategy=%s",
+                    symbol, direction, ees.get("score"), ees.get("band"), strategy,
+                )
         mtf_arbiter = _arbitrate_mtf(
             merged.get("h4_main_bias") or merged.get("smc_h4_direction"),
             merged.get("d1_macro_bias"),
@@ -452,6 +483,14 @@ class SetupHunter:
             "momentum_score": merged.get("momentum_score"),
             "momentum_aligned": merged.get("momentum_aligned"),
             "momentum_alignment_adjustment": merged.get("momentum_alignment_adjustment"),
+            "side": direction if direction in {"BUY", "SELL"} else None,
+            "ees_side": merged.get("ees_side"),
+            "ees_score": merged.get("ees_score"),
+            "ees_band": merged.get("ees_band"),
+            "ees_buy": merged.get("ees_buy"),
+            "ees_sell": merged.get("ees_sell"),
+            "ees_penalty": merged.get("ees_penalty"),
+            "ees_components": merged.get("ees_components"),
             "mtf_arbiter": merged.get("mtf_arbiter"),
             "final_trade_gate_v2": merged.get("final_trade_gate_v2"),
             "mtf_structure_status": merged.get("mtf_structure_status"),
@@ -900,6 +939,12 @@ def _event_payload(event_type: str, candidate: dict) -> dict:
         "setup_score": candidate.get("setup_score"),
         "edge_score": candidate.get("edge_score"),
         "grade": candidate.get("grade"),
+        "side": candidate.get("side"),
+        "ees_score": candidate.get("ees_score"),
+        "ees_band": candidate.get("ees_band"),
+        "ees_buy": candidate.get("ees_buy"),
+        "ees_sell": candidate.get("ees_sell"),
+        "ees_penalty": candidate.get("ees_penalty"),
         "demo_eligible": bool(candidate.get("demo_eligible")),
         "execution_candidate": bool(candidate.get("execution_candidate")),
         "execution_policy": candidate.get("execution_policy"),
