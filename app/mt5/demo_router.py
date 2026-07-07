@@ -26,6 +26,7 @@ from app.mt5.smart_rescue import (
 )
 from app.services.adaptive_account_policy import AccountPolicy, resolve_account_policy, trading_authorized
 from app.services.daily_killswitch import evaluate_daily_killswitch
+from app.services.decision_dataset import DecisionDataset
 from app.services.protected_calendar import (
     NewsCalendar,
     weekend_entry_block,
@@ -180,6 +181,7 @@ class DemoKellyRouter:
         self._startup_logged = False
         self._active_policy: AccountPolicy | None = None
         self.news_calendar = NewsCalendar(settings)
+        self.decision_dataset = DecisionDataset(self.events_path.parent / "decision_dataset.jsonl")
         self._exit_v2_state: dict[int, dict] = {}
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
@@ -281,6 +283,7 @@ class DemoKellyRouter:
                 "created_at": (now or datetime.now(timezone.utc)).isoformat(),
             }
             self._record_event(event)
+            self.decision_dataset.record_decision(event, extras={"frames": frames})
             return [self._ingest_event(event)]
         self._active_policy = auth_policy
         evaluated = self.evaluate(
@@ -300,6 +303,8 @@ class DemoKellyRouter:
         self._record_event(evaluated.event)
         if evaluated.decision == "BLOCK":
             log.info("[DEMO_SKIP] reason=%s", evaluated.reason)
+            # BLOC 9 — refused decisions land in the dataset too (fail-silent)
+            self.decision_dataset.record_decision(evaluated.event, extras={"frames": frames})
             return [self._ingest_event(evaluated.event)]
 
         if _is_simo_pending_order(evaluated.event):
@@ -308,6 +313,8 @@ class DemoKellyRouter:
             order_result = self._send_order(evaluated.event)
         event = {**evaluated.event, **order_result}
         self._record_event(event)
+        # BLOC 9 — executed (or send-refused) decisions -> dataset (fail-silent)
+        self.decision_dataset.record_decision(event, extras={"frames": frames})
         return [self._ingest_event(event)]
 
     def process_quick_exits(
@@ -357,6 +364,30 @@ class DemoKellyRouter:
         items: list[dict] = []
         _quick_exit_closed: set[int] = set()
 
+        # BLOC 9 — outcome tracker: MFE/MAE + virtual/real outcomes from the
+        # current ticks; pnl reconciled from MT5 deals (fail-silent).
+        try:
+            _tracked_symbols = {
+                str(item.get("symbol") or "")
+                for item in self.decision_dataset.tracker._open.values()
+            }
+            _tracker_prices: dict[str, float] = {}
+            for _tsym in _tracked_symbols:
+                if not _tsym:
+                    continue
+                _t_tick = mt5.symbol_info_tick(_tsym)
+                _t_bid = _to_float(getattr(_t_tick, "bid", None))
+                _t_ask = _to_float(getattr(_t_tick, "ask", None))
+                if _t_bid is not None and _t_ask is not None:
+                    _tracker_prices[_tsym] = (_t_bid + _t_ask) / 2.0
+            if _tracker_prices:
+                self.decision_dataset.tracker.update(
+                    _tracker_prices,
+                    deals_fn=lambda ticket: mt5.history_deals_get(position=int(ticket)),
+                    now_utc=now,
+                )
+        except Exception:
+            pass
         # PROTECTED CALENDAR maintenance (positions side, explicit UTC).
         # The network refresh lives in main (boot + daily) — never here.
         _cal_now = now or datetime.now(timezone.utc)

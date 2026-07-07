@@ -10,3 +10,6 @@ pilot_*.txt
 
 # Local backups produced by the daily backup job
 backups/
+
+# Learning dataset: preserved by the daily backup job, not by git
+app/data/decision_dataset.jsonl
