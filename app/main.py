@@ -697,6 +697,13 @@ class HermesBackend:
                     self.demo_router.news_calendar.refresh()
                 except Exception as _news_exc:
                     log.warning("[NEWS_CALENDAR] cycle_refresh_failed error=%s", _news_exc)
+            # SUPER-EYES: pure observation features, zero decisional effect
+            try:
+                from app.services.market_eyes import collect_market_eyes
+                self.demo_router.market_eyes_snapshot = collect_market_eyes(self.settings)
+            except Exception as _eyes_exc:
+                self.demo_router.market_eyes_snapshot = None
+                log.warning("[MARKET_EYES] collect_failed error=%s", _eyes_exc)
             self.latest_position_sync = self.sync_open_mt5_positions_to_lovable()
             self.write_ingest_items(self.demo_router.process_quick_exits(
                 account,

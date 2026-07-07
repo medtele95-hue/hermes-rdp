@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
@@ -182,11 +182,12 @@ class DemoKellyRouter:
         self._active_policy: AccountPolicy | None = None
         self.news_calendar = NewsCalendar(settings)
         self.decision_dataset = DecisionDataset(self.events_path.parent / "decision_dataset.jsonl")
+        self.market_eyes_snapshot: dict | None = None
         self._exit_v2_state: dict[int, dict] = {}
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
-        self._dynamic_exit_state: dict[int, dict] = {}  # §5 R-multiple exit state
+        self._dynamic_exit_state: dict[int, dict] = {}  # Â§5 R-multiple exit state
         self._events_lock = threading.RLock()
 
     @property
@@ -260,7 +261,7 @@ class DemoKellyRouter:
             _dr_symbol, _dr_strategy, self.settings.demo_magic_number,
         )
         # ADAPTIVE_ACCOUNT_POLICY stage 2: per-order authorization. The boot
-        # check alone was the historical trap — both stages must gate.
+        # check alone was the historical trap â€” both stages must gate.
         auth_ok, auth_reason, auth_policy = trading_authorized(account, self.settings)
         log.info(
             "[ORDER_AUTH] decision=%s reason=%s level=%s symbol=%s strategy=%s",
@@ -283,7 +284,7 @@ class DemoKellyRouter:
                 "created_at": (now or datetime.now(timezone.utc)).isoformat(),
             }
             self._record_event(event)
-            self.decision_dataset.record_decision(event, extras={"frames": frames})
+            self.decision_dataset.record_decision(event, extras={"frames": frames, **(self.market_eyes_snapshot or {})})
             return [self._ingest_event(event)]
         self._active_policy = auth_policy
         evaluated = self.evaluate(
@@ -303,8 +304,8 @@ class DemoKellyRouter:
         self._record_event(evaluated.event)
         if evaluated.decision == "BLOCK":
             log.info("[DEMO_SKIP] reason=%s", evaluated.reason)
-            # BLOC 9 — refused decisions land in the dataset too (fail-silent)
-            self.decision_dataset.record_decision(evaluated.event, extras={"frames": frames})
+            # BLOC 9 â€” refused decisions land in the dataset too (fail-silent)
+            self.decision_dataset.record_decision(evaluated.event, extras={"frames": frames, **(self.market_eyes_snapshot or {})})
             return [self._ingest_event(evaluated.event)]
 
         if _is_simo_pending_order(evaluated.event):
@@ -313,8 +314,8 @@ class DemoKellyRouter:
             order_result = self._send_order(evaluated.event)
         event = {**evaluated.event, **order_result}
         self._record_event(event)
-        # BLOC 9 — executed (or send-refused) decisions -> dataset (fail-silent)
-        self.decision_dataset.record_decision(event, extras={"frames": frames})
+        # BLOC 9 â€” executed (or send-refused) decisions -> dataset (fail-silent)
+        self.decision_dataset.record_decision(event, extras={"frames": frames, **(self.market_eyes_snapshot or {})})
         return [self._ingest_event(event)]
 
     def process_quick_exits(
@@ -364,7 +365,7 @@ class DemoKellyRouter:
         items: list[dict] = []
         _quick_exit_closed: set[int] = set()
 
-        # BLOC 9 — outcome tracker: MFE/MAE + virtual/real outcomes from the
+        # BLOC 9 â€” outcome tracker: MFE/MAE + virtual/real outcomes from the
         # current ticks; pnl reconciled from MT5 deals (fail-silent).
         try:
             _tracked_symbols = {
@@ -389,7 +390,7 @@ class DemoKellyRouter:
         except Exception:
             pass
         # PROTECTED CALENDAR maintenance (positions side, explicit UTC).
-        # The network refresh lives in main (boot + daily) — never here.
+        # The network refresh lives in main (boot + daily) â€” never here.
         _cal_now = now or datetime.now(timezone.utc)
         _hermes_positions = [
             pos for pos in positions
@@ -483,7 +484,7 @@ class DemoKellyRouter:
                     if str(_v2_event.get("event_type")) == "EXIT_V2_CLOSE":
                         _quick_exit_closed.add(_pos_ticket)
                 continue
-            # §5: use R-multiple dynamic exit when enabled (gate: hermes_dynamic_exit_enabled)
+            # Â§5: use R-multiple dynamic exit when enabled (gate: hermes_dynamic_exit_enabled)
             _dynamic_enabled = bool(getattr(self.settings, "hermes_dynamic_exit_enabled", False))
             if _dynamic_enabled:
                 _exit_ctx = (market_contexts or {}).get(_pos_ticket) or (market_contexts or {}).get(symbol)
@@ -517,7 +518,7 @@ class DemoKellyRouter:
                 self._record_event(result_event)
                 items.append(self._ingest_event(result_event))
             elif action_name in {"CLOSE_DANGER", "CLOSE_TIME_STOP"}:
-                # §5 dynamic exit: danger score or time stop triggered
+                # Â§5 dynamic exit: danger score or time stop triggered
                 log.info(
                     "[HERMES_DYNAMIC_EXIT_CLOSE] ticket=%s symbol=%s reason=%s danger=%s R_now=%s phase=%s",
                     _pos_ticket, symbol, action.get("reason"), action.get("danger_score"), action.get("R_now"), action.get("phase"),
@@ -536,7 +537,7 @@ class DemoKellyRouter:
                 self._record_event(event)
                 items.append(self._ingest_event(event))
 
-        # ── Smart Rescue Quick Exit ──────────────────────────────────────────
+        # â”€â”€ Smart Rescue Quick Exit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if bool(getattr(self.settings, "old_btc_smart_quick_exit_enabled", True)):
             rescue_cfg = SmartRescueConfig(
                 enabled=True,
@@ -591,7 +592,7 @@ class DemoKellyRouter:
                         "[OLD_BTC_RESCUE_ARMED] ticket=%s profit=%s min_seen_profit=%s",
                         _pos_ticket, _pos_profit_r, rescue_action.get("min_seen_profit"),
                     )
-                    continue  # logging only — no close
+                    continue  # logging only â€” no close
 
                 # RESCUE_CLOSE
                 _rescue_reason = str(rescue_action.get("reason") or "")
@@ -622,7 +623,7 @@ class DemoKellyRouter:
                         _pos_ticket, str(_rclose_exc)[:200],
                     )
 
-        # ── Market Danger Positive Exit ──────────────────────────────────────
+        # â”€â”€ Market Danger Positive Exit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if bool(getattr(self.settings, "old_btc_smart_exit_enabled", True)):
             _danger_threshold = float(getattr(self.settings, "old_btc_danger_exit_min_usd", 0.08))
             _min_signals = int(getattr(self.settings, "old_btc_smart_exit_min_danger_signals", 2))
@@ -689,7 +690,7 @@ class DemoKellyRouter:
                 if not danger.get("danger"):
                     continue
 
-                # Danger confirmed — close for market-danger reason
+                # Danger confirmed â€” close for market-danger reason
                 log.info(
                     "[OLD_BTC_SMART_POSITIVE_CLOSE] ticket=%s profit=%s reason=MARKET_DANGER_POSITIVE_EXIT signals=%s",
                     _pos_ticket_d, _pos_profit_d, ",".join(danger.get("signals") or []),
@@ -780,7 +781,7 @@ class DemoKellyRouter:
         else:
             kelly_lot = _to_float((kelly_risk or {}).get("approved_lot") or (kelly_risk or {}).get("lot_size"))
             risk_lot = self._risk_lot(decision, account, symbol_specs or {})
-            # LOVABLE_BTC uses a fixed demo_max_lot — bypass Kelly when it returns 0 or None
+            # LOVABLE_BTC uses a fixed demo_max_lot â€” bypass Kelly when it returns 0 or None
             if (
                 str(getattr(self.settings, "hermes_execution_profile", "") or "").upper().strip()
                 == "LOVABLE_BTC_OLD_SYSTEM"
@@ -1079,7 +1080,7 @@ class DemoKellyRouter:
                 "[DEMO_ROUTER_REACHED] mode=%s strategy=%s smc_mtfa_strict_bypass=true topdown_bypass=true",
                 mode, strategy,
             )
-            # Entry gate — shared check for both BTC strategies inside DemoRouter
+            # Entry gate â€” shared check for both BTC strategies inside DemoRouter
             if bool(getattr(self.settings, "old_btc_entry_gate_enabled", True)):
                 _gate_positions = self._demo_positions()
                 _gate_btc_count = count_hermes_btc_open(_gate_positions, self.settings.demo_magic_number)
@@ -1113,7 +1114,7 @@ class DemoKellyRouter:
                 )
                 if _gate_decision == "BLOCK":
                     reason = _gate_reason
-        # PROTECTED CALENDAR — weekend flat / post-weekend blackout / news
+        # PROTECTED CALENDAR â€” weekend flat / post-weekend blackout / news
         # shield. Entry blocks only; position maintenance lives in
         # process_quick_exits. All checks in explicit UTC.
         news_blackout_event = None
@@ -1140,7 +1141,7 @@ class DemoKellyRouter:
                     symbol, strategy, news_blackout_event.get("title"),
                     news_blackout_event.get("time_utc"),
                 )
-        # DAILY_KILLSWITCH — broker-day window, deals re-read on every
+        # DAILY_KILLSWITCH â€” broker-day window, deals re-read on every
         # evaluation (nothing in memory), quota by account policy.
         daily_killswitch = None
         if not reason and mt5_connected:
@@ -1182,7 +1183,7 @@ class DemoKellyRouter:
             reason = final_reason
         if reason and _old_btc_forced_mode:
             log.info("[DEMO_ROUTER_BLOCK] mode=%s strategy=%s reason=%s", mode, strategy, reason)
-        # Open position guard — runs inside DemoRouter for OLD BTC profile
+        # Open position guard â€” runs inside DemoRouter for OLD BTC profile
         if _old_btc_forced_mode and not reason:
             _btc_guard_count = count_hermes_btc_open(positions, self.settings.demo_magic_number)
             _max_btc_open = int(getattr(self.settings, "old_btc_max_open_positions", 1) or 1)
@@ -1432,7 +1433,7 @@ class DemoKellyRouter:
         if payload.get("trade_expert") is False:
             block_reason = block_reason or "TRADE_EXPERT_FALSE"
         # ADAPTIVE_ACCOUNT_POLICY: a DEMO account (trade_mode) carries no login
-        # pin — trade_mode detection IS the protection. The allowlist only
+        # pin â€” trade_mode detection IS the protection. The allowlist only
         # still applies to non-DEMO accounts as a legacy belt.
         allowed_login = str(self.settings.demo_allowed_login or "").strip()
         login = payload.get("login")
@@ -2733,14 +2734,14 @@ class DemoKellyRouter:
         # Remap logical EURUSD to broker-specific symbol name if configured
         _eurusd_broker = getattr(self.settings, "eurusd_broker_symbol", "EURUSD") or "EURUSD"
         if _order_symbol.upper().startswith("EURUSD") and _eurusd_broker.upper() != _order_symbol.upper():
-            log.info("[SYMBOL_REMAP] %s → %s (EURUSD_BROKER_SYMBOL)", _order_symbol, _eurusd_broker)
+            log.info("[SYMBOL_REMAP] %s â†’ %s (EURUSD_BROKER_SYMBOL)", _order_symbol, _eurusd_broker)
             _order_symbol = _eurusd_broker
         _sym_info = None
         try:
             _sym_info = mt5.symbol_info(_order_symbol)
         except Exception:
             pass
-        # Symbol not in MarketWatch — select it and retry
+        # Symbol not in MarketWatch â€” select it and retry
         if _sym_info is None:
             _sel_result = False
             _sel_error = None
@@ -2791,7 +2792,7 @@ class DemoKellyRouter:
         _SYMBOL_TRADE_MODE_FULL = 4
         if _sym_info is not None and _trade_mode != _SYMBOL_TRADE_MODE_FULL and _trade_mode != -1:
             log.warning(
-                "[SYMBOL_TRADE_DISABLED] symbol=%s trade_mode=%s — symbol is not in FULL trade mode, skipping order",
+                "[SYMBOL_TRADE_DISABLED] symbol=%s trade_mode=%s â€” symbol is not in FULL trade mode, skipping order",
                 _order_symbol, _trade_mode,
             )
             return {
@@ -2821,7 +2822,7 @@ class DemoKellyRouter:
             "type_time": getattr(mt5, "ORDER_TIME_GTC", 0),
             "type_filling": _filling_mode,
         }
-        # BLOC 8 — execution at the tick: re-read the market at the INSTANT
+        # BLOC 8 â€” execution at the tick: re-read the market at the INSTANT
         # of the send (BUY@ask, SELL@bid), abort if the price drifted more
         # than EXEC_MAX_DRIFT_POINTS since validation.
         _validation_entry = _to_float(event.get("entry"))
@@ -2954,7 +2955,7 @@ class DemoKellyRouter:
         order_result = _order_result_payload(result)
         ticket = order_result.get("ticket")
         success = _order_result_confirmed(result, ticket)
-        # BLOC 8 — [EXEC_QUALITY]: measure what the broker actually did.
+        # BLOC 8 â€” [EXEC_QUALITY]: measure what the broker actually did.
         _fill_price = _to_float(getattr(result, "price", None))
         _slippage_vs_tick = None
         _slippage_vs_request = None
@@ -2994,7 +2995,7 @@ class DemoKellyRouter:
         )
         if order_result.get("retcode") == 10017:
             log.warning(
-                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 — enable AutoTrading in MT5 terminal",
+                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 â€” enable AutoTrading in MT5 terminal",
                 event["symbol"],
             )
         if success:
@@ -3167,7 +3168,7 @@ class DemoKellyRouter:
         )
         if order_result.get("retcode") == 10017:
             log.warning(
-                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 — enable AutoTrading in MT5 terminal",
+                "[BROKER_AUTOTRADING_DISABLED] symbol=%s retcode=10017 â€” enable AutoTrading in MT5 terminal",
                 broker_symbol,
             )
         return {
@@ -3202,7 +3203,7 @@ class DemoKellyRouter:
         return sl >= entry if is_buy else sl <= entry
 
     def _process_exit_v2_position(self, pos: Any, account: dict | None, now: datetime | None = None) -> list[dict]:
-        """Exit V2 — single exit authority for GOLD positions.
+        """Exit V2 â€” single exit authority for GOLD positions.
 
         Account gate: DEMO=ACTIVE (closes execute), anything else=SHADOW.
         Fail-closed: any exception leaves the original SL/TP untouched.
@@ -3349,7 +3350,7 @@ class DemoKellyRouter:
           - DEMO account check is done upstream in process_quick_exits()
           - symbol must be BTCUSD# (enforced by is_hermes_btc_pos caller)
           - volume taken directly from position (no inflation)
-          - opposite order type used (BUY→SELL, SELL→BUY)
+          - opposite order type used (BUYâ†’SELL, SELLâ†’BUY)
         """
         symbol = str(getattr(pos, "symbol", "") or "")
         ticket = int(getattr(pos, "ticket", 0) or 0)
@@ -3418,7 +3419,7 @@ class DemoKellyRouter:
             now,
         )
 
-    # ── Fast Smart Exit daemon interface ─────────────────────────────────────
+    # â”€â”€ Fast Smart Exit daemon interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def fast_exit_close_position(self, pos: Any, reason: str, now: datetime | None = None) -> dict:
         """Close a HERMES BTC position from the fast exit daemon.
@@ -4432,9 +4433,9 @@ def _detect_filling_mode(symbol: str) -> int:
     """Return the best supported ORDER_FILLING_* constant for the given symbol.
 
     MT5 symbol_info.filling_mode is a bitmask:
-      bit 0 (value 1) = FOK allowed  → ORDER_FILLING_FOK = 0
-      bit 1 (value 2) = IOC allowed  → ORDER_FILLING_IOC = 1
-    When neither bit is set the broker requires RETURN mode   → ORDER_FILLING_RETURN = 2
+      bit 0 (value 1) = FOK allowed  â†’ ORDER_FILLING_FOK = 0
+      bit 1 (value 2) = IOC allowed  â†’ ORDER_FILLING_IOC = 1
+    When neither bit is set the broker requires RETURN mode   â†’ ORDER_FILLING_RETURN = 2
     """
     try:
         info = mt5.symbol_info(symbol)
@@ -5326,12 +5327,12 @@ def sl_engine_apply_modification(
 ) -> dict:
     """Apply SL/TP to an open position for BtcSlEngine. Called from btc_sl_engine.py only.
 
-    Uses TRADE_ACTION_SLTP (6) with "position" key — the correct action for modifying
+    Uses TRADE_ACTION_SLTP (6) with "position" key â€” the correct action for modifying
     SL/TP of an open position. TRADE_ACTION_MODIFY (7) is for pending orders and causes
     retcode=10013 on open positions.
 
     Request structure mirrors _quick_exit_modify_sl which is confirmed working.
-    Fields "type", "volume", "price" are never present — they would open a new market order.
+    Fields "type", "volume", "price" are never present â€” they would open a new market order.
     """
     try:
         # Round to symbol precision (digits=2 for BTCUSD# as fallback)
@@ -5348,10 +5349,10 @@ def sl_engine_apply_modification(
             "magic":    _magic,
             "comment":  "HERMES_SL_ENGINE",
         }
-        # Guardrail: "type" field would send a new market order — never allowed here
+        # Guardrail: "type" field would send a new market order â€” never allowed here
         if "type" in request:
             log.error(
-                "[SL_ENGINE_CRITICAL] type_field_in_modify_request ticket=%s — BLOCKED",
+                "[SL_ENGINE_CRITICAL] type_field_in_modify_request ticket=%s â€” BLOCKED",
                 ticket,
             )
             return {"success": False, "retcode": None, "comment": "GUARDRAIL_TYPE_FIELD_BLOCKED"}
