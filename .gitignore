@@ -1,0 +1,12 @@
+# Python artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime noise (root-level logs and dumps from old runs stay tracked; new ones ignored)
+*.log
+runtime_*.txt
+pilot_*.txt
+
+# Local backups produced by the daily backup job
+backups/

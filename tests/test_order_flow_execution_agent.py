@@ -305,20 +305,15 @@ class TestCooldown(unittest.TestCase):
 
 class TestSafetyInvariants(unittest.TestCase):
     def test_order_send_only_in_demo_router(self):
-        import subprocess
-        result = subprocess.run(
-            ["python", "-m", "app.utils.search_order_send"],
-            capture_output=True,
-            text=True,
-            cwd="C:/hermes-mt5-agent",
-        )
-        # Use grep approach
+        # Use grep approach (repo root derived from this file — never hardcoded)
         import glob
+        import os
         import re
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         pattern = re.compile(r"mt5\.order_send\s*\(")
         violations = []
-        for path in glob.glob("C:/hermes-mt5-agent/app/**/*.py", recursive=True):
-            if "demo_router.py" in path or "app/data/" in path:
+        for path in glob.glob(os.path.join(repo_root, "app", "**", "*.py"), recursive=True):
+            if "demo_router.py" in path or "app/data/" in path or "app\\data\\" in path:
                 continue
             try:
                 with open(path, "r", encoding="utf-8") as fh:

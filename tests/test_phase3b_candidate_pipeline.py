@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import glob
+import os
 import re
 import unittest
 from datetime import datetime, timezone
@@ -436,7 +437,7 @@ class TestSafetyInvariantsPhase3B(unittest.TestCase):
     def test_order_send_only_in_demo_router(self):
         pattern = re.compile(r"mt5\.order_send\s*\(")
         violations = []
-        for path in glob.glob("C:/hermes-mt5-agent/app/**/*.py", recursive=True):
+        for path in glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "**", "*.py"), recursive=True):
             if "demo_router.py" in path or "app/data/" in path or "app\\data\\" in path:
                 continue
             try:

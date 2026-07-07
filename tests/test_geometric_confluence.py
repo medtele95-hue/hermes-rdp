@@ -681,16 +681,10 @@ class TestSafetyInvariants:
             "Default geometric_confluence_mode must be SHADOW"
 
     def test_order_send_location_unchanged(self):
-        import subprocess, sys
-        result = subprocess.run(
-            [sys.executable, "-c",
-             "import ast, pathlib\n"
-             "src = pathlib.Path('app/mt5/demo_router.py').read_text(encoding='utf-8')\n"
-             "assert 'order_send' in src, 'demo_router must contain order_send'\n"
-             "print('OK')"],
-            capture_output=True, text=True, cwd="C:/hermes-mt5-agent",
-        )
-        assert "OK" in result.stdout, result.stderr
+        import pathlib
+        repo_root = pathlib.Path(__file__).resolve().parent.parent
+        src = (repo_root / "app" / "mt5" / "demo_router.py").read_text(encoding="utf-8")
+        assert "order_send" in src, "demo_router must contain order_send"
 
 
 # ---------------------------------------------------------------------------

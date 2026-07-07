@@ -212,6 +212,7 @@ class Settings(BaseModel):
     eur_allow_near_cross: bool = True
     eur_near_cross_max_distance_atr: float = 0.15
     max_open_eur_trades: int = 1
+    eurusd_broker_symbol: str = "EURUSD"
     demo_allow_asia_trading: bool = False
 
     hermes_magic_number: int = 909001
@@ -551,6 +552,7 @@ def get_settings() -> Settings:
         eurusd_topdown_min=float(os.getenv("EURUSD_TOPDOWN_MIN", "60")),
         eurusd_m15_required=_bool_env("EURUSD_M15_REQUIRED", True),
         eurusd_m1_required=_bool_env("EURUSD_M1_REQUIRED", True),
+        eurusd_broker_symbol=os.getenv("EURUSD_BROKER_SYMBOL", "EURUSD"),
         hermes_trade_symbols=os.getenv("HERMES_TRADE_SYMBOLS", "BTCUSD#,BTCUSD,GOLD#,GOLD,XAUUSD,EURUSD"),
         hermes_analysis_only_symbols=os.getenv("HERMES_ANALYSIS_ONLY_SYMBOLS", ""),
         gold_liquidity_mode=os.getenv("GOLD_LIQUIDITY_MODE", "false").strip(),
