@@ -592,19 +592,45 @@ def _check_sfp(m15_df: object, direction: str) -> bool | None:
         vol_last = float(last.get(vol_col) or 0)
         vol_avg = float(prev[vol_col].mean()) if vol_col in prev.columns else 0.0
         vol_ok = vol_avg > 0 and vol_last > vol_avg * 1.3
+        # Sweep must clear the level by a fraction of ATR so micro-wick noise
+        # (sub-tolerance pokes) does not register as a liquidity sweep.
+        atr_margin = 0.0
+        atr_val = _atr_m15(closed)
+        if atr_val is not None and atr_val > 0:
+            atr_margin = 0.1 * atr_val
         if direction == "SELL":
             recent_high = float(prev["high"].max())
-            sweep = float(last["high"]) > recent_high
+            sweep = float(last["high"]) > recent_high + atr_margin
             sfp = sweep and float(last["close"]) < recent_high and vol_ok
             return True if sfp else (False if sweep else None)
         if direction == "BUY":
             recent_low = float(prev["low"].min())
-            sweep = float(last["low"]) < recent_low
+            sweep = float(last["low"]) < recent_low - atr_margin
             sfp = sweep and float(last["close"]) > recent_low and vol_ok
             return True if sfp else (False if sweep else None)
     except (KeyError, TypeError, ValueError):
         return None
     return None
+
+
+def _atr_m15(df: object, period: int = 14) -> float | None:
+    """Last ATR value on a closed-candle frame; None when unusable."""
+    if df is None or getattr(df, "empty", True) or len(df) < 4:
+        return None
+    try:
+        effective = min(period, len(df) - 1)
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+        prev_close = close.shift(1)
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        tr = tr1.combine(tr2, max).combine(tr3, max)
+        out = float(tr.rolling(effective).mean().iloc[-1])
+        return out if math.isfinite(out) else None
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _detect_fvg_bonus(m5_df: object, direction: str) -> tuple[int, float | None]:

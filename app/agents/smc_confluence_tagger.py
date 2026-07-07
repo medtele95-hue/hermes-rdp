@@ -197,6 +197,37 @@ def _trend(df: pd.DataFrame | None) -> str:
     return "RANGE"
 
 
+def _zone_tolerance(df: pd.DataFrame | None, close: float) -> float:
+    """ATR-relative zone tolerance (k x ATR_H4); pct-of-price fallback.
+
+    The old fixed pct (~$8 on gold) missed zones in high-vol regimes and
+    over-triggered in quiet ones.
+    """
+    atr_val = _atr_value(df)
+    if atr_val is not None and atr_val > 0:
+        return 0.5 * atr_val
+    return max(abs(close) * 0.0025, 0.0001)
+
+
+def _atr_value(df: pd.DataFrame | None, period: int = 14) -> float | None:
+    if df is None or getattr(df, "empty", True) or len(df) < 4:
+        return None
+    try:
+        effective = min(period, len(df) - 1)
+        prev_close = df["close"].shift(1)
+        tr = pd.concat(
+            [
+                df["high"] - df["low"],
+                (df["high"] - prev_close).abs(),
+                (df["low"] - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        return _float(tr.rolling(effective).mean().iloc[-1])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _key_level_nearby(df: pd.DataFrame | None) -> bool:
     if _missing(df) or len(df) < 6:
         return False
@@ -205,7 +236,7 @@ def _key_level_nearby(df: pd.DataFrame | None) -> bool:
     resistance = _float(df["high"].iloc[:-1].tail(10).max())
     if close is None or support is None or resistance is None:
         return False
-    tolerance = max(abs(close) * 0.0025, 0.0001)
+    tolerance = _zone_tolerance(df, close)
     return abs(close - support) <= tolerance or abs(close - resistance) <= tolerance
 
 
@@ -217,7 +248,7 @@ def _supply_demand_zone(df: pd.DataFrame | None, trend: str) -> str:
     resistance = _float(df["high"].iloc[:-1].tail(10).max())
     if close is None or support is None or resistance is None:
         return "NONE"
-    tolerance = max(abs(close) * 0.0025, 0.0001)
+    tolerance = _zone_tolerance(df, close)
     if abs(close - support) <= tolerance:
         return "DEMAND" if trend in {"BULLISH", "RANGE"} else "NONE"
     if abs(close - resistance) <= tolerance:
@@ -302,6 +333,12 @@ def _liquidity(df: pd.DataFrame | None) -> str:
 
 
 def _structure_confirmation(df: pd.DataFrame | None, direction: str) -> bool:
+    """Breakout of the prior extreme on the last CLOSED candle.
+
+    Accepts either a body close beyond the level OR a wick beyond it —
+    requiring a simultaneous body-close breakout on three timeframes at once
+    proved unreachable (0/5943 measured).
+    """
     if direction not in {"BUY", "SELL"} or _missing(df) or len(df) < 5:
         return False
     closed = df.iloc[:-1]  # exclude live candle
@@ -314,9 +351,19 @@ def _structure_confirmation(df: pd.DataFrame | None, direction: str) -> bool:
         return False
     if direction == "BUY":
         prior_high = _float(prev["high"].max())
-        return bool(prior_high is not None and close > prior_high and close > open_)
+        if prior_high is None:
+            return False
+        body = close > prior_high and close > open_
+        high = _float(last.get("high"))
+        wick = high is not None and high > prior_high
+        return bool(body or wick)
     prior_low = _float(prev["low"].min())
-    return bool(prior_low is not None and close < prior_low and close < open_)
+    if prior_low is None:
+        return False
+    body = close < prior_low and close < open_
+    low = _float(last.get("low"))
+    wick = low is not None and low < prior_low
+    return bool(body or wick)
 
 
 def _ifvg_ote(direction: str, fvg: str, zone: str, m15: bool, m1: bool) -> bool:
@@ -406,15 +453,18 @@ def _status_reason(direction: str, score: int, missing: list[str], m15: bool, m5
         return "NOT_APPLICABLE", reason
     if direction not in {"BUY", "SELL"}:
         return "NOT_APPLICABLE", "NO_TRADE_DIRECTION"
-    if score >= 60 and m15 and m5 and m1:
+    confirmed = sum(1 for flag in (m15, m5, m1) if flag)
+    # 2-of-3 timeframe confirmations; PASS threshold 60 unchanged.
+    if score >= 60 and confirmed >= 2:
         return "PASS", "SMC_CONFLUENCE_ALIGNED"
     missing_factors = []
-    if not m15:
-        missing_factors.append("NO_M15_CONFIRMATION")
-    if not m5:
-        missing_factors.append("NO_M5_CONFIRMATION")
-    if not m1:
-        missing_factors.append("NO_M1_ENTRY_CONFIRMATION")
+    if confirmed < 2:
+        if not m15:
+            missing_factors.append("NO_M15_CONFIRMATION")
+        if not m5:
+            missing_factors.append("NO_M5_CONFIRMATION")
+        if not m1:
+            missing_factors.append("NO_M1_ENTRY_CONFIRMATION")
     if score < 60:
         missing_factors.append("LOW_SMC_CONFLUENCE_SCORE")
     return "FAIL", ",".join(missing_factors)

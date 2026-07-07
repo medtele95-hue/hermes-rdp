@@ -39,14 +39,18 @@ class MTFStructureDetector:
                 return out
 
             h4_context = self._h4_context(h4)
-            h4_zone = self._active_h4_zone(m15, h4_context)
-            direction = self._direction(h4_context["h4_bias"], h4_zone)
+            h4_zone = self._active_h4_zone(m15, h4_context, h4)
+            direction = self._direction(h4_context["h4_bias"], h4_zone, h4)
+            log.info(
+                "[MTF_DIR] symbol=%s h4_bias=%s h4_zone=%s direction=%s",
+                symbol, h4_context["h4_bias"], h4_zone, direction,
+            )
             m15_confirmation, m15_shift = self._m15_confirmation(m15, direction)
             m1_confirmation = self._m1_entry_confirmation(m1, direction)
             levels = self._suggest_levels(m1, h4_context, direction)
             score = self._score(h4_context["h4_bias"], h4_zone, m15_confirmation, m1_confirmation, direction)
             status = "PASS" if direction in {"BUY", "SELL"} and m15_confirmation and m1_confirmation else "FAIL"
-            reason = self._reason(direction, h4_zone, m15_confirmation, m1_confirmation)
+            reason = self._reason(direction, h4_context["h4_bias"], h4_zone, m15_confirmation, m1_confirmation)
             out = _result(
                 status,
                 direction,
@@ -109,23 +113,35 @@ class MTFStructureDetector:
             "h4_last_swing_low": last_swing_low,
         }
 
-    def _active_h4_zone(self, m15: pd.DataFrame, h4_context: dict) -> str:
+    def _active_h4_zone(self, m15: pd.DataFrame, h4_context: dict, h4: pd.DataFrame | None = None) -> str:
         price = _float(m15.iloc[-1].get("close"))
         if price is None:
             return "NONE"
         support = h4_context.get("h4_recent_support")
         resistance = h4_context.get("h4_recent_resistance")
-        tolerance = max(abs(price) * 0.002, 0.0001)
+        # ATR-relative tolerance (k x ATR_H4); pct-of-price fallback when ATR unavailable
+        atr_h4 = _atr_value(h4)
+        if atr_h4 is not None and atr_h4 > 0:
+            tolerance = 0.5 * atr_h4
+        else:
+            tolerance = max(abs(price) * 0.002, 0.0001)
         if support is not None and abs(price - support) <= tolerance:
             return "DEMAND" if h4_context.get("h4_bias") == "BULLISH" else "SUPPORT"
         if resistance is not None and abs(price - resistance) <= tolerance:
             return "SUPPLY" if h4_context.get("h4_bias") == "BEARISH" else "RESISTANCE"
         return "NONE"
 
-    def _direction(self, h4_bias: str, h4_zone: str) -> str:
-        if h4_bias == "BULLISH" and h4_zone in {"SUPPORT", "DEMAND"}:
+    def _direction(self, h4_bias: str, h4_zone: str, h4: pd.DataFrame | None = None) -> str:
+        # Direction follows H4 structure; a zone only vetoes when it genuinely
+        # contradicts (price rejected at the opposing zone). The old rule required
+        # bias at the highs AND price at the lows simultaneously - unreachable.
+        if h4_bias == "BULLISH":
+            if h4_zone in {"SUPPLY", "RESISTANCE"} and _last_closed_rejects(h4, "BUY"):
+                return "WAIT"
             return "BUY"
-        if h4_bias == "BEARISH" and h4_zone in {"RESISTANCE", "SUPPLY"}:
+        if h4_bias == "BEARISH":
+            if h4_zone in {"DEMAND", "SUPPORT"} and _last_closed_rejects(h4, "SELL"):
+                return "WAIT"
             return "SELL"
         return "WAIT"
 
@@ -188,9 +204,12 @@ class MTFStructureDetector:
         score = 0
         if h4_bias in {"BULLISH", "BEARISH"}:
             score += 25
-        if h4_zone != "NONE":
-            score += 25
         if direction in {"BUY", "SELL"}:
+            aligned_zone = (
+                (direction == "BUY" and h4_zone in {"DEMAND", "SUPPORT"})
+                or (direction == "SELL" and h4_zone in {"SUPPLY", "RESISTANCE"})
+            )
+            score += 25 if aligned_zone else 10
             score += 10
         if m15_confirmation:
             score += 20
@@ -198,10 +217,10 @@ class MTFStructureDetector:
             score += 20
         return min(100, score)
 
-    def _reason(self, direction: str, h4_zone: str, m15_confirmation: bool, m1_confirmation: bool) -> str:
+    def _reason(self, direction: str, h4_bias: str, h4_zone: str, m15_confirmation: bool, m1_confirmation: bool) -> str:
         missing = []
         if direction == "WAIT":
-            missing.append("NO_H4_DIRECTION_ZONE_ALIGNMENT" if h4_zone != "NONE" else "PRICE_NOT_AT_H4_ZONE")
+            missing.append("H4_RANGE_NO_DIRECTION" if h4_bias == "RANGE" else "H4_ZONE_CONTRADICTION")
         if not m15_confirmation:
             missing.append("NO_M15_STRUCTURE_SHIFT")
         if not m1_confirmation:
@@ -286,6 +305,38 @@ def _levels(
 
 def _missing(df: object) -> bool:
     return df is None or getattr(df, "empty", True)
+
+
+def _atr_value(df: pd.DataFrame | None, period: int = 14) -> float | None:
+    """Last ATR value with adaptive period for short frames; None when unusable."""
+    if df is None or getattr(df, "empty", True) or len(df) < 4:
+        return None
+    try:
+        effective = min(period, len(df) - 1)
+        prev_close = df["close"].shift(1)
+        tr = pd.concat(
+            [
+                df["high"] - df["low"],
+                (df["high"] - prev_close).abs(),
+                (df["low"] - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        return _float(tr.rolling(effective).mean().iloc[-1])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _last_closed_rejects(df: pd.DataFrame | None, direction: str) -> bool:
+    """True when the last closed candle rejects against the proposed direction."""
+    if df is None or getattr(df, "empty", True) or len(df) < 2:
+        return False
+    last = df.iloc[-2]  # exclude live candle
+    close = _float(last.get("close"))
+    open_ = _float(last.get("open"))
+    if close is None or open_ is None:
+        return False
+    return close < open_ if direction == "BUY" else close > open_
 
 
 def _no_trade_direction(direction: str | None) -> bool:
