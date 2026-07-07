@@ -24,6 +24,7 @@ from app.mt5.smart_rescue import (
     is_hermes_btc_pos,
 )
 from app.services.adaptive_account_policy import AccountPolicy, resolve_account_policy, trading_authorized
+from app.services.exit_v2 import ExitV2Config, evaluate_exit_v2, is_gold_symbol as _exit_v2_is_gold
 from app.services.adaptive_confluence_threshold import evaluate_adaptive_confluence
 from app.services.mt5_pnl_truth import get_mt5_hermes_pnl_truth
 from app.services.quick_exit_manager import QuickExitConfig, hermes_dynamic_exit, manage_quick_exit_position
@@ -171,6 +172,7 @@ class DemoKellyRouter:
         self.pilot_started_at = _parse_iso(settings.demo_pilot_started_at) or datetime.now(timezone.utc)
         self._startup_logged = False
         self._active_policy: AccountPolicy | None = None
+        self._exit_v2_state: dict[int, dict] = {}
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
@@ -340,6 +342,9 @@ class DemoKellyRouter:
         for ticket in list(self._dynamic_exit_state):
             if ticket not in live_tickets:
                 self._dynamic_exit_state.pop(ticket, None)
+        for ticket in list(self._exit_v2_state):
+            if ticket not in live_tickets:
+                self._exit_v2_state.pop(ticket, None)
 
         items: list[dict] = []
         _quick_exit_closed: set[int] = set()
@@ -361,6 +366,16 @@ class DemoKellyRouter:
             symbol = _pos_symbol
             tick = mt5.symbol_info_tick(symbol)
             info = mt5.symbol_info(symbol)
+            # BLOC 4: GOLD exits belong EXCLUSIVELY to Exit V2. The QUICK_EXIT
+            # parasite (TP money $1.50, sneaky lock-SL $0.80, trailing,
+            # dynamic exit) is skipped in full for GOLD.
+            if _exit_v2_is_gold(symbol):
+                for _v2_event in self._process_exit_v2_position(pos, account, now):
+                    self._record_event(_v2_event)
+                    items.append(self._ingest_event(_v2_event))
+                    if str(_v2_event.get("event_type")) == "EXIT_V2_CLOSE":
+                        _quick_exit_closed.add(_pos_ticket)
+                continue
             # §5: use R-multiple dynamic exit when enabled (gate: hermes_dynamic_exit_enabled)
             _dynamic_enabled = bool(getattr(self.settings, "hermes_dynamic_exit_enabled", False))
             if _dynamic_enabled:
@@ -2933,6 +2948,64 @@ class DemoKellyRouter:
             "order_success": success,
             "order_failure_reason": failure_reason,
         }
+
+    def _process_exit_v2_position(self, pos: Any, account: dict | None, now: datetime | None = None) -> list[dict]:
+        """Exit V2 — single exit authority for GOLD positions.
+
+        Account gate: DEMO=ACTIVE (closes execute), anything else=SHADOW.
+        Fail-closed: any exception leaves the original SL/TP untouched.
+        CLOSE-BASED: no SL-modify request exists on this path by construction.
+        """
+        events: list[dict] = []
+        ticket = int(getattr(pos, "ticket", 0) or 0)
+        symbol = str(getattr(pos, "symbol", "") or "")
+        try:
+            cfg = ExitV2Config(
+                mode=str(getattr(self.settings, "exit_v2_mode", "ACTIVE") or "ACTIVE").upper(),
+                tp_usd=float(getattr(self.settings, "exit_v2_tp_usd", 0.0)),
+                be_arm_usd=float(getattr(self.settings, "exit_v2_be_arm_usd", 2.00)),
+                be_floor_usd=float(getattr(self.settings, "exit_v2_be_floor_usd", 0.10)),
+                trail_start_usd=float(getattr(self.settings, "exit_v2_trail_start_usd", 2.0)),
+                trail_gap_usd=float(getattr(self.settings, "exit_v2_trail_gap_usd", 1.2)),
+            )
+            tick = mt5.symbol_info_tick(symbol)
+            info = mt5.symbol_info(symbol)
+            action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state)
+            account_type = self.account_diagnostics(account)["account_type"]
+            shadow = cfg.mode != "ACTIVE" or account_type != "DEMO"
+            log.info(
+                "[EXIT_V2] ticket=%s symbol=%s action=%s reason=%s profit=%s peak=%s be_armed=%s mode=%s account=%s",
+                ticket, symbol, action.get("action"), action.get("reason"),
+                action.get("profit_usd"), action.get("peak_usd"), action.get("be_armed"),
+                "SHADOW" if shadow else "ACTIVE", account_type,
+            )
+            if str(action.get("action")) != "CLOSE":
+                return events
+            if shadow:
+                events.append(
+                    _quick_exit_event(
+                        "EXIT_V2_SHADOW",
+                        "SHADOW",
+                        {**action, "exit_authority": "EXIT_V2", "shadow_reason": f"mode={cfg.mode},account={account_type}"},
+                        now,
+                    )
+                )
+                return events
+            result_event = self._quick_exit_close(pos, action, now)
+            result_event["event_type"] = "EXIT_V2_CLOSE"
+            result_event["exit_authority"] = "EXIT_V2"
+            result_event["exit_v2_reason"] = action.get("reason")
+            result_event["exit_v2_peak_usd"] = action.get("peak_usd")
+            result_event["exit_v2_floor_usd"] = action.get("floor_usd")
+            events.append(result_event)
+            return events
+        except Exception as exc:
+            # Fail-closed: the position keeps its original SL/TP.
+            log.warning(
+                "[EXIT_V2] fail_closed ticket=%s symbol=%s error=%s sl_tp=UNTOUCHED",
+                ticket, symbol, str(exc)[:200],
+            )
+            return events
 
     def _quick_exit_modify_sl(self, pos: Any, action: dict, now: datetime | None = None) -> dict:
         symbol = str(getattr(pos, "symbol", "") or "")

@@ -88,6 +88,13 @@ class Settings(BaseModel):
     quick_exit_be_buffer_usd: float = 0.10
     quick_exit_trail_start_usd: float = 1.00
     quick_exit_trail_gap_usd: float = 0.60
+    # EXIT V2 — single GOLD exit authority (CLOSE-BASED, no SL-modify path)
+    exit_v2_mode: str = "ACTIVE"
+    exit_v2_tp_usd: float = 0.0
+    exit_v2_be_arm_usd: float = 2.00
+    exit_v2_be_floor_usd: float = 0.10
+    exit_v2_trail_start_usd: float = 2.0
+    exit_v2_trail_gap_usd: float = 1.2
     demo_allow_btc_weekend_bad_hour: bool = False
     demo_allow_contest: bool = False
     demo_allowed_login: str = ""
@@ -507,6 +514,12 @@ def get_settings() -> Settings:
         quick_exit_be_buffer_usd=float(os.getenv("QUICK_EXIT_BE_BUFFER_USD", "0.10")),
         quick_exit_trail_start_usd=float(os.getenv("QUICK_EXIT_TRAIL_START_USD", "1.00")),
         quick_exit_trail_gap_usd=float(os.getenv("QUICK_EXIT_TRAIL_GAP_USD", "0.60")),
+        exit_v2_mode=os.getenv("EXIT_V2_MODE", "ACTIVE").strip().upper(),
+        exit_v2_tp_usd=float(os.getenv("EXIT_V2_TP_USD", "0")),
+        exit_v2_be_arm_usd=float(os.getenv("EXIT_V2_BE_ARM_USD", "2.00")),
+        exit_v2_be_floor_usd=float(os.getenv("EXIT_V2_BE_FLOOR_USD", "0.10")),
+        exit_v2_trail_start_usd=float(os.getenv("EXIT_V2_TRAIL_START_USD", "2.0")),
+        exit_v2_trail_gap_usd=float(os.getenv("EXIT_V2_TRAIL_GAP_USD", "1.2")),
         demo_allow_btc_weekend_bad_hour=_bool_env("DEMO_ALLOW_BTC_WEEKEND_BAD_HOUR", False),
         demo_allow_contest=_bool_env("DEMO_ALLOW_CONTEST", False),
         demo_allowed_login=os.getenv("DEMO_ALLOWED_LOGIN", "").strip(),
