@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HERMES — Control Room</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #131a22; --border: #232d38; --text: #e6edf3;
+    --muted: #8896a3; --green: #2ea043; --red: #da3633; --amber: #d29922;
+    --blue: #388bfd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px; padding-bottom: 40px;
+  }
+  header {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; background: var(--bg); z-index: 10;
+  }
+  header h1 { font-size: 17px; margin: 0; }
+  #conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
+  #conn-dot.ok { background: var(--green); }
+  #conn-dot.bad { background: var(--red); }
+  section {
+    margin: 12px; padding: 14px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  section h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); margin: 0 0 10px 0;
+  }
+  .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .row .k { color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .big { font-size: 24px; font-weight: 600; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase;
+  }
+  .badge.demo { background: #1f6feb33; color: var(--blue); }
+  .badge.real { background: #da363333; color: var(--red); }
+  .badge.hold { background: #8896a333; color: var(--muted); }
+  button {
+    font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: #1c2530; color: var(--text); width: 100%; margin-top: 8px; cursor: pointer;
+  }
+  button:active { opacity: 0.7; }
+  button.danger { background: #4a1616; border-color: #7a2020; color: #ffb4ab; }
+  button.warn { background: #4a3a16; border-color: #7a5f20; color: #ffdca3; }
+  .btnrow { display: flex; gap: 8px; }
+  .btnrow button { margin-top: 0; }
+  input[type=text], input[type=password], select {
+    width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0e141a; color: var(--text); font-size: 15px; margin-top: 6px;
+  }
+  label { font-size: 12px; color: var(--muted); display: block; margin-top: 10px; }
+  #toast {
+    position: fixed; bottom: 12px; left: 12px; right: 12px; padding: 12px;
+    border-radius: 8px; background: var(--panel); border: 1px solid var(--border);
+    display: none; z-index: 100; font-size: 13px;
+  }
+  #toast.ok { border-color: var(--green); }
+  #toast.err { border-color: var(--red); }
+  .pill { display:inline-block; padding: 2px 6px; border-radius: 6px; background:#1c2530; font-size:11px; margin-right:4px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HERMES <span style="color:var(--muted);font-weight:400">control room</span></h1>
+  <div><span id="conn-dot"></span><span id="conn-text" style="font-size:12px;color:var(--muted)">...</span></div>
+</header>
+
+<section id="sec-status">
+  <h2>1. État</h2>
+  <div class="grid2">
+    <div><div class="k row"><span>Équité</span></div><div class="big" id="s-equity">—</div></div>
+    <div><div class="k row"><span>Floating</span></div><div class="big" id="s-floating">—</div></div>
+  </div>
+  <div class="row"><span class="k">Balance</span><span id="s-balance">—</span></div>
+  <div class="row"><span class="k">Mode</span><span id="s-mode">—</span></div>
+  <div class="row"><span class="k">Compte</span><span id="s-login">—</span></div>
+  <div id="s-positions" style="margin-top:10px"></div>
+</section>
+
+<section id="sec-today">
+  <h2>2. Aujourd'hui</h2>
+  <div class="row"><span class="k">Net</span><span id="t-net" class="big">—</span></div>
+  <div class="row"><span class="k">W / L</span><span id="t-wl">—</span></div>
+  <div id="t-refused" style="margin-top:6px"></div>
+</section>
+
+<section id="sec-senses">
+  <h2>3. Senses</h2>
+  <div class="row"><span class="k">EES BUY</span><span id="se-buy">—</span></div>
+  <div class="row"><span class="k">EES SELL</span><span id="se-sell">—</span></div>
+  <div class="row"><span class="k">DXY</span><span id="se-dxy">—</span></div>
+  <div class="row"><span class="k">ATR percentile</span><span id="se-atr">—</span></div>
+  <div class="row"><span class="k">Session</span><span id="se-session">—</span></div>
+  <div class="row"><span class="k">Prochaine news HIGH</span><span id="se-news">—</span></div>
+</section>
+
+<section id="sec-system">
+  <h2>4. Système</h2>
+  <div class="row"><span class="k">Kill-switch</span><span id="sy-ks">—</span></div>
+  <div class="row"><span class="k">Watchdog</span><span id="sy-wd">—</span></div>
+  <div class="row"><span class="k">core_version</span><span id="sy-core">—</span></div>
+  <div class="row"><span class="k">Dernier backup</span><span id="sy-backup">—</span></div>
+  <div class="row"><span class="k">Profil actif</span><span id="sy-profile">—</span></div>
+  <div id="sy-alerts" style="margin-top:6px"></div>
+</section>
+
+<section id="sec-journal">
+  <h2>5. Journal</h2>
+  <table id="j-table"><thead><tr><th>Symbole</th><th>PnL</th><th>Stratégie</th></tr></thead><tbody></tbody></table>
+  <div class="btnrow" style="margin-top:8px">
+    <button onclick="journalPage(-1)">‹ préc.</button>
+    <button onclick="journalPage(1)">suiv. ›</button>
+  </div>
+</section>
+
+<section id="sec-pin">
+  <h2>6. PIN</h2>
+  <label>Code PIN (6 chiffres)</label>
+  <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••">
+</section>
+
+<section id="sec-bot">
+  <h2>7. Contrôle bot</h2>
+  <div class="btnrow">
+    <button class="danger" onclick="doAction('bot_stop','/api/action/bot/stop',{})">Stop</button>
+    <button onclick="doAction('bot_start','/api/action/bot/start',{})">Start</button>
+    <button class="warn" onclick="doAction('bot_restart','/api/action/bot/restart',{})">Restart</button>
+  </div>
+  <label style="margin-top:14px">Symboles actifs</label>
+  <div class="btnrow">
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-gold" checked style="width:auto;margin:0"> GOLD#
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-btc" checked style="width:auto;margin:0"> BTCUSD#
+    </label>
+  </div>
+  <button onclick="submitSymbols()">Appliquer</button>
+</section>
+
+<section id="sec-account">
+  <h2>8. Bascule compte</h2>
+  <label>Compte cible</label>
+  <select id="acc-target">
+    <option value="DEMO">DEMO</option>
+    <option value="REAL">REAL</option>
+  </select>
+  <div id="real-confirm" style="display:none">
+    <label>Tapez REAL en toutes lettres pour confirmer</label>
+    <input type="text" id="real-text" placeholder="REAL">
+  </div>
+  <button class="warn" onclick="submitAccountSwitch()">Basculer</button>
+</section>
+
+<details style="margin:12px">
+  <summary>Journal d'audit récent</summary>
+  <table id="audit-table" style="margin-top:8px"><thead><tr><th>Heure</th><th>Action</th><th>Résultat</th></tr></thead><tbody></tbody></table>
+</details>
+
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let journalPageNum = 1;
+
+function fmtUsd(v) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + ' $';
+}
+function cls(v) { return v > 0 ? 'pos' : (v < 0 ? 'neg' : ''); }
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('http ' + r.status);
+  return r.json();
+}
+
+function toast(msg, ok) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = ok ? 'ok' : 'err';
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+
+async function doAction(label, url, extraBody) {
+  const pin = $('pin-input').value;
+  if (!pin || pin.length !== 6) { toast('PIN requis (6 chiffres)', false); return; }
+  try {
+    const r = await fetch(url, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pin, ...extraBody}),
+    });
+    const body = await r.json();
+    if (body.ok) {
+      toast(label + ' : OK', true);
+    } else {
+      toast(label + ' refusé : ' + (body.reason || 'inconnu'), false);
+    }
+    refreshAll();
+  } catch (e) {
+    toast(label + ' : erreur réseau', false);
+  }
+}
+
+function submitSymbols() {
+  doAction('symboles', '/api/action/symbols', {
+    gold_active: $('sym-gold').checked, btc_active: $('sym-btc').checked,
+  });
+}
+
+$('acc-target').addEventListener('change', () => {
+  $('real-confirm').style.display = $('acc-target').value === 'REAL' ? 'block' : 'none';
+});
+
+function submitAccountSwitch() {
+  const target = $('acc-target').value;
+  const extra = {target};
+  if (target === 'REAL') extra.confirm_real_text = $('real-text').value;
+  doAction('bascule compte', '/api/action/account/switch', extra);
+}
+
+async function refreshStatus() {
+  const d = await getJSON('/api/status');
+  $('s-equity').textContent = d.equity != null ? d.equity.toFixed(2) + ' $' : '—';
+  $('s-floating').textContent = fmtUsd(d.floating_pnl);
+  $('s-floating').className = 'big ' + cls(d.floating_pnl || 0);
+  $('s-balance').textContent = d.balance != null ? d.balance.toFixed(2) + ' $' : '—';
+  $('s-mode').innerHTML = `<span class="badge ${d.mode === 'REAL' ? 'real' : 'demo'}">${d.mode}</span>`;
+  $('s-login').textContent = d.account_login || '—';
+  const posDiv = $('s-positions');
+  if (!d.positions || !d.positions.length) {
+    posDiv.innerHTML = '<div class="k" style="font-size:13px">Aucune position ouverte</div>';
+  } else {
+    posDiv.innerHTML = d.positions.map(p => {
+      const ev = p.exit_v2 || {};
+      return `<div class="row"><span>${p.symbol} ${p.direction}</span><span class="${cls(p.floating_usd)}">${fmtUsd(p.floating_usd)}</span></div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
+        ${ev.be_armed ? '<span class="pill">BE armé</span>' : ''}
+        ${ev.active_floor_usd != null ? `<span class="pill">floor ${ev.active_floor_usd.toFixed(2)}$</span>` : ''}
+        ${ev.mode ? `<span class="pill">${ev.mode}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+  $('conn-dot').className = d.mt5_connected ? 'ok' : 'bad';
+  $('conn-text').textContent = d.mt5_connected ? 'MT5 connecté' : 'MT5 déconnecté';
+}
+
+async function refreshToday() {
+  const d = await getJSON('/api/today');
+  $('t-net').textContent = fmtUsd(d.net_today_usd);
+  $('t-net').className = 'big ' + cls(d.net_today_usd);
+  $('t-wl').textContent = `${d.wins}W / ${d.losses}L`;
+  const refused = Object.entries(d.refused_by_reason || {});
+  $('t-refused').innerHTML = refused.length
+    ? refused.map(([k, v]) => `<span class="pill">${k}: ${v}</span>`).join(' ')
+    : '';
+}
+
+async function refreshSenses() {
+  const d = await getJSON('/api/senses');
+  const fmtEes = (e) => e ? `${e.band} (${e.score})` : 'n/d';
+  $('se-buy').textContent = fmtEes(d.ees_buy);
+  $('se-sell').textContent = fmtEes(d.ees_sell);
+  $('se-dxy').textContent = d.dxy && d.dxy.trend ? `${d.dxy.trend} (${d.dxy.gold_divergence || ''})` : '—';
+  $('se-atr').textContent = d.atr_percentile != null ? d.atr_percentile + '%' : '—';
+  $('se-session').textContent = d.session || '—';
+  $('se-news').textContent = d.next_high_news ? `${d.next_high_news.title} (${d.next_high_news.country})` : 'aucune';
+}
+
+async function refreshSystem() {
+  const d = await getJSON('/api/system');
+  const ks = d.kill_switch || {};
+  $('sy-ks').innerHTML = ks.triggered
+    ? `<span class="badge real">DÉCLENCHÉ</span> ${ks.losses_today}/${ks.max_losses_per_day}`
+    : `${ks.losses_today ?? '—'}/${ks.max_losses_per_day ?? '—'}`;
+  $('sy-wd').textContent = d.watchdog_heartbeat_age_seconds != null
+    ? Math.round(d.watchdog_heartbeat_age_seconds) + 's' : 'n/d';
+  $('sy-core').textContent = d.core_version ?? '—';
+  $('sy-backup').textContent = d.last_backup || '—';
+  $('sy-profile').innerHTML = `<span class="badge ${d.active_profile === 'REAL' ? 'real' : 'demo'}">${d.active_profile}</span>`;
+  $('sy-alerts').innerHTML = (d.open_alerts_today || []).slice(-3).map(a => `<div style="font-size:11px;color:var(--amber)">${a}</div>`).join('');
+}
+
+async function refreshJournal() {
+  const d = await getJSON(`/api/journal?page=${journalPageNum}&page_size=10`);
+  const tbody = document.querySelector('#j-table tbody');
+  tbody.innerHTML = (d.entries || []).map(e => `<tr>
+    <td>${e.symbol} ${e.direction || ''}</td>
+    <td class="${cls(e.pnl_usd)}">${fmtUsd(e.pnl_usd)}</td>
+    <td style="font-size:11px">${e.strategy || '—'}</td>
+  </tr>`).join('');
+}
+
+function journalPage(delta) {
+  journalPageNum = Math.max(1, journalPageNum + delta);
+  refreshJournal();
+}
+
+async function refreshAudit() {
+  try {
+    const d = await getJSON('/api/audit?limit=15');
+    const tbody = document.querySelector('#audit-table tbody');
+    tbody.innerHTML = (d.entries || []).slice().reverse().map(e => `<tr>
+      <td style="font-size:11px">${(e.ts || '').slice(11, 19)}</td>
+      <td style="font-size:11px">${e.action}</td>
+      <td style="font-size:11px">${e.result}</td>
+    </tr>`).join('');
+  } catch (e) { /* audit is best-effort UI */ }
+}
+
+async function refreshAll() {
+  try {
+    await Promise.all([refreshStatus(), refreshToday(), refreshSenses(), refreshSystem(), refreshJournal(), refreshAudit()]);
+  } catch (e) {
+    $('conn-dot').className = 'bad';
+    $('conn-text').textContent = 'erreur de lecture';
+  }
+}
+
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>
