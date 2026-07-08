@@ -5136,9 +5136,9 @@ def _write_exit_v2_snapshot(
         # disabled). Falls back to cfg.* only if the action dict didn't
         # carry it (e.g. EXIT_V2_UNREADABLE_POSITION early-return).
         "trail_start_usd": action.get("trail_start_usd_effective", cfg.trail_start_usd),
-        "trail_gap_usd": cfg.trail_gap_usd,
+        "trail_gap_usd": action.get("trail_gap_usd_effective", cfg.trail_gap_usd),
         "be_arm_usd": action.get("be_arm_usd_effective", cfg.be_arm_usd),
-        "be_floor_usd": cfg.be_floor_usd,
+        "be_floor_usd": action.get("be_floor_usd_effective", cfg.be_floor_usd),
         "threshold_scale": action.get("threshold_scale"),
         "mode": "SHADOW" if shadow else "ACTIVE",
         "account_type": account_type,

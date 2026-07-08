@@ -164,6 +164,8 @@ def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2
         "threshold_scale": thresholds["scale"],
         "be_arm_usd_effective": round(be_arm_usd, 4),
         "trail_start_usd_effective": round(trail_start_usd, 4),
+        "be_floor_usd_effective": round(be_floor_usd, 4),
+        "trail_gap_usd_effective": round(trail_gap_usd, 4),
     }
 
 
@@ -189,6 +191,8 @@ def _close(
         "threshold_scale": (thresholds or {}).get("scale"),
         "be_arm_usd_effective": round((thresholds or {}).get("be_arm_usd", 0.0), 4) if thresholds else None,
         "trail_start_usd_effective": round((thresholds or {}).get("trail_start_usd", 0.0), 4) if thresholds else None,
+        "be_floor_usd_effective": round((thresholds or {}).get("be_floor_usd", 0.0), 4) if thresholds else None,
+        "trail_gap_usd_effective": round((thresholds or {}).get("trail_gap_usd", 0.0), 4) if thresholds else None,
     }
 
 
