@@ -43,12 +43,16 @@ def broker_day_window(
     possible (tests, remplecture historique) mais n'est JAMAIS le chemin
     utilisé par le trading live.
 
-    Garde-fou anti-régression intégré : si la fenêtre calculée démarre à
-    plus de 48h dans le passé par rapport à now_utc, une alerte CRITIQUE
-    est loguée immédiatement — c'est exactement la signature du bug de
-    cette mission (kill-switch aveugle sur une fenêtre historique morte) et
-    ça doit être visible dès la première occurrence, plus jamais découvert
-    a posteriori dans un rapport."""
+    Garde-fou anti-régression intégré : la fenêtre calculée est comparée à
+    l'horloge murale INDÉPENDANTE (broker_now_utc(), jamais à now_utc
+    lui-même — comparer une fenêtre à la valeur qui a servi à la calculer
+    est toujours cohérent PAR CONSTRUCTION et ne peut jamais rien détecter,
+    piège dans lequel une première version de ce garde-fou est tombée
+    pendant cette mission, révélé par son propre test). Si l'écart dépasse
+    48h, une alerte CRITIQUE est loguée immédiatement — c'est exactement la
+    signature du bug de cette mission (kill-switch aveugle sur une fenêtre
+    historique morte) et ça doit être visible dès la première occurrence,
+    plus jamais découvert a posteriori dans un rapport."""
     now_utc = now_utc if now_utc is not None else broker_now_utc()
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=timezone.utc)
@@ -58,13 +62,15 @@ def broker_day_window(
     start_utc = broker_midnight - offset
     end_utc = now_utc + timedelta(hours=_FUTURE_TAIL_HOURS)
 
-    age_hours = (now_utc - start_utc).total_seconds() / 3600.0
+    wall_clock = broker_now_utc()
+    age_hours = (wall_clock - start_utc).total_seconds() / 3600.0
     if age_hours > _STALE_WINDOW_ALERT_HOURS:
         log.critical(
             "[BROKER_TIME_GUARD] ALERTE CRITIQUE fenetre jour-broker perimee : "
-            "now_utc_detected=%s window_start=%s age=%.1fh (> %.0fh) — "
+            "now_utc_detected=%s wall_clock=%s window_start=%s age=%.1fh (> %.0fh) — "
             "verifier l'horloge systeme et/ou une source de temps figee en amont",
-            now_utc.isoformat(), start_utc.isoformat(), age_hours, _STALE_WINDOW_ALERT_HOURS,
+            now_utc.isoformat(), wall_clock.isoformat(), start_utc.isoformat(),
+            age_hours, _STALE_WINDOW_ALERT_HOURS,
         )
 
     return start_utc, end_utc

@@ -211,5 +211,68 @@ class TestRouterIntegration(unittest.TestCase):
         self.assertEqual(result.event["daily_killswitch"]["losses_today"], 6)
 
 
+class TestFixKillswitchDateInvariants(unittest.TestCase):
+    """mission/FIX_KILLSWITCH_DATE.md — invariants explicitement demandés,
+    exercés via evaluate_daily_killswitch() (le vrai chemin d'appel), pas
+    seulement app.utils.broker_time en isolation."""
+
+    def test_window_covers_today_not_a_past_month(self) -> None:
+        today = datetime(2026, 7, 8, 11, 34, 0, tzinfo=timezone.utc)
+        policy, settings = _policy(trade_mode=0)
+        result = evaluate_daily_killswitch(
+            policy, settings, _MAGIC, account=_account(), now_utc=today, history_fn=lambda s, e: []
+        )
+        window_start = datetime.fromisoformat(result["window_start_utc"])
+        self.assertEqual(window_start.date(), datetime(2026, 7, 7, tzinfo=timezone.utc).date())
+        self.assertEqual(result["now_utc_detected"], today.isoformat())
+
+    def test_three_real_losses_today_counted_as_3_of_6_not_0(self) -> None:
+        policy, settings = _policy(trade_mode=0)  # DEMO: 6/day
+        deals = [_deal(-1.0), _deal(-1.0), _deal(-1.0)]
+        result = evaluate_daily_killswitch(
+            policy, settings, _MAGIC, account=_account(), now_utc=_NOW, history_fn=lambda s, e: deals
+        )
+        self.assertEqual(result["losses_today"], 3)
+        self.assertFalse(result["triggered"])
+
+    def test_anti_regression_guard_fires_through_real_call_path_when_caller_passes_stale_now(self) -> None:
+        """Reproduit la signature exacte du rapport de bug (now résolvant à
+        un mois dans le passé) en passant explicitement ce now_utc à
+        evaluate_daily_killswitch() de bout en bout (pas seulement testé en
+        isolation sur broker_day_window()) — le garde-fou compare contre
+        l'horloge murale indépendante et doit se déclencher."""
+        stale_now = datetime(2026, 5, 31, 22, 0, 0, tzinfo=timezone.utc)
+        real_wall_clock = datetime(2026, 7, 8, 12, 0, 0, tzinfo=timezone.utc)
+        policy, settings = _policy(trade_mode=0)
+        with patch("app.utils.broker_time.broker_now_utc", return_value=real_wall_clock):
+            with patch("app.utils.broker_time.log") as mock_guard_log:
+                evaluate_daily_killswitch(
+                    policy, settings, _MAGIC, account=_account(),
+                    now_utc=stale_now, history_fn=lambda s, e: [],
+                )
+        mock_guard_log.critical.assert_called_once()
+        self.assertIn("BROKER_TIME_GUARD", mock_guard_log.critical.call_args[0][0])
+
+    def test_anti_regression_guard_fires_even_if_daily_killswitchs_own_fallback_is_frozen(self) -> None:
+        """Défense en profondeur : même si un futur bug réintroduit un
+        now_utc figé DANS la résolution par défaut de daily_killswitch.py
+        lui-même (now_utc=None -> son propre broker_now_utc() importé,
+        cassé), le garde-fou indépendant de app.utils.broker_time
+        (référence séparée à l'horloge murale) le détecte quand même."""
+        real_wall_clock = datetime(2026, 7, 8, 12, 0, 0, tzinfo=timezone.utc)
+        frozen_stale_value = datetime(2026, 5, 31, 10, 0, 0, tzinfo=timezone.utc)
+        policy, settings = _policy(trade_mode=0)
+        with patch("app.services.daily_killswitch.broker_now_utc", return_value=frozen_stale_value):
+            with patch("app.utils.broker_time.broker_now_utc", return_value=real_wall_clock):
+                with patch("app.utils.broker_time.log") as mock_guard_log:
+                    evaluate_daily_killswitch(
+                        policy, settings, _MAGIC, account=_account(),
+                        now_utc=None, history_fn=lambda s, e: [],
+                    )
+        mock_guard_log.critical.assert_called_once()
+        call_args = mock_guard_log.critical.call_args[0]
+        self.assertIn("BROKER_TIME_GUARD", call_args[0])
+
+
 if __name__ == "__main__":
     unittest.main()

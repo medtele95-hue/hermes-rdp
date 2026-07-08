@@ -57,19 +57,47 @@ class TestBrokerDayWindowSwitchesAt21UTC(unittest.TestCase):
 
 
 class TestAntiRegressionGuard(unittest.TestCase):
-    def test_stale_window_more_than_48h_triggers_critical_log(self) -> None:
+    """The guard must compare the computed window against an INDEPENDENT
+    wall-clock reference (broker_now_utc()), never against the same
+    now_utc used to derive the window — comparing a window to its own
+    input is always self-consistent by construction and can never detect
+    anything. A first version of this guard fell into exactly that trap;
+    caught by test_guard_never_fires_when_comparing_window_to_its_own_input
+    below, which reproduces the original (wrong) assumption and proves it
+    would have stayed silent forever."""
+
+    def test_guard_fires_when_now_utc_is_stale_relative_to_real_wall_clock(self) -> None:
+        # exact reported symptom: an explicit now_utc resolving to a month
+        # in the past, while the real wall clock is July 8 — this is the
+        # scenario a future frozen-datetime regression would produce.
+        real_wall_clock = datetime(2026, 7, 8, 11, 34, 0, tzinfo=timezone.utc)
+        stale_now = datetime(2026, 5, 31, 10, 0, 0, tzinfo=timezone.utc)
+        with patch.object(bt, "broker_now_utc", return_value=real_wall_clock), \
+             patch.object(bt, "log") as mock_log:
+            bt.broker_day_window(stale_now, 3.0)
+        mock_log.critical.assert_called_once()
+        self.assertIn("BROKER_TIME_GUARD", mock_log.critical.call_args[0][0])
+
+    def test_guard_silent_when_now_utc_matches_real_wall_clock(self) -> None:
         now = datetime(2026, 7, 8, 11, 34, 0, tzinfo=timezone.utc)
+        with patch.object(bt, "broker_now_utc", return_value=now), \
+             patch.object(bt, "log") as mock_log:
+            bt.broker_day_window(now, 3.0)
+        mock_log.critical.assert_not_called()
+
+    def test_guard_fires_against_the_real_unmocked_wall_clock_too(self) -> None:
+        """Regression guard for the exact design flaw found during this
+        mission: an earlier version of this guard compared the window to
+        the SAME now_utc used to derive it, which is always self-
+        consistent by construction and could never fire. Proof the fix is
+        real: with broker_now_utc() left UNMOCKED (the genuine current
+        wall clock, today nowhere near May 31), a stale explicit now_utc
+        still triggers the guard — it is judged against reality, not
+        against its own input."""
         stale_now = datetime(2026, 5, 31, 10, 0, 0, tzinfo=timezone.utc)
         with patch.object(bt, "log") as mock_log:
-            # simulate the exact reported symptom: a "now" resolving to a
-            # month in the past
             bt.broker_day_window(stale_now, 3.0)
-            mock_log.critical.assert_not_called()  # stale_now itself isn't stale relative to itself
-        # Now check the real invariant: window computed from a genuinely
-        # fresh "now" is never flagged stale.
-        with patch.object(bt, "log") as mock_log:
-            bt.broker_day_window(now, 3.0)
-            mock_log.critical.assert_not_called()
+        mock_log.critical.assert_called_once()
 
     def test_is_window_stale_detects_a_month_old_window(self) -> None:
         now = datetime(2026, 7, 8, 11, 34, 0, tzinfo=timezone.utc)
