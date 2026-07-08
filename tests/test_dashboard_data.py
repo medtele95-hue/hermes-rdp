@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -222,48 +222,208 @@ class TestBuildSensesNoData(unittest.TestCase):
         self.assertEqual(result["next_high_news"]["title"], "future high")
 
 
-class TestBuildJournal(unittest.TestCase):
-    def _dataset(self, tmp: str) -> Path:
+class TestParseCloseModeFromComment(unittest.TestCase):
+    """MT5 truncates comments to 16 chars — verified live:
+    "HERMES_QUICK_EXIT_TP" -> "HERMES_QUICK_EXI", "HERMES_RESCUE_EXIT" ->
+    "HERMES_RESCUE_EX". Every check must survive that truncation."""
+
+    def test_sl_bracket_comment(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment("[sl 63955.07]"), "SL_HIT")
+
+    def test_tp_bracket_comment(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment("[tp 4100.0]"), "TP_HIT")
+
+    def test_truncated_quick_exit_tp(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment("HERMES_QUICK_EXI"), "TP_HIT")
+
+    def test_truncated_rescue_exit(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment("HERMES_RESCUE_EX"), "SMART_RESCUE")
+
+    def test_empty_comment_is_inconnu(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment(""), "INCONNU")
+        self.assertEqual(data._parse_close_mode_from_comment(None), "INCONNU")
+
+    def test_unrecognized_comment_returned_as_is(self) -> None:
+        self.assertEqual(data._parse_close_mode_from_comment("some other reason"), "some other reason")
+
+
+def _deal(position_id, entry, magic=909002, symbol="GOLD#", type_=0, profit=0.0,
+          commission=0.0, swap=0.0, time=0, price=0.0, comment=""):
+    return SimpleNamespace(
+        position_id=position_id, entry=entry, magic=magic, symbol=symbol, type=type_,
+        profit=profit, commission=commission, swap=swap, time=time, price=price, comment=comment,
+    )
+
+
+class TestJournalMt5PrimaryDatasetEnriched(unittest.TestCase):
+    """mission/FIX_DASHBOARD_DATA.md — MT5 closed deals are the source of
+    truth for WHICH trades exist and their net P&L (mission's explicit
+    instruction), enriched with the reconciled dataset where a match
+    exists. Real bug this fixes: a dataset-primary design silently dropped
+    real trades whose outcome row was never reconciled (verified live: 10
+    dataset-matched entries vs 19 authoritative MT5 closes for the same
+    day) — MT5-primary guarantees completeness by construction."""
+
+    def _open_close_epochs(self, opened_broker: datetime, closed_broker: datetime) -> tuple[float, float]:
+        # deal.time reads broker-wall-clock when interpreted via
+        # fromtimestamp(...,tz=utc) — build fixtures the same way.
+        return opened_broker.timestamp(), closed_broker.timestamp()
+
+    def _dataset(self, tmp: str, rows: list[dict]) -> Path:
         path = Path(tmp) / "dataset.jsonl"
-        rows = [
-            {"row_type": "outcome", "ticket": 1, "symbol": "GOLD#", "direction": "BUY", "pnl_reconciled": 5.0,
-             "closed_at": "2026-07-08T10:00:00+00:00", "setup_id": "a", "outcome": "TP_HIT"},
-            {"row_type": "outcome", "ticket": 2, "symbol": "BTCUSD#", "direction": "SELL", "pnl_reconciled": -3.0,
-             "closed_at": "2026-07-08T09:00:00+00:00", "setup_id": "b", "outcome": "SL_HIT"},
-            {"row_type": "decision", "setup_id": "a", "strategy": "SIMO_ATM_BREAKOUT", "final_confluence_score": 80.0},
-        ]
         path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
         return path
 
-    def test_pagination_and_sort_order(self) -> None:
+    def test_completeness_matches_authoritative_mt5_close_count(self) -> None:
+        """The core regression: every real MT5 close appears in the
+        journal, even with zero matching dataset outcome rows."""
+        open_e, close_e = self._open_close_epochs(
+            datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc), datetime(2026, 7, 8, 12, 30, tzinfo=timezone.utc),
+        )
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=open_e),
+            _deal(1001, entry=1, type_=1, profit=5.0, time=close_e, comment="[tp 2100.0]"),
+            _deal(1002, entry=0, symbol="BTCUSD#", type_=1, time=open_e),
+            _deal(1002, entry=1, symbol="BTCUSD#", type_=0, profit=-3.0, time=close_e, comment="[sl 62000.0]"),
+        ]
         with TemporaryDirectory() as tmp:
-            with patch.object(data, "DATASET_FILE", self._dataset(tmp)):
-                result = data.build_journal(page=1, page_size=1)
+            empty_dataset = self._dataset(tmp, [])
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", empty_dataset):
+                result = data.build_journal()
         self.assertEqual(result["total"], 2)
-        self.assertEqual(len(result["entries"]), 1)
-        self.assertEqual(result["entries"][0]["ticket"], 1)  # most recent closed_at first
+        self.assertEqual(result["net_total_usd"], 2.0)
+
+    def test_close_mode_falls_back_to_deal_comment_when_no_dataset_match(self) -> None:
+        open_e, close_e = self._open_close_epochs(
+            datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc), datetime(2026, 7, 8, 12, 30, tzinfo=timezone.utc),
+        )
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=open_e),
+            _deal(1001, entry=1, type_=1, profit=5.0, time=close_e, comment="[tp 2100.0]"),
+        ]
+        with TemporaryDirectory() as tmp:
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
+                result = data.build_journal()
+        self.assertEqual(result["entries"][0]["close_mode"], "TP_HIT")
+
+    def test_close_mode_prefers_dataset_outcome_when_available(self) -> None:
+        open_e, close_e = self._open_close_epochs(
+            datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc), datetime(2026, 7, 8, 12, 30, tzinfo=timezone.utc),
+        )
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=open_e),
+            _deal(1001, entry=1, type_=1, profit=5.0, time=close_e, comment="[tp 2100.0]"),
+        ]
+        rows = [{"row_type": "outcome", "ticket": 1001, "symbol": "GOLD#", "outcome": "EXIT_V2_TRAIL_FLOOR", "setup_id": "a"}]
+        with TemporaryDirectory() as tmp:
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, rows)):
+                result = data.build_journal()
+        self.assertEqual(result["entries"][0]["close_mode"], "EXIT_V2_TRAIL_FLOOR")
+
+    def test_dates_are_true_utc_not_broker_shifted(self) -> None:
+        """Reproduces the exact display bug: a deal.time read via a bare
+        fromtimestamp(...,tz=utc) would show broker wall clock (3h ahead).
+        from_mt5_deal_time() must correct this."""
+        opened_broker = datetime(2026, 7, 8, 12, 0, 0, tzinfo=timezone.utc)
+        closed_broker = datetime(2026, 7, 8, 12, 30, 0, tzinfo=timezone.utc)
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=opened_broker.timestamp()),
+            _deal(1001, entry=1, type_=1, profit=1.0, time=closed_broker.timestamp()),
+        ]
+        with TemporaryDirectory() as tmp:
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
+                result = data.build_journal()
+        entry = result["entries"][0]
+        self.assertEqual(entry["opened_at"], (opened_broker - timedelta(hours=3)).isoformat())
+        self.assertEqual(entry["closed_at"], (closed_broker - timedelta(hours=3)).isoformat())
+        self.assertEqual(entry["duration_seconds"], 1800.0)
 
     def test_filter_by_result_win(self) -> None:
+        e = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=e),
+            _deal(1001, entry=1, type_=1, profit=5.0, time=e + 60),
+            _deal(1002, entry=0, type_=0, time=e),
+            _deal(1002, entry=1, type_=1, profit=-3.0, time=e + 60),
+        ]
         with TemporaryDirectory() as tmp:
-            with patch.object(data, "DATASET_FILE", self._dataset(tmp)):
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
                 result = data.build_journal(result="win")
         self.assertEqual(len(result["entries"]), 1)
         self.assertEqual(result["entries"][0]["pnl_usd"], 5.0)
 
     def test_filter_by_symbol(self) -> None:
+        e = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, symbol="GOLD#", type_=0, time=e),
+            _deal(1001, entry=1, symbol="GOLD#", type_=1, profit=1.0, time=e + 60),
+            _deal(1002, entry=0, symbol="BTCUSD#", type_=0, time=e),
+            _deal(1002, entry=1, symbol="BTCUSD#", type_=1, profit=2.0, time=e + 60),
+        ]
         with TemporaryDirectory() as tmp:
-            with patch.object(data, "DATASET_FILE", self._dataset(tmp)):
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
                 result = data.build_journal(symbol="BTCUSD#")
         self.assertEqual(len(result["entries"]), 1)
         self.assertEqual(result["entries"][0]["symbol"], "BTCUSD#")
 
     def test_crosses_decision_row_for_strategy_and_confluence(self) -> None:
+        e = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, type_=0, time=e),
+            _deal(1001, entry=1, type_=1, profit=5.0, time=e + 60),
+        ]
+        rows = [
+            {"row_type": "outcome", "ticket": 1001, "symbol": "GOLD#", "outcome": "TP_HIT", "setup_id": "a"},
+            {"row_type": "decision", "setup_id": "a", "strategy": "SIMO_ATM_BREAKOUT", "final_confluence_score": 80.0},
+        ]
         with TemporaryDirectory() as tmp:
-            with patch.object(data, "DATASET_FILE", self._dataset(tmp)):
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, rows)):
                 result = data.build_journal()
-        win_entry = next(e for e in result["entries"] if e["ticket"] == 1)
-        self.assertEqual(win_entry["strategy"], "SIMO_ATM_BREAKOUT")
-        self.assertEqual(win_entry["confluence_at_entry"], 80.0)
+        self.assertEqual(result["entries"][0]["strategy"], "SIMO_ATM_BREAKOUT")
+        self.assertEqual(result["entries"][0]["confluence_at_entry"], 80.0)
+
+    def test_pagination(self) -> None:
+        e = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        mock_mt5 = MagicMock()
+        deals = []
+        for i, ticket in enumerate((1001, 1002, 1003)):
+            deals.append(_deal(ticket, entry=0, type_=0, time=e + i))
+            deals.append(_deal(ticket, entry=1, type_=1, profit=1.0, time=e + i + 60))
+        mock_mt5.history_deals_get.return_value = deals
+        with TemporaryDirectory() as tmp:
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
+                result = data.build_journal(page=1, page_size=2)
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(len(result["entries"]), 2)
+        self.assertEqual(result["total_pages"], 2)
+
+    def test_only_hard_magic_counted(self) -> None:
+        e = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        mock_mt5 = MagicMock()
+        mock_mt5.history_deals_get.return_value = [
+            _deal(1001, entry=0, magic=111111, type_=0, time=e),
+            _deal(1001, entry=1, magic=111111, type_=1, profit=999.0, time=e + 60),
+        ]
+        with TemporaryDirectory() as tmp:
+            with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+                 patch.object(data, "DATASET_FILE", self._dataset(tmp, [])):
+                result = data.build_journal()
+        self.assertEqual(result["total"], 0)
 
 
 if __name__ == "__main__":

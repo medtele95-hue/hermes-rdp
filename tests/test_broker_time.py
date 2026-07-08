@@ -135,5 +135,34 @@ class TestBrokerNowUtc(unittest.TestCase):
         self.assertIn("datetime.now(timezone.utc)", source)
 
 
+class TestFromMt5DealTime(unittest.TestCase):
+    """mission/FIX_DASHBOARD_DATA.md — the inverse of to_mt5_query_bounds():
+    converts a raw deal.time epoch (broker wall clock) back to true UTC for
+    display. Verified live 2026-07-08: tick.time read as
+    fromtimestamp(...,tz=utc) showed 16:47:30 while genuine system UTC was
+    13:47:29 — exactly +3h."""
+
+    def test_reverses_the_broker_shift(self) -> None:
+        broker_displayed = datetime(2026, 7, 8, 16, 47, 30, tzinfo=timezone.utc)
+        result = bt.from_mt5_deal_time(broker_displayed.timestamp(), 3.0)
+        self.assertEqual(result, datetime(2026, 7, 8, 13, 47, 30, tzinfo=timezone.utc))
+
+    def test_round_trips_with_to_mt5_query_bounds(self) -> None:
+        true_utc = datetime(2026, 7, 8, 13, 46, 28, tzinfo=timezone.utc)
+        broker_shaped, _ = bt.to_mt5_query_bounds(true_utc, true_utc, 3.0)
+        # simulate MT5 handing back that exact value as a deal.time epoch
+        # (naive datetime -> epoch assumes system local tz in general, but
+        # since to_mt5_query_bounds already encodes the +3h shift in the
+        # CLOCK FIELDS, re-labeling those same fields as UTC and converting
+        # back must reproduce the original true_utc instant)
+        epoch = broker_shaped.replace(tzinfo=timezone.utc).timestamp()
+        result = bt.from_mt5_deal_time(epoch, 3.0)
+        self.assertEqual(result, true_utc)
+
+    def test_result_is_tz_aware_utc(self) -> None:
+        result = bt.from_mt5_deal_time(datetime(2026, 7, 8, tzinfo=timezone.utc).timestamp(), 3.0)
+        self.assertEqual(result.tzinfo, timezone.utc)
+
+
 if __name__ == "__main__":
     unittest.main()

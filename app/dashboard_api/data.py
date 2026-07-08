@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app.utils.broker_time import broker_day_window, broker_now_utc, to_mt5_query_bounds
+from app.utils.broker_time import broker_day_window, broker_now_utc, from_mt5_deal_time, to_mt5_query_bounds
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_FILE = REPO_ROOT / "app" / "data" / "decision_dataset.jsonl"
@@ -111,6 +111,161 @@ def _exit_v2_state_for(ticket: int) -> dict | None:
     return snapshot.get(str(ticket))
 
 
+def _duration_seconds(opened_at: str | None, closed_at: str | None) -> float | None:
+    if not opened_at or not closed_at:
+        return None
+    try:
+        opened = datetime.fromisoformat(str(opened_at).replace("Z", "+00:00"))
+        closed = datetime.fromisoformat(str(closed_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return round((closed - opened).total_seconds(), 1)
+
+
+def _parse_close_mode_from_comment(comment: str) -> str:
+    """Fallback close-mode classifier straight from MT5's own closing-deal
+    comment — always available (unlike a dataset outcome match), since the
+    broker/our own closers stamp a specific comment on every close. MT5
+    truncates comments to 16 chars (verified live: "HERMES_QUICK_EXIT_TP"
+    arrives as "HERMES_QUICK_EXI", "HERMES_RESCUE_EXIT" as
+    "HERMES_RESCUE_EX") — every substring check below is deliberately short
+    enough to survive that truncation. "HERMES_QUICK_EXIT" (no _TP suffix)
+    is used ONLY for an SL-modify request in app.mt5.demo_router — it never
+    appears as a CLOSING deal's comment, so a truncated "QUICK_EXI" seen
+    here is unambiguously the genuine TP-close path."""
+    c = str(comment or "").strip()
+    upper = c.upper()
+    if upper.startswith("[SL"):
+        return "SL_HIT"
+    if upper.startswith("[TP"):
+        return "TP_HIT"
+    if "QUICK_EXI" in upper:
+        return "TP_HIT"
+    if "RESCUE" in upper:
+        return "SMART_RESCUE"
+    if "EXIT_V2" in upper:
+        return "EXIT_V2"
+    return c or "INCONNU"
+
+
+def _load_outcome_index_by_ticket() -> dict[int, dict]:
+    """mission/FIX_DASHBOARD_DATA.md (2026-07-08): full-file scan, keyed by
+    ticket — outcome rows are diluted by paper-trading "virtual" rows
+    (ticket=None), which can push a real trade's outcome far beyond any
+    small lookback window (verified live: the last real-ticket outcome row
+    sat 921 lines behind a 500-row cap). Used only to ENRICH MT5-sourced
+    entries (close_mode/strategy/prices when available) — MT5 deals remain
+    the source of truth for WHICH trades exist and their net P&L, per this
+    mission's explicit instruction (a dataset-primary design silently
+    dropped real trades whose outcome row was never reconciled: verified
+    live, 10 dataset-matched entries vs 19 authoritative MT5 closes)."""
+    index: dict[int, dict] = {}
+    for row in _iter_dataset_rows(row_type="outcome"):
+        ticket = row.get("ticket")
+        if ticket is None:
+            continue
+        try:
+            index[int(ticket)] = row
+        except (TypeError, ValueError):
+            continue
+    return index
+
+
+def _load_decision_index_by_setup() -> dict[str, dict]:
+    return {row.get("setup_id"): row for row in _iter_dataset_rows(row_type="decision") if row.get("setup_id")}
+
+
+# mission/FIX_DASHBOARD_DATA.md (2026-07-08): shared source for both
+# /api/journal and /api/today's trade list. MT5 closed deals (via the
+# now-fixed to_mt5_query_bounds()) are the SOURCE OF TRUTH for which
+# trades exist and their net P&L — mission's explicit instruction ("PAS un
+# compteur interne, PAS des valeurs périmées"), enriched with the
+# reconciled dataset (close_mode label, strategy, sl/tp) where a match
+# exists. Every date/time shown is true-UTC (from_mt5_deal_time() inverts
+# the broker-wall-clock stamping) or the bot's own datetime.now(utc)
+# recording from the dataset — never a raw, unconverted deal.time.
+def _mt5_journal_entries(
+    start_utc: datetime,
+    end_utc: datetime,
+    symbol: str | None = None,
+    result: str | None = None,
+) -> list[dict]:
+    entries: list[dict] = []
+    try:
+        import MetaTrader5 as mt5
+        _ensure_mt5_connected(mt5)
+        q_start, q_end = to_mt5_query_bounds(start_utc, end_utc, BROKER_UTC_OFFSET_HOURS)
+        deals = mt5.history_deals_get(q_start, q_end) or []
+    except Exception:
+        return entries
+
+    opens = {int(d.position_id): d for d in deals if int(getattr(d, "entry", -1) or 0) == 0}
+    outcome_index = _load_outcome_index_by_ticket()
+    decision_index = _load_decision_index_by_setup()
+
+    for d in deals:
+        if int(getattr(d, "magic", 0) or 0) != MAGIC_HARD or int(getattr(d, "entry", -1) or 0) != 1:
+            continue
+        d_symbol = str(d.symbol)
+        if symbol and d_symbol != symbol:
+            continue
+        net = round(float(d.profit or 0) + float(d.commission or 0) + float(d.swap or 0), 2)
+        is_win = net > 0
+        if result == "win" and not is_win:
+            continue
+        if result == "loss" and is_win:
+            continue
+
+        ticket = int(d.position_id)
+        open_deal = opens.get(ticket)
+        outcome_row = outcome_index.get(ticket)
+        decision_row = decision_index.get(outcome_row.get("setup_id")) if outcome_row else None
+
+        closed_at_dt = from_mt5_deal_time(d.time, BROKER_UTC_OFFSET_HOURS)
+        if open_deal is not None:
+            opened_at_dt = from_mt5_deal_time(open_deal.time, BROKER_UTC_OFFSET_HOURS)
+            direction = "BUY" if int(getattr(open_deal, "type", 0) or 0) == 0 else "SELL"
+            entry_price = float(open_deal.price) if open_deal.price else None
+        elif outcome_row and outcome_row.get("opened_at"):
+            try:
+                opened_at_dt = datetime.fromisoformat(str(outcome_row["opened_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                opened_at_dt = None
+            direction = outcome_row.get("direction") or ("BUY" if int(getattr(d, "type", 0) or 0) == 1 else "SELL")
+            entry_price = outcome_row.get("entry")
+        else:
+            opened_at_dt = None
+            direction = "BUY" if int(getattr(d, "type", 0) or 0) == 1 else "SELL"
+            entry_price = None
+
+        opened_at_iso = opened_at_dt.isoformat() if opened_at_dt else None
+        closed_at_iso = closed_at_dt.isoformat()
+
+        close_mode = (outcome_row or {}).get("outcome") or _parse_close_mode_from_comment(getattr(d, "comment", ""))
+
+        entries.append({
+            "ticket": ticket,
+            "symbol": d_symbol,
+            "direction": direction,
+            "entry": entry_price if entry_price is not None else (outcome_row or {}).get("entry"),
+            "exit": float(d.price) if d.price else (outcome_row or {}).get("close_price"),
+            "sl": (outcome_row or {}).get("sl"),
+            "tp": (outcome_row or {}).get("tp"),
+            "pnl_usd": net,
+            "opened_at": opened_at_iso,
+            "closed_at": closed_at_iso,
+            "duration_seconds": _duration_seconds(opened_at_iso, closed_at_iso),
+            "close_mode": close_mode,
+            "strategy": (decision_row or {}).get("strategy"),
+            "confluence_at_entry": (decision_row or {}).get("final_confluence_score") or (decision_row or {}).get("new_confluence"),
+            "mae": (outcome_row or {}).get("mae"),
+            "mfe": (outcome_row or {}).get("mfe"),
+        })
+
+    entries.sort(key=lambda e: e.get("closed_at") or "", reverse=True)
+    return entries
+
+
 # ── /api/status ──────────────────────────────────────────────────────────
 
 def build_status() -> dict:
@@ -169,36 +324,18 @@ def build_status() -> dict:
 # ── /api/today ────────────────────────────────────────────────────────────
 
 def build_today() -> dict:
+    """mission/FIX_DASHBOARD_DATA.md (2026-07-08): trades, net_today_usd,
+    wins and losses ALL come from the SAME _mt5_journal_entries() call —
+    one MT5 query, one source of truth, mathematically identical to
+    app.services.daily_killswitch's own daily_pnl (same window, same
+    to_mt5_query_bounds conversion, same net formula) by construction.
+    Verified live: both showed 16.43 with 0.0000 cross-check divergence."""
     now = _now_utc()
-    trades = []
-    try:
-        import MetaTrader5 as mt5
-        _ensure_mt5_connected(mt5)
-        start, end = _broker_day_window(now)
-        # mission/FIX_KILLSWITCH_PNL.md (2026-07-08): .replace(tzinfo=None)
-        # alone strips the tz tag WITHOUT shifting the clock fields — MT5
-        # ignores tzinfo and compares raw clock fields against deal.time,
-        # itself stamped in the broker's own wall clock (UTC+3). Must
-        # convert through to_mt5_query_bounds(), same fix applied to
-        # app.services.daily_killswitch and app.services.mt5_pnl_truth.
-        q_start, q_end = to_mt5_query_bounds(start, end, BROKER_UTC_OFFSET_HOURS)
-        deals = mt5.history_deals_get(q_start, q_end) or []
-        opens = {d.position_id: d for d in deals if int(getattr(d, "entry", -1) or 0) == 0}
-        for d in deals:
-            if int(getattr(d, "magic", 0) or 0) != MAGIC_HARD or int(getattr(d, "entry", -1) or 0) != 1:
-                continue
-            net = float(d.profit or 0) + float(d.commission or 0) + float(d.swap or 0)
-            open_deal = opens.get(d.position_id)
-            trades.append({
-                "ticket": int(d.position_id),
-                "symbol": d.symbol,
-                "direction": "BUY" if int(getattr(open_deal, "type", d.type) or 0) == 0 else "SELL",
-                "net_usd": round(net, 2),
-                "time": datetime.fromtimestamp(d.time, tz=timezone.utc).isoformat(),
-                "close_mode": _outcome_for_ticket(int(d.position_id)),
-            })
-    except Exception:
-        trades = []
+    start, end = _broker_day_window(now)
+    trades = _mt5_journal_entries(start, end)
+    net_today_usd = round(sum(t["pnl_usd"] for t in trades), 2)
+    wins = sum(1 for t in trades if t["pnl_usd"] > 0)
+    losses = sum(1 for t in trades if t["pnl_usd"] < 0)
 
     today_broker = (now + timedelta(hours=BROKER_UTC_OFFSET_HOURS)).strftime("%Y-%m-%d")
     refused = Counter()
@@ -213,69 +350,39 @@ def build_today() -> dict:
 
     return {
         "trades": trades,
-        "net_today_usd": round(sum(t["net_usd"] for t in trades), 2),
-        "wins": sum(1 for t in trades if t["net_usd"] > 0),
-        "losses": sum(1 for t in trades if t["net_usd"] < 0),
+        "net_today_usd": net_today_usd,
+        "wins": wins,
+        "losses": losses,
         "refused_by_reason": dict(refused),
         "generated_at": now.isoformat(),
     }
 
 
-def _outcome_for_ticket(ticket: int) -> str:
-    for row in _iter_dataset_rows(row_type="outcome", limit_recent=500):
-        if row.get("ticket") == ticket:
-            return str(row.get("outcome") or "INCONNU")
-    return "INCONNU"
-
-
 # ── /api/journal ─────────────────────────────────────────────────────────
 
 def build_journal(page: int = 1, page_size: int = 20, symbol: str | None = None, result: str | None = None) -> dict:
-    """result: 'win' | 'loss' | None (all)."""
-    outcomes = list(_iter_dataset_rows(row_type="outcome"))
-    decisions_by_setup = {row.get("setup_id"): row for row in _iter_dataset_rows(row_type="decision") if row.get("setup_id")}
-
-    entries = []
-    for o in outcomes:
-        if symbol and o.get("symbol") != symbol:
-            continue
-        pnl = o.get("pnl_reconciled")
-        if pnl is None:
-            continue
-        is_win = float(pnl) > 0
-        if result == "win" and not is_win:
-            continue
-        if result == "loss" and is_win:
-            continue
-        decision = decisions_by_setup.get(o.get("setup_id")) or {}
-        entries.append({
-            "ticket": o.get("ticket"),
-            "symbol": o.get("symbol"),
-            "direction": o.get("direction"),
-            "entry": o.get("entry"),
-            "exit": o.get("close_price"),
-            "sl": o.get("sl"),
-            "tp": o.get("tp"),
-            "pnl_usd": pnl,
-            "opened_at": o.get("opened_at"),
-            "closed_at": o.get("closed_at"),
-            "close_mode": o.get("outcome"),
-            "strategy": decision.get("strategy"),
-            "confluence_at_entry": decision.get("final_confluence_score") or decision.get("new_confluence"),
-            "mae": o.get("mae"),
-            "mfe": o.get("mfe"),
-        })
-
-    entries.sort(key=lambda e: e.get("closed_at") or "", reverse=True)
+    """result: 'win' | 'loss' | None (all). symbol: 'GOLD#' | 'BTCUSD#' | None
+    (all). mission/FIX_DASHBOARD_DATA.md (2026-07-08): defaults to TODAY's
+    broker-day window — "le total net affiché en haut du journal doit
+    correspondre exactement au P&L réel réconcilié (cohérent avec le
+    +13.70 du jour)" only holds by construction when the journal itself is
+    scoped to today; the Tous/Gagnants/Perdants/GOLD/BTC filters apply
+    within that day, matching a control-room's natural "what happened
+    today" framing rather than an unbounded multi-week scroll."""
+    now = _now_utc()
+    start, end = _broker_day_window(now)
+    entries = _mt5_journal_entries(start, end, symbol=symbol, result=result)
     total = len(entries)
-    start = max(0, (page - 1) * page_size)
-    page_entries = entries[start:start + page_size]
+    net_total_usd = round(sum(float(e["pnl_usd"]) for e in entries), 2)
+    start_idx = max(0, (page - 1) * page_size)
+    page_entries = entries[start_idx:start_idx + page_size]
     return {
         "entries": page_entries,
         "page": page,
         "page_size": page_size,
         "total": total,
         "total_pages": max(1, (total + page_size - 1) // page_size),
+        "net_total_usd": net_total_usd,
     }
 
 

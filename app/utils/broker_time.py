@@ -111,6 +111,20 @@ def to_mt5_query_bounds(
     return (start_utc + offset).replace(tzinfo=None), (end_utc + offset).replace(tzinfo=None)
 
 
+def from_mt5_deal_time(deal_time: float | int, broker_utc_offset_hours: float = 3.0) -> datetime:
+    """mission/FIX_DASHBOARD_DATA.md (2026-07-08) — the inverse of
+    to_mt5_query_bounds(): converts a raw deal.time epoch (which reads 3h
+    AHEAD of true UTC when naively interpreted via
+    datetime.fromtimestamp(deal.time, tz=utc), per the verified broker
+    wall-clock stamping) back into a genuine TRUE-UTC datetime, suitable
+    for display or for date-range comparisons against anything else in the
+    system (which is always true-UTC). Any UI/report that shows a raw
+    MT5 deal.time WITHOUT this conversion is silently 3h off — the exact
+    class of bug this mission's dashboard journal had."""
+    broker_shaped = datetime.fromtimestamp(float(deal_time), tz=timezone.utc)
+    return broker_shaped - timedelta(hours=float(broker_utc_offset_hours))
+
+
 def is_window_stale(start_utc: datetime, now_utc: datetime | None = None, max_age_hours: float = _STALE_WINDOW_ALERT_HOURS) -> bool:
     """Réutilisable hors broker_day_window pour tout code qui veut vérifier
     une fenêtre déjà calculée ailleurs (ex: tests, diagnostics)."""
