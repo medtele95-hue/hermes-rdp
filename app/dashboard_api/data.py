@@ -23,6 +23,8 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from app.utils.broker_time import broker_day_window, broker_now_utc
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_FILE = REPO_ROOT / "app" / "data" / "decision_dataset.jsonl"
 EVENTS_FILE = REPO_ROOT / "app" / "data" / "demo_pilot_events.jsonl"
@@ -37,15 +39,16 @@ BROKER_UTC_OFFSET_HOURS = 3.0
 REFUSED_REASONS = ("EES_EXTREME_BLOCK", "NEWS_BLACKOUT", "ORDER_ABORT", "SYMBOL_BLOCKED", "DAILY_KILLSWITCH")
 
 
+# mission/FIX_KILLSWITCH_DATE.md (2026-07-08): "now" and the broker-day
+# window come exclusively from app.utils.broker_time — the single,
+# centralized, anti-regression-guarded source shared with
+# app.services.daily_killswitch. No local duplication of this arithmetic.
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return broker_now_utc()
 
 
 def _broker_day_window(now_utc: datetime) -> tuple[datetime, datetime]:
-    offset = timedelta(hours=BROKER_UTC_OFFSET_HOURS)
-    broker_now = now_utc + offset
-    broker_midnight = broker_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return broker_midnight - offset, now_utc + timedelta(hours=2)
+    return broker_day_window(now_utc, BROKER_UTC_OFFSET_HOURS)
 
 
 def _read_json(path: Path, default=None):
