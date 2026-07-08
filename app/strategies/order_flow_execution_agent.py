@@ -203,7 +203,10 @@ def evaluate(
     if _fvg_bonus > 0:
         score = min(100, score + _fvg_bonus)
     if _fvg_mid is not None and abs(entry - _fvg_mid) < entry * 0.005:
+        _fvg_shift = round(_fvg_mid, 5) - entry
         entry = round(_fvg_mid, 5)
+        sl = round(sl + _fvg_shift, 5)
+        tp = round(tp + _fvg_shift, 5)
     log.info(
         "[AMD_FVG] symbol=%s direction=%s fvg_active=%s fvg_mid=%s bonus=%s",
         symbol, direction, _fvg_bonus > 0, _fvg_mid, _fvg_bonus,
