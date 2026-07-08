@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -136,6 +137,29 @@ class TestBuildTodayNoData(unittest.TestCase):
             result = data.build_today()
         self.assertEqual(result["trades"], [])
         self.assertEqual(result["net_today_usd"], 0.0)
+
+
+class TestBuildTodayMt5QueryConversion(unittest.TestCase):
+    """mission/FIX_KILLSWITCH_PNL.md — build_today() had the same
+    tzinfo-stripping bug as app.services.daily_killswitch: TRUE-UTC window
+    bounds passed to mt5.history_deals_get() via a bare .replace(tzinfo=
+    None), silently querying 3h too early."""
+
+    def test_mt5_receives_broker_shifted_bounds_not_raw_stripped(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.account_info.return_value = SimpleNamespace(equity=1.0, balance=1.0, login=1, server="s", trade_mode=0)
+        mock_mt5.positions_get.return_value = []
+        mock_mt5.history_deals_get.return_value = []
+        fixed_now = datetime(2026, 7, 8, 13, 46, 28, tzinfo=timezone.utc)
+        with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}), \
+             patch.object(data, "_now_utc", return_value=fixed_now):
+            data.build_today()
+        call_start, call_end = mock_mt5.history_deals_get.call_args[0]
+        # correct broker-shifted bound: true-UTC broker-midnight July7 21:00
+        # -> broker-wall-clock-shaped "July8 00:00" (NOT the old buggy
+        # "July7 21:00" from a bare tzinfo strip).
+        self.assertEqual(call_start, datetime(2026, 7, 8, 0, 0, 0))
+        self.assertIsNone(call_start.tzinfo)
 
 
 class TestBuildSystemNoData(unittest.TestCase):

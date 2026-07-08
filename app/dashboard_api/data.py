@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app.utils.broker_time import broker_day_window, broker_now_utc
+from app.utils.broker_time import broker_day_window, broker_now_utc, to_mt5_query_bounds
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET_FILE = REPO_ROOT / "app" / "data" / "decision_dataset.jsonl"
@@ -175,7 +175,14 @@ def build_today() -> dict:
         import MetaTrader5 as mt5
         _ensure_mt5_connected(mt5)
         start, end = _broker_day_window(now)
-        deals = mt5.history_deals_get(start.replace(tzinfo=None), end.replace(tzinfo=None)) or []
+        # mission/FIX_KILLSWITCH_PNL.md (2026-07-08): .replace(tzinfo=None)
+        # alone strips the tz tag WITHOUT shifting the clock fields — MT5
+        # ignores tzinfo and compares raw clock fields against deal.time,
+        # itself stamped in the broker's own wall clock (UTC+3). Must
+        # convert through to_mt5_query_bounds(), same fix applied to
+        # app.services.daily_killswitch and app.services.mt5_pnl_truth.
+        q_start, q_end = to_mt5_query_bounds(start, end, BROKER_UTC_OFFSET_HOURS)
+        deals = mt5.history_deals_get(q_start, q_end) or []
         opens = {d.position_id: d for d in deals if int(getattr(d, "entry", -1) or 0) == 0}
         for d in deals:
             if int(getattr(d, "magic", 0) or 0) != MAGIC_HARD or int(getattr(d, "entry", -1) or 0) != 1:

@@ -5,22 +5,31 @@ from typing import Any
 
 import MetaTrader5 as mt5
 
+from app.utils.broker_time import broker_day_window, to_mt5_query_bounds
+
 
 def get_mt5_hermes_pnl_truth(
     hours: int,
     magic_number: int,
     now: datetime | None = None,
     window_start: datetime | None = None,
+    broker_utc_offset_hours: float = 3.0,
 ) -> dict:
     end = _as_utc(now or datetime.now(timezone.utc))
     history_start = _as_utc(window_start) if window_start else end - timedelta(hours=hours)
-    today_start = datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
+    # mission/FIX_KILLSWITCH_PNL.md (2026-07-08): "today" MUST be the broker
+    # calendar day (same definition app.services.daily_killswitch uses), not
+    # a naive UTC-midnight cut — a raw `datetime(end.year, end.month,
+    # end.day, tzinfo=utc)` only coincidentally matches the broker day
+    # outside the ~21:00-24:00 UTC window, and silently lags a full day
+    # behind broker's actual "today" inside it.
+    today_start, _ = broker_day_window(end, broker_utc_offset_hours)
     forty_eight_start = end - timedelta(hours=48)
 
     initialized, init_error = _ensure_mt5_initialized()
-    window = _history_deals_pnl(magic_number, history_start, end)
-    today = _history_deals_pnl(magic_number, today_start, end)
-    forty_eight = _history_deals_pnl(magic_number, forty_eight_start, end)
+    window = _history_deals_pnl(magic_number, history_start, end, broker_utc_offset_hours)
+    today = _history_deals_pnl(magic_number, today_start, end, broker_utc_offset_hours)
+    forty_eight = _history_deals_pnl(magic_number, forty_eight_start, end, broker_utc_offset_hours)
     available = bool(window.get("available"))
     error = window.get("error") or init_error
 
@@ -44,9 +53,17 @@ def get_mt5_hermes_pnl_truth(
     }
 
 
-def _history_deals_pnl(magic_number: int, start: datetime, end: datetime) -> dict:
+def _history_deals_pnl(magic_number: int, start: datetime, end: datetime, broker_utc_offset_hours: float = 3.0) -> dict:
     try:
-        deals = mt5.history_deals_get(start, end)
+        # mission/FIX_KILLSWITCH_PNL.md (2026-07-08): start/end are TRUE-UTC
+        # instants — mt5.history_deals_get() ignores tzinfo and compares raw
+        # clock fields directly against deal.time, which the broker stamps
+        # in its own wall clock (UTC+3). Passing true-UTC values unconverted
+        # silently queries 3h too early, missing the most recent deals and
+        # pulling in the tail of the prior broker day. See
+        # app.utils.broker_time.to_mt5_query_bounds for the verified fix.
+        q_start, q_end = to_mt5_query_bounds(start, end, broker_utc_offset_hours)
+        deals = mt5.history_deals_get(q_start, q_end)
     except Exception as exc:
         return _unavailable(str(exc))
     if deals is None:
