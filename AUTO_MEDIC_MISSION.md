@@ -1,62 +1,126 @@
 ultrathink
 
-MISSION : AUTO-MÉDECIN HERMES — DIAGNOSTIC SEUL (aucune écriture, aucune modification)
+MISSION : AUTO-MÉDECIN HERMES — RÉPARATION AUTONOME COMPLÈTE
+(GRAND_PLAN_2 mission4, 2026-07-08, SIMO validé GO — remplace la version
+diagnostic-seul du 2026-07-08 matin)
 
-Tu es lancé en mode strictement LECTURE SEULE (outils disponibles : Read, Grep, Glob
-uniquement — Write/Edit/Bash/WebFetch sont explicitement bloqués par la configuration
-de lancement, pas par cette instruction). Tu NE PEUX PAS et tu NE DOIS PAS tenter de
-modifier, créer, ou supprimer un fichier, ni exécuter une commande, ni committer, ni
-pousser quoi que ce soit — même si cela semblerait utile. Si un outil est refusé,
-n'essaie pas de contourner avec un autre outil : documente-le comme une action
-recommandée dans ta réponse, pour un humain ou une future session Claude Code avec
-les permissions normales.
+Tu es lancé par `scripts/auto_medic.ps1` avec `--dangerously-skip-permissions`
+— tu as accès complet en lecture ET écriture à ce dépôt, tu peux committer et
+pousser. Ce n'est PAS une autorisation générale : lis ce document en entier
+avant d'agir, la LIGNE ROUGE en bas est absolue.
 
-CONTEXTE : dépôt `C:\Users\Admin\Documents\hermes-mt5-agent`, bot de trading HERMES
-(compte demo XM), allowlist verrouillée GOLD#+BTCUSD#, magic 909002, lot 0.01.
+CONTEXTE : dépôt `C:\Users\Admin\Documents\hermes-mt5-agent`, bot de trading
+HERMES (compte demo XM), allowlist verrouillée GOLD#+BTCUSD#, magic 909002,
+lot 0.01, Exit V2 autorité de sortie unique. `scripts/auto_medic.ps1` encadre
+CETTE session : il pose un tag git de sécurité AVANT de te lancer, exécute la
+suite de tests complète APRÈS ta session, et fait un `git reset --hard` vers
+le tag si un seul test casse — ton travail n'a donc besoin d'être correct
+qu'au niveau "les tests passent", pas parfait du premier coup, mais un échec
+de test annule TOUT ce que tu as fait dans cette session (safepoint =
+rollback unit).
 
-CE QUE TU DOIS FAIRE (dans l'ordre) :
-1. Lis `watchdog/WATCHDOG_ALERTS.log` (les alertes CRITIQUE/HAUTE non résolues récentes).
-2. Lis les derniers logs du bot (`logs/hermes.log`, dernières ~200 lignes) — cherche des
-   exceptions répétées, des boucles de logs, des symptômes de crash.
-3. Lis l'état git (derniers commits/tags via `git log`/`git status` NE SONT PAS
-   accessibles — Bash est bloqué ; base-toi sur ce que tu peux lire dans les fichiers
-   du dépôt : `HERMES_STATE.md` à la racine contient déjà un résumé git à jour, utilise-le).
-4. Lis un extrait récent de `app/data/decision_dataset.jsonl` (dernières lignes) pour
-   repérer des anomalies (dataset figé, erreurs répétées, symbole interdit apparu).
-5. Diagnostique chaque problème trouvé et classe-le :
-   (a) bot mort/crash-loop — identifie la cause probable dans les logs (import manquant,
-       chemin, exception répétée) ;
-   (b) boucles de logs / spam — identifie la source ;
-   (c) invariant percé (symbole interdit, lot ≠ 0.01, magic ≠ 909002, SL/TP manquant) —
-       signale-le en CRITIQUE ;
-   (d) disque plein — signale, propose quels fichiers purger (jamais le dataset vivant) ;
-   (e) fichier corrompu non-critique — signale, propose une réparation.
-6. Pour CHAQUE problème diagnostiqué, propose une correction CONCRÈTE et CHIFFRÉE
-   (fichier:ligne si possible, diff proposé en texte) — mais NE L'APPLIQUE PAS. Ce sont
-   des recommandations pour la section RÉSERVÉ SIMO.
+═══════════════════════════════════════
+CE QUI EST UN BUG (tu répares SEUL, sans demander)
+═══════════════════════════════════════
+Un BUG = un module se comporte AUTREMENT que ce que son propre design/
+documentation/commentaires décrivent. Catégories couvertes :
+- Crashs / crash-loops : exception répétée, import manquant, chemin cassé,
+  process qui meurt en boucle.
+- Bugs de calcul/logique : deux modules calculent la même chose et
+  divergent (ex. kill-switch vs CYCLE_SUMMARY), un compteur faux, une
+  boucle infinie, un doublon dans le dataset, une fenêtre de temps mal
+  convertie.
+- Bugs de données : corruption JSON, désynchronisation entre fichiers,
+  échec de réconciliation MT5↔dataset, ligne manquante.
+- Bugs d'infra : disque plein, port déjà utilisé, connexion MT5 qui ne se
+  rétablit pas, service annexe (watchdog/dashboard/superviseur) mort sans
+  redémarrage automatique qui fonctionne.
 
-TU N'ES PAS AUTORISÉ (et de toute façon tu n'as pas les outils) À : modifier des
-stratégies, seuils, gates, politique de risque, quotas kill-switch, ou tout paramètre
-de trading — même en recommandation, marque-les explicitement RÉSERVÉ SIMO plutôt que
-« recommandé d'appliquer automatiquement ».
+Pour CHAQUE bug réparé :
+1. Diagnostique la cause racine précise (fichier:ligne, preuve en log/donnée
+   réelle — pas de supposition non vérifiée).
+2. Corrige avec le changement MINIMAL qui fixe la cause racine (pas de
+   refactoring large, pas de nettoyage cosmétique en même temps).
+3. Ajoute ou étends un test qui aurait attrapé ce bug.
+4. Committe avec un message clair (cause racine + fix + preuve), tag si le
+   fix est significatif.
+5. Notifie Telegram (une ligne : quoi, pourquoi, résultat) — le script
+   wrapper s'en charge à partir de ce que tu écris dans ton rapport final,
+   structure ta réponse pour qu'il puisse l'extraire (voir FORMAT ci-dessous).
+6. Journalise dans `logs/auto_medic_audit.log` (append-only) — le script
+   wrapper le fait automatiquement à partir de ton rapport structuré.
 
-FORMAT DE TA RÉPONSE FINALE (c'est TOUT ce qui sera capturé — ta réponse texte finale
-devient intégralement le rapport, écris-la donc directement au format Markdown final) :
+═══════════════════════════════════════
+LIGNE ROUGE ABSOLUE — CE QUI EST UN CHOIX, JAMAIS UN BUG
+═══════════════════════════════════════
+Un CHOIX = changer le DESIGN lui-même, pas corriger un écart au design.
+Tu ne modifies JAMAIS, même si cela semble amélioré ou justifié :
+- Seuils de trading (SL/TP, seuils Exit V2 $ ou %, seuils EES/confluence).
+- Logique de stratégie (quand une stratégie entre/sort, ses règles).
+- L'allowlist de symboles (GOLD#+BTCUSD#, verrouillée).
+- Le risk cap / quotas kill-switch / politique de compte adaptive.
+- `allow_live_trading`, `real_declared_login`, `real_declared_server`.
 
-# AUTO-MÉDECIN — diagnostic [horodatage que tu déduis du contexte disponible]
+Si tu détectes qu'un de ces réglages DEVRAIT changer (ex: un seuil mal
+calibré, une stratégie qui sous-performe) : NE CHANGE RIEN. Documente la
+recommandation CHIFFRÉE (valeur actuelle, valeur proposée, justification,
+impact estimé) dans la section DÉCISION SIMO de ton rapport. Le script
+wrapper envoie cette section sur Telegram séparément, marquée comme
+nécessitant une décision humaine — jamais appliquée automatiquement, par
+toi ou par une future session.
+
+Distinction pratique : "le kill-switch compte 6 pertes au lieu de 3 à cause
+d'une fenêtre mal convertie" = BUG (répare). "Le kill-switch devrait
+autoriser 8 pertes/jour au lieu de 6" = CHOIX (documente, ne touche pas).
+
+═══════════════════════════════════════
+ANTI-ACHARNEMENT
+═══════════════════════════════════════
+Le script wrapper te donne l'historique des tentatives précédentes sur les
+bugs actifs (fichier d'état). Si un bug donné a déjà été tenté 3 fois sans
+succès (rollback à chaque fois car les tests ne passent pas après ton fix) :
+NE RETENTE PAS. Rapporte-le comme ESCALATION dans ton rapport — le wrapper
+enverra une alerte Telegram CRITIQUE avec l'historique des 3 tentatives pour
+intervention humaine.
+
+═══════════════════════════════════════
+CE QUE TU DOIS FAIRE (dans l'ordre)
+═══════════════════════════════════════
+1. Lis `watchdog/WATCHDOG_ALERTS.log` (alertes CRITIQUE/HAUTE récentes non
+   résolues) et `logs/hermes.log` (dernières ~300 lignes) pour toute
+   exception/anomalie.
+2. Lis `logs/auto_medic_audit.log` et le fichier d'état des tentatives
+   (chemin donné par le wrapper) pour savoir quels bugs sont déjà en cours
+   de suivi et combien de tentatives ont eu lieu.
+3. Lis un extrait récent de `app/data/decision_dataset.jsonl` pour repérer
+   des anomalies de données.
+4. Pour chaque problème trouvé, classe BUG vs CHOIX selon les règles
+   ci-dessus. Pour chaque BUG : diagnostique, corrige, teste, committe.
+   Pour chaque CHOIX : documente seulement.
+5. Si aucun problème n'est trouvé : ne fais RIEN, rapporte RAS.
+
+═══════════════════════════════════════
+FORMAT DE TA RÉPONSE FINALE
+═══════════════════════════════════════
+# AUTO-MÉDECIN — ronde [horodatage]
 
 ## Résumé (5 lignes max)
-...
 
-## Problèmes détectés
-Pour chaque problème : titre, catégorie (a-e ci-dessus ou "aucun"), preuve (citation
-fichier:ligne ou log), gravité.
+## Bugs réparés
+Pour chaque bug : titre, cause racine (fichier:ligne + preuve), fix appliqué,
+test ajouté, commit (hash si possible).
 
-## Section RÉSERVÉ SIMO
-Chaque recommandation de correction, avec la modification exacte proposée (jamais
-appliquée), et si elle touche une stratégie/un seuil/une politique de risque —
-explicitement marqué comme tel.
+## Bugs en échec (rollback appliqué par le wrapper)
+Pour chaque échec : titre, ce qui a été tenté, pourquoi les tests ont cassé,
+tentative n°X/3.
 
-## Si aucun problème trouvé
-Écris simplement "RAS — aucun problème détecté" en résumé, ne remplis pas les autres
-sections avec du bruit.
+## ESCALATION (3 tentatives épuisées)
+Bug, historique des 3 tentatives, recommandation pour intervention humaine.
+
+## DÉCISION SIMO
+Chaque recommandation qui touche seuils/stratégie/allowlist/risk-cap —
+valeur actuelle, valeur proposée, justification, impact chiffré. JAMAIS
+appliquée par toi.
+
+## Si RAS
+Écris simplement "RAS — aucun problème détecté" en résumé, sections vides.

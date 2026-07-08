@@ -219,6 +219,49 @@ class TelegramFailSafeTests(unittest.TestCase):
             self.assertEqual(send.call_count, 1)
 
 
+class AutoMedicTriggerTests(unittest.TestCase):
+    """GRAND_PLAN_2 mission4 (2026-07-08, SIMO validé GO) — le watchdog
+    déclenche l'auto-médecin sur toute alerte CRITIQUE/HAUTE, avec la même
+    fenêtre anti-spam que Telegram (30 min) pour ne pas relancer une
+    session claude -p en boucle."""
+
+    def test_critical_alert_triggers_auto_medic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = wd.AlertManager({}, state_file=Path(tmp) / "state.json")
+            with patch.object(wd, "ALERTS_LOG", Path(tmp) / "alerts.log"), \
+                 patch.object(mgr, "trigger_auto_medic") as trigger:
+                mgr.alert(wd.CRITICAL, "TEST_KEY", "probleme grave")
+            trigger.assert_called_once_with("CRITIQUE:TEST_KEY")
+
+    def test_high_alert_triggers_auto_medic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = wd.AlertManager({}, state_file=Path(tmp) / "state.json")
+            with patch.object(wd, "ALERTS_LOG", Path(tmp) / "alerts.log"), \
+                 patch.object(mgr, "trigger_auto_medic") as trigger:
+                mgr.alert(wd.HIGH, "TEST_KEY2", "probleme")
+            trigger.assert_called_once_with("HAUTE:TEST_KEY2")
+
+    def test_repeated_alert_within_antispam_window_does_not_retrigger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = wd.AlertManager({}, state_file=Path(tmp) / "state.json")
+            with patch.object(wd, "ALERTS_LOG", Path(tmp) / "alerts.log"), \
+                 patch.object(mgr, "trigger_auto_medic") as trigger:
+                mgr.alert(wd.CRITICAL, "SAME_KEY", "premier")
+                mgr.alert(wd.CRITICAL, "SAME_KEY", "renvoi immediat")
+            self.assertEqual(trigger.call_count, 1)
+
+    def test_alert_survives_schtasks_unavailable(self) -> None:
+        """A broken/missing scheduled task must never crash the watchdog —
+        same fail-safe philosophy as every other watchdog side-effect."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = wd.AlertManager({}, state_file=Path(tmp) / "state.json")
+            with patch.object(wd, "ALERTS_LOG", Path(tmp) / "alerts.log"), \
+                 patch("subprocess.run", side_effect=OSError("schtasks not found")):
+                mgr.alert(wd.CRITICAL, "TEST_KEY3", "probleme")  # must not raise
+            content = (Path(tmp) / "alerts.log").read_text(encoding="utf-8")
+        self.assertIn("TEST_KEY3", content)
+
+
 class CheckErrorNeverKillsGuardianTests(unittest.TestCase):
     def test_broken_check_is_contained(self) -> None:
         stub = _mt5_stub()

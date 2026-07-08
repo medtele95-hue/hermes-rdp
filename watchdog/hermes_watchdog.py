@@ -149,6 +149,24 @@ class AlertManager:
             if self.send_telegram(f"🐕 WATCHDOG [{level}]\n{message}"):
                 pass  # anti-spam marqué même si Telegram absent : le fichier fait foi
             self._mark_sent(key)
+            # GRAND_PLAN_2 mission4 (2026-07-08, SIMO validé GO) : le
+            # watchdog déclenche l'auto-médecin sur toute alerte CRITIQUE/
+            # HAUTE — même fenêtre anti-spam que Telegram (30 min) pour ne
+            # pas relancer une session claude -p en boucle sur un problème
+            # non résolu ; se re-déclenche naturellement si le problème
+            # persiste au-delà de cette fenêtre.
+            self.trigger_auto_medic(f"{level}:{key}")
+
+    def trigger_auto_medic(self, reason: str) -> None:  # pragma: no cover - thin OS call
+        try:
+            import subprocess
+            subprocess.run(
+                ["schtasks", "/run", "/tn", "HERMES_AUTO_MEDIC"],
+                capture_output=True, timeout=15,
+            )
+            print(f"[WATCHDOG] auto_medic_triggered reason={reason}", flush=True)
+        except Exception as exc:
+            print(f"[WATCHDOG] auto_medic_trigger_failed reason={reason} error={str(exc)[:120]}", flush=True)
 
     def send_telegram(self, text: str) -> bool:
         token = self.cfg.get("TELEGRAM_BOT_TOKEN", "")

@@ -1,29 +1,43 @@
-# HERMES auto-medecin — AUTOPILOT.md COUCHE 2, PORTEE DIAGNOSTIC SEUL.
+# HERMES auto-medecin -- GRAND_PLAN_2 mission4 (2026-07-08, SIMO valide GO).
+# REPARATION AUTONOME COMPLETE -- remplace la version diagnostic-seul.
 #
-# Decision explicite : ce script N'invoque JAMAIS --dangerously-skip-permissions.
-# Il lance `claude -p` avec --permission-mode dontAsk et --allowedTools limite a
-# Read,Grep,Glob (verifie empiriquement : un appel Write est refuse et le process
-# se termine proprement, code retour non-zero, aucun fichier cree). L'IA ne peut
-# donc ni ecrire, ni editer, ni committer, ni pousser, ni executer de commande —
-# elle peut seulement lire et rendre un diagnostic texte, capture par CE script
-# (qui, lui, ecrit le rapport avec des privileges normaux, hors de portee de l'IA).
+# Securite par l'INFRASTRUCTURE (pas par permission) :
+#  1. safepoint git (tag) AVANT chaque session claude -p --dangerously-skip-permissions
+#  2. suite de tests COMPLETE APRES la session
+#  3. UN SEUL test qui casse -> git reset --hard vers le safepoint (rollback total
+#     de tout ce que la session a fait, committe ou non)
+#  4. push GitHub SEULEMENT si les tests passent ET qu'il y a un vrai changement
+#  5. notification Telegram de chaque ronde (RAS / repare / rollback / escalation)
+#  6. journal append-only logs/auto_medic_audit.log
+#  7. anti-acharnement : 3 rollbacks consecutifs -> suspension 2h + alerte CRITIQUE
 #
-# Toute correction reelle attend en section RESERVE SIMO du rapport, pour une
-# session Claude Code normale invoquee a la main par SIMO.
+# La ligne rouge (seuils/strategie/allowlist/risk-cap = jamais touche seul, toujours
+# DECISION SIMO) est appliquee par l'IA elle-meme via les instructions de
+# AUTO_MEDIC_MISSION.md -- ce script ne peut pas verifier CE QUE l'IA a change,
+# seulement SI le resultat casse un test. C'est le filet de securite mecanique;
+# le respect de la ligne rouge est une instruction suivie, pas une contrainte
+# imposee par ce script.
 #
-# Tache planifiee HERMES_AUTO_MEDIC (07:00 et 19:00) + declenchable par
-# scripts/bot_supervisor.ps1 en cas de crash-loop.
+# Tache planifiee HERMES_AUTO_MEDIC (toutes les 2h) + declenchable par
+# scripts/bot_supervisor.ps1 (crash-loop) + watchdog (alerte CRITIQUE/HAUTE).
 $ErrorActionPreference = "Continue"
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
 $reportsDir = "C:\hermes-reports"
 New-Item -ItemType Directory -Force $reportsDir | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $repo "logs") | Out-Null
 $healthLog = Join-Path $reportsDir "_automation_health.log"
-$stateFile = Join-Path $reportsDir "_auto_medic_state.json"
+$stateFile = Join-Path $repo "logs\auto_medic_state.json"
+$auditLog = Join-Path $repo "logs\auto_medic_audit.log"
 
 function Write-Health($msg) {
     Add-Content -Path $healthLog -Value "$(Get-Date -Format o) [auto_medic] $msg" -Encoding utf8
+}
+
+function Write-Audit($obj) {
+    $line = $obj | ConvertTo-Json -Compress
+    Add-Content -Path $auditLog -Value $line -Encoding utf8
 }
 
 function Send-Telegram($text) {
@@ -41,50 +55,113 @@ function Send-Telegram($text) {
     } catch { Write-Health "telegram indisponible: $_" }
 }
 
+function Get-State {
+    if (Test-Path $stateFile) {
+        try { return (Get-Content $stateFile -Raw | ConvertFrom-Json) } catch { }
+    }
+    return [PSCustomObject]@{ rollback_streak = 0; suspended_until = $null; last_run = $null }
+}
+
+function Save-State($state) {
+    $state | ConvertTo-Json -Depth 5 | Set-Content -Path $stateFile -Encoding utf8
+}
+
+$state = Get-State
+$now = Get-Date
+
+if ($state.suspended_until -and ([datetime]$state.suspended_until) -gt $now) {
+    Write-Health "suspended until $($state.suspended_until), skipping round"
+    Write-Output "[auto_medic] SUSPENDED until $($state.suspended_until)"
+    exit 0
+}
+
 $stamp = Get-Date -Format "yyyy-MM-ddTHHmmss"
 $reportPath = Join-Path $reportsDir "auto_medic_$stamp.md"
+$safepointTag = "safepoint-automedic-$stamp"
 
 Write-Health "run started"
+git tag $safepointTag 2>&1 | Out-Null
+$preHeadHash = (git rev-parse HEAD 2>&1 | Select-Object -First 1)
+Write-Health "safepoint tag=$safepointTag head=$preHeadHash"
+
 $prompt = Get-Content (Join-Path $repo "AUTO_MEDIC_MISSION.md") -Raw
 
 try {
-    $raw = "" | & claude -p $prompt --permission-mode dontAsk --allowedTools "Read,Grep,Glob" --output-format text 2>&1
+    $raw = "" | & claude -p $prompt --dangerously-skip-permissions --output-format text 2>&1
     $exitCode = $LASTEXITCODE
     $output = ($raw | Where-Object { $_ -notmatch "^Warning: no stdin data received" }) -join "`n"
 } catch {
     $output = "ERREUR de lancement claude -p : $_"
     $exitCode = 1
 }
-
 if ($exitCode -ne 0 -and -not $output) {
     $output = "auto-medecin: claude -p a echoue (code $exitCode) sans sortie exploitable."
 }
-
 Set-Content -Path $reportPath -Value $output -Encoding utf8
-Write-Health "run finished exit=$exitCode report=$reportPath"
+Write-Health "claude session finished exit=$exitCode report=$reportPath"
 
-# -- budget de securite : n'insiste pas plus de 3 fois de suite sur le meme "RAS"/probleme --
-$state = if (Test-Path $stateFile) { try { Get-Content $stateFile -Raw | ConvertFrom-Json } catch { $null } } else { $null }
-if (-not $state) { $state = [PSCustomObject]@{ last_summary_hash = ""; streak = 0 } }
-$summaryLine = ($output -split "`n" | Select-Object -First 15) -join " "
-$hash = [System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($summaryLine)))
-if ($hash -eq $state.last_summary_hash -and $summaryLine -notmatch "RAS") {
-    $state.streak += 1
-} else {
-    $state.streak = 1
-}
-$state.last_summary_hash = $hash
-$state | ConvertTo-Json | Set-Content -Path $stateFile -Encoding utf8
+$postHeadHash = (git rev-parse HEAD 2>&1 | Select-Object -First 1)
+$hasChanges = ($postHeadHash -ne $preHeadHash) -or ((git status --short 2>&1 | Measure-Object).Count -gt 0)
 
 $isRas = $output -match "RAS\s*[-]\s*aucun probl"
-if ($isRas) {
-    Send-Telegram "HERMES auto-medecin : RAS"
-} elseif ($state.streak -ge 3) {
-    Send-Telegram "HERMES CRITIQUE : meme probleme non resolu apres 3 rondes auto-medecin - intervention SIMO/advisor requise. Voir $reportPath"
-    Write-Health "ESCALATION streak=$($state.streak)"
-} else {
-    $firstLines = ($output -split "`n" | Select-Object -First 5) -join " | "
-    Send-Telegram "HERMES auto-medecin : probleme(s) detecte(s) (round $($state.streak)/3). $firstLines"
+
+if (-not $hasChanges) {
+    Write-Health "no changes made (RAS or read-only round)"
+    Write-Audit @{ ts = $now.ToString("o"); outcome = if ($isRas) { "RAS" } else { "NO_CHANGE" }; report = $reportPath }
+    $state.rollback_streak = 0
+    $state.last_run = $now.ToString("o")
+    Save-State $state
+    if ($isRas) {
+        Send-Telegram "HERMES auto-medecin : RAS"
+    } else {
+        $firstLines = ($output -split "`n" | Select-Object -First 5) -join " | "
+        Send-Telegram "HERMES auto-medecin : ronde sans changement. $firstLines"
+    }
+    Write-Output "[auto_medic] OK (no changes) -> $reportPath"
+    exit 0
 }
 
-Write-Output "[auto_medic] OK -> $reportPath"
+# -- des changements existent : suite de tests complete avant de les garder --
+Write-Health "changes detected, running full test suite"
+$testOutput = & python -m pytest -q 2>&1
+$testExit = $LASTEXITCODE
+Write-Health "test suite exit=$testExit"
+
+if ($testExit -ne 0) {
+    # ROLLBACK TOTAL -- tout ce que la session a fait, committe ou non
+    Write-Health "TESTS FAILED -> rollback to $safepointTag"
+    git reset --hard $safepointTag 2>&1 | Out-Null
+    git clean -fd 2>&1 | Out-Null
+    $state.rollback_streak += 1
+    $state.last_run = $now.ToString("o")
+
+    Write-Audit @{ ts = $now.ToString("o"); outcome = "ROLLBACK"; report = $reportPath; streak = $state.rollback_streak; safepoint = $safepointTag }
+
+    if ($state.rollback_streak -ge 3) {
+        $state.suspended_until = $now.AddHours(2).ToString("o")
+        Save-State $state
+        Write-Health "ESCALATION streak=$($state.rollback_streak) suspended until $($state.suspended_until)"
+        Send-Telegram "HERMES CRITIQUE auto-medecin : 3 tentatives echouees d'affilee (tests casses a chaque fois), suspendu 2h. Voir $reportPath"
+    } else {
+        Save-State $state
+        Send-Telegram "HERMES auto-medecin : tentative $($state.rollback_streak)/3 echouee (tests casses), rollback applique. Voir $reportPath"
+    }
+    Write-Output "[auto_medic] ROLLBACK -> $reportPath"
+    exit 1
+}
+
+# -- tests OK : garder les changements, pousser --
+Write-Health "tests passed, pushing"
+$branch = (git rev-parse --abbrev-ref HEAD 2>&1 | Select-Object -First 1)
+git push origin $branch 2>&1 | Out-Null
+$pushExit = $LASTEXITCODE
+
+$state.rollback_streak = 0
+$state.last_run = $now.ToString("o")
+Save-State $state
+Write-Audit @{ ts = $now.ToString("o"); outcome = "FIXED"; report = $reportPath; pushed = ($pushExit -eq 0) }
+
+$firstLines = ($output -split "`n" | Select-Object -First 8) -join " | "
+Send-Telegram "HERMES auto-medecin : correction appliquee et testee$(if ($pushExit -eq 0) { ' (poussee sur GitHub)' } else { ' (push echoue, verifier)' }). $firstLines"
+Write-Health "run complete, pushed=$($pushExit -eq 0)"
+Write-Output "[auto_medic] FIXED -> $reportPath"
