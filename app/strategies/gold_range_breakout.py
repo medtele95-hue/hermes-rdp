@@ -23,12 +23,16 @@ GOLD_SYMBOLS: frozenset[str] = frozenset({"XAUUSD", "XAUUSD#", "GOLD", "GOLD#", 
 
 _H4_LOOKBACK = 25
 _BREAKOUT_MULT = 1.002
-_RETEST_ATR_MULT = 0.3
+# COEUR_V2 chantier 2 (2026-07-08): _atr() migrated SMA->Wilder RMA. Rescaled
+# by 1/1.02724 (measured Wilder/SMA ratio, GOLD# M5 30j) to preserve the same
+# effective gates/distances — see COEUR_V2_REPORT.md chantier 2.
+_RETEST_ATR_MULT = 0.2920   # was 0.3
 _MIN_RR = 1.5
 _VOL_MULTIPLIER = 1.5
-_MAX_RANGE_ATR_RATIO = 2.5
+_MAX_RANGE_ATR_RATIO = 2.4337   # was 2.5
 _MIN_RANGE_CANDLES = 10
 _BREAKOUT_LOOKBACK = 5
+_ATR_EXPANSION_MULT = 0.7787   # was 0.8 (candle_range >= m5_atr * mult)
 
 
 def evaluate(
@@ -210,7 +214,7 @@ def _detect_breakout(m5: pd.DataFrame, level: float, direction: str, avg_vol: fl
         candle_range = float(row["high"]) - float(row["low"])
         vol_ratio = vol / avg_vol if avg_vol > 0 else 0.0
         vol_ok = vol_ratio >= _VOL_MULTIPLIER
-        atr_expanded = m5_atr > 0 and candle_range >= m5_atr * 0.8
+        atr_expanded = m5_atr > 0 and candle_range >= m5_atr * _ATR_EXPANSION_MULT
 
         if direction == "BUY":
             broke = close > level * _BREAKOUT_MULT
@@ -309,16 +313,17 @@ def _is_gold_symbol(symbol: object) -> bool:
 
 
 def _atr(df: pd.DataFrame, period: int = 14) -> float:
+    """Wilder RMA (COEUR_V2 chantier 2, was SMA — see COEUR_V2_REPORT.md)."""
     if df is None or len(df) < 2:
         return 0.0
-    high = pd.to_numeric(df["high"], errors="coerce")
-    low = pd.to_numeric(df["low"], errors="coerce")
-    close_prev = pd.to_numeric(df["close"], errors="coerce").shift(1)
-    tr = pd.concat(
-        [high - low, (high - close_prev).abs(), (low - close_prev).abs()], axis=1
-    ).max(axis=1)
-    val = float(tr.tail(period).mean())
-    return val if math.isfinite(val) else 0.0
+    from app.utils.indicators import atr_last
+    coerced = pd.DataFrame({
+        "high": pd.to_numeric(df["high"], errors="coerce"),
+        "low": pd.to_numeric(df["low"], errors="coerce"),
+        "close": pd.to_numeric(df["close"], errors="coerce"),
+    })
+    val = atr_last(coerced, period=period)
+    return val if val is not None and math.isfinite(val) else 0.0
 
 
 def _normalize(df: Any) -> pd.DataFrame | None:

@@ -23,10 +23,13 @@ def evaluate(symbol: str, df: pd.DataFrame) -> dict:
     close = float(row["close"])
     rsi = float(row["rsi"]) if pd.notna(row["rsi"]) else 50.0
 
+    # COEUR_V2 chantier 2 (2026-07-08): ATR multipliers rescaled by 1/1.025855
+    # (measured Wilder/SMA ratio, GOLD#+BTCUSD# M5 30j blended). Was 1.0/1.6 —
+    # see COEUR_V2_REPORT.md chantier 2.
     if close > float(row["ema20"]) and float(prev["close"]) <= float(prev["ema20"]) and rsi < 68:
-        return _result(symbol, name, "BUY", 0.58, close, close - atr, close + atr * 1.6, "Fast EMA reclaim scalp")
+        return _result(symbol, name, "BUY", 0.58, close, close - atr * 0.9748, close + atr * 1.5598, "Fast EMA reclaim scalp")
     if close < float(row["ema20"]) and float(prev["close"]) >= float(prev["ema20"]) and rsi > 32:
-        return _result(symbol, name, "SELL", 0.58, close, close + atr, close - atr * 1.6, "Fast EMA rejection scalp")
+        return _result(symbol, name, "SELL", 0.58, close, close + atr * 0.9748, close - atr * 1.5598, "Fast EMA rejection scalp")
     return _result(symbol, name, "WAIT", 0.35, reason="No scalp trigger")
 
 
@@ -194,7 +197,12 @@ def _log_btc_scalping_result(result: dict) -> None:
 
 
 def _trade_payload(symbol: str, side: str, reason: str, confidence: int, entry: float, atr: float, relaxed: bool, trigger_type: str, spread: float | None, spread_limit: float | None) -> dict:
-    risk = max(float(atr), abs(entry) * 0.001)
+    # COEUR_V2 chantier 2 (2026-07-08): ATR rescaled by 1/1.02447 (measured
+    # Wilder/SMA ratio, BTCUSD# M5 30j — this path is BTC-only) so `risk`
+    # (and therefore sl/tp, both derived from it) stays the same effective
+    # distance now that `atr` means Wilder RMA, not SMA. See
+    # COEUR_V2_REPORT.md chantier 2.
+    risk = max(float(atr) * 0.9761, abs(entry) * 0.001)
     if side == "BUY":
         sl = entry - risk
         tp = entry + risk * 2.0

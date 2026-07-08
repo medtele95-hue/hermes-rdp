@@ -732,14 +732,13 @@ def ema(values: pd.Series, period: int) -> pd.Series:
 
 
 def atr14(df: pd.DataFrame | None) -> pd.Series:
+    """Wilder RMA, graceful expanding-mean for the leading bars (COEUR_V2
+    chantier 2, was SMA/min_periods=1 — see COEUR_V2_REPORT.md)."""
     if df is None or df.empty:
         return pd.Series(dtype=float)
-    high = _series(df, "high")
-    low = _series(df, "low")
-    close = _series(df, "close")
-    prev_close = close.shift(1)
-    tr = pd.concat([(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
-    return tr.rolling(14, min_periods=1).mean()
+    from app.utils.indicators import atr_series_graceful
+    frame = pd.DataFrame({"high": _series(df, "high"), "low": _series(df, "low"), "close": _series(df, "close")})
+    return atr_series_graceful(frame, period=14)
 
 
 def swing_points(df: pd.DataFrame | None, length: int = 2) -> dict[str, list[tuple[int, float]]]:

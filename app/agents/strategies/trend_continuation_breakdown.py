@@ -420,9 +420,13 @@ def _trend(df: pd.DataFrame | None) -> str:
 
 
 def _atr(df: pd.DataFrame) -> float:
-    tail = df.tail(14)
-    ranges = [abs((_float(row.get("high")) or 0.0) - (_float(row.get("low")) or 0.0)) for _, row in tail.iterrows()]
-    return sum(ranges) / len(ranges) if ranges else 0.0
+    """Wilder RMA of True Range (COEUR_V2 chantier 2). BUG FIX, not just a
+    SMA->Wilder migration: the previous implementation averaged bar range
+    (high-low) only, ignoring gaps vs the prior close — understating
+    volatility on any gappy bar. See COEUR_V2_REPORT.md chantier 2."""
+    from app.utils.indicators import atr_last
+    value = atr_last(df, period=14)
+    return value if value is not None else 0.0
 
 
 def _body(row) -> float:

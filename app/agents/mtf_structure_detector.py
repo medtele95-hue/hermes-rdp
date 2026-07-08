@@ -122,7 +122,10 @@ class MTFStructureDetector:
         # ATR-relative tolerance (k x ATR_H4); pct-of-price fallback when ATR unavailable
         atr_h4 = _atr_value(h4)
         if atr_h4 is not None and atr_h4 > 0:
-            tolerance = 0.5 * atr_h4
+            # COEUR_V2 chantier 2 (2026-07-08): _atr_value() migrated
+            # SMA->Wilder RMA. Rescaled by 1/1.025855 (measured blended
+            # ratio) — was 0.5×ATR. See COEUR_V2_REPORT.md chantier 2.
+            tolerance = 0.4874 * atr_h4
         else:
             tolerance = max(abs(price) * 0.002, 0.0001)
         if support is not None and abs(price - support) <= tolerance:
@@ -308,21 +311,15 @@ def _missing(df: object) -> bool:
 
 
 def _atr_value(df: pd.DataFrame | None, period: int = 14) -> float | None:
-    """Last ATR value with adaptive period for short frames; None when unusable."""
+    """Last ATR value with adaptive period for short frames; None when
+    unusable. Wilder RMA (COEUR_V2 chantier 2, was SMA — see
+    COEUR_V2_REPORT.md)."""
     if df is None or getattr(df, "empty", True) or len(df) < 4:
         return None
     try:
+        from app.utils.indicators import atr_last
         effective = min(period, len(df) - 1)
-        prev_close = df["close"].shift(1)
-        tr = pd.concat(
-            [
-                df["high"] - df["low"],
-                (df["high"] - prev_close).abs(),
-                (df["low"] - prev_close).abs(),
-            ],
-            axis=1,
-        ).max(axis=1)
-        return _float(tr.rolling(effective).mean().iloc[-1])
+        return _float(atr_last(df, period=effective))
     except (KeyError, TypeError, ValueError):
         return None
 

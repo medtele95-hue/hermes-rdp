@@ -77,6 +77,13 @@ def compute_ees(direction: str, candles: list[dict] | None, context: dict | None
     atr = _atr(highs, lows, closes)
     if atr is None or atr <= 0:
         return _result(side, None, "EES_ATR_UNAVAILABLE")
+    # COEUR_V2 chantier 2 (2026-07-08): _atr() migrated SMA->Wilder RMA.
+    # Rescale by 1/1.025855 (measured Wilder/SMA ratio, GOLD#+BTCUSD# M5 30j
+    # blended) so extension_atr/climax_ratio below stay numerically identical
+    # to pre-migration behaviour — PRUDENCE_THRESHOLD/EXTREME_THRESHOLD and
+    # every formula constant are intentionally UNCHANGED, only the ATR
+    # denominator is restored to scale. See COEUR_V2_REPORT.md chantier 2.
+    atr = atr * 0.9748
 
     sign = 1.0 if side == "BUY" else -1.0
 
@@ -149,14 +156,17 @@ def _result(side: str, score: float | None, reason: str) -> dict:
 
 
 def _atr(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float | None:
-    trs = []
-    for i in range(1, len(closes)):
-        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
-    if not trs:
+    """Wilder RMA (COEUR_V2 chantier 2, was SMA — see COEUR_V2_REPORT.md).
+    Recalibration note: EES's PRUDENCE_THRESHOLD/EXTREME_THRESHOLD and the
+    extension-vs-ATR formula constants were re-verified against the measured
+    Wilder/SMA gap — see COEUR_V2_REPORT.md chantier 2."""
+    if len(closes) < 2:
         return None
-    window = trs[-period:]
-    value = sum(window) / len(window)
-    return value if math.isfinite(value) and value > 0 else None
+    import pandas as pd
+    from app.utils.indicators import atr_last
+    df = pd.DataFrame({"high": highs, "low": lows, "close": closes})
+    value = atr_last(df, period=period)
+    return value if value is not None and math.isfinite(value) and value > 0 else None
 
 
 def _to_float(value: object) -> float | None:

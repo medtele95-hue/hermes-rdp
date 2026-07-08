@@ -18,10 +18,13 @@ def evaluate(symbol: str, df: pd.DataFrame) -> dict:
     higher_lows = tail["low"].iloc[-3] > tail["low"].iloc[-5] and tail["low"].iloc[-1] > tail["low"].iloc[-3]
     lower_highs = tail["high"].iloc[-3] < tail["high"].iloc[-5] and tail["high"].iloc[-1] < tail["high"].iloc[-3]
 
+    # COEUR_V2 chantier 2 (2026-07-08): ATR multipliers rescaled by 1/1.025855
+    # (measured Wilder/SMA ratio, GOLD#+BTCUSD# M5 30j blended). Was 1.3/2.0 —
+    # see COEUR_V2_REPORT.md chantier 2.
     if close > float(row["ema20"]) and higher_lows:
-        return _result(symbol, name, "BUY", 0.64, close, close - atr * 1.3, close + atr * 2.0, "Second-entry long price action")
+        return _result(symbol, name, "BUY", 0.64, close, close - atr * 1.2673, close + atr * 1.9497, "Second-entry long price action")
     if close < float(row["ema20"]) and lower_highs:
-        return _result(symbol, name, "SELL", 0.64, close, close + atr * 1.3, close - atr * 2.0, "Second-entry short price action")
+        return _result(symbol, name, "SELL", 0.64, close, close + atr * 1.2673, close - atr * 1.9497, "Second-entry short price action")
     return _result(symbol, name, "WAIT", 0.40, reason="No second-entry pattern")
 
 

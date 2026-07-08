@@ -168,19 +168,15 @@ def rsi(values: pd.Series, period: int) -> pd.Series:
 
 
 def atr(candles: pd.DataFrame, period: int) -> pd.Series:
+    """Wilder RMA (COEUR_V2 chantier 2, was SMA — see COEUR_V2_REPORT.md).
+    NOTE: EURUSD is outside SYMBOL_ALLOWLIST (GOLD#, BTCUSD#) since the
+    2026-07-08 GRAND_PLAN pivot — this strategy is structurally unreachable
+    today, migrated for correctness/consistency only, not live impact."""
+    from app.utils.indicators import atr_wilder
     high = pd.to_numeric(candles["high"], errors="coerce")
     low = pd.to_numeric(candles["low"], errors="coerce")
     close = pd.to_numeric(candles["close"], errors="coerce")
-    previous_close = close.shift(1)
-    tr = pd.concat(
-        [
-            high - low,
-            (high - previous_close).abs(),
-            (low - previous_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-    return tr.rolling(period, min_periods=period).mean()
+    return atr_wilder(pd.DataFrame({"high": high, "low": low, "close": close}), period)
 
 
 def reward_risk(direction: str, entry: float, sl: float, tp: float) -> float | None:

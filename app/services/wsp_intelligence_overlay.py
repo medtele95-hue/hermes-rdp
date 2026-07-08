@@ -114,10 +114,11 @@ def _volume_series(df: pd.DataFrame) -> pd.Series:
 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> float:
-    prev_close = close.shift(1)
-    tr = pd.concat([(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
-    value = tr.tail(period).mean()
-    return float(value) if math.isfinite(float(value)) else 0.0
+    """Wilder RMA (COEUR_V2 chantier 2, was SMA — see COEUR_V2_REPORT.md)."""
+    from app.utils.indicators import atr_last
+    df = pd.DataFrame({"high": high, "low": low, "close": close})
+    value = atr_last(df, period=period)
+    return float(value) if value is not None and math.isfinite(value) else 0.0
 
 
 def _adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> float:

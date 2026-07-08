@@ -18,10 +18,15 @@ def evaluate(symbol: str, df: pd.DataFrame) -> dict:
     low = float(prev["low"].min())
     close = float(row["close"])
 
-    if close > high and float(row["lower_wick"]) <= atr:
-        return _result(symbol, name, "BUY", 0.68, close, high - atr, close + atr * 2.0, "Breakout above 20-candle range")
-    if close < low and float(row["upper_wick"]) <= atr:
-        return _result(symbol, name, "SELL", 0.68, close, low + atr, close - atr * 2.0, "Breakdown below 20-candle range")
+    # COEUR_V2 chantier 2 (2026-07-08): ATR multipliers rescaled by 1/1.025855
+    # (measured Wilder/SMA ratio, GOLD#+BTCUSD# M5 30j blended) to preserve the
+    # same effective distances now that `atr` means Wilder RMA, not SMA. Wick
+    # filter and SL buffer were implicit *1.0, TP was *2.0 — see
+    # COEUR_V2_REPORT.md chantier 2 for the measurement.
+    if close > high and float(row["lower_wick"]) <= atr * 0.9748:
+        return _result(symbol, name, "BUY", 0.68, close, high - atr * 0.9748, close + atr * 1.9497, "Breakout above 20-candle range")
+    if close < low and float(row["upper_wick"]) <= atr * 0.9748:
+        return _result(symbol, name, "SELL", 0.68, close, low + atr * 0.9748, close - atr * 1.9497, "Breakdown below 20-candle range")
     return _result(symbol, name, "WAIT", 0.42, reason="No breakout retest")
 
 

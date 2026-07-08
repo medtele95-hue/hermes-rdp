@@ -18,10 +18,15 @@ def evaluate(symbol: str, df: pd.DataFrame) -> dict:
     ema50 = float(row["ema50"])
     ema200 = float(row["ema200"])
 
-    if close > ema20 > ema50 > ema200 and abs(close - ema20) <= atr * 1.2:
-        return _result(symbol, name, "BUY", 0.74, close, close - atr * 1.5, close + atr * 2.5, "Bullish EMA pullback")
-    if close < ema20 < ema50 < ema200 and abs(close - ema20) <= atr * 1.2:
-        return _result(symbol, name, "SELL", 0.74, close, close + atr * 1.5, close - atr * 2.5, "Bearish EMA pullback")
+    # COEUR_V2 chantier 2 (2026-07-08): ATR multipliers rescaled by 1/1.025855
+    # (measured Wilder/SMA ratio, GOLD#+BTCUSD# M5 30j blended) to preserve the
+    # same effective distances now that `atr` means Wilder RMA, not SMA. Was
+    # 1.2 / 1.5 / 2.5 — see COEUR_V2_REPORT.md chantier 2 for the measurement
+    # and the iso-comportement proof.
+    if close > ema20 > ema50 > ema200 and abs(close - ema20) <= atr * 1.1697:
+        return _result(symbol, name, "BUY", 0.74, close, close - atr * 1.4621, close + atr * 2.4369, "Bullish EMA pullback")
+    if close < ema20 < ema50 < ema200 and abs(close - ema20) <= atr * 1.1697:
+        return _result(symbol, name, "SELL", 0.74, close, close + atr * 1.4621, close - atr * 2.4369, "Bearish EMA pullback")
     return _result(symbol, name, "WAIT", 0.45, reason="No EMA pullback setup")
 
 

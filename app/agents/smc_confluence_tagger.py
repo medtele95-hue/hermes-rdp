@@ -205,25 +205,22 @@ def _zone_tolerance(df: pd.DataFrame | None, close: float) -> float:
     """
     atr_val = _atr_value(df)
     if atr_val is not None and atr_val > 0:
-        return 0.5 * atr_val
+        # COEUR_V2 chantier 2 (2026-07-08): _atr_value() migrated SMA->Wilder
+        # RMA. Rescaled by 1/1.025855 (measured blended ratio) — was 0.5×ATR.
+        # See COEUR_V2_REPORT.md chantier 2.
+        return 0.4874 * atr_val
     return max(abs(close) * 0.0025, 0.0001)
 
 
 def _atr_value(df: pd.DataFrame | None, period: int = 14) -> float | None:
+    """Wilder RMA, adaptive period for short frames (COEUR_V2 chantier 2, was
+    SMA — see COEUR_V2_REPORT.md)."""
     if df is None or getattr(df, "empty", True) or len(df) < 4:
         return None
     try:
+        from app.utils.indicators import atr_last
         effective = min(period, len(df) - 1)
-        prev_close = df["close"].shift(1)
-        tr = pd.concat(
-            [
-                df["high"] - df["low"],
-                (df["high"] - prev_close).abs(),
-                (df["low"] - prev_close).abs(),
-            ],
-            axis=1,
-        ).max(axis=1)
-        return _float(tr.rolling(effective).mean().iloc[-1])
+        return _float(atr_last(df, period=effective))
     except (KeyError, TypeError, ValueError):
         return None
 

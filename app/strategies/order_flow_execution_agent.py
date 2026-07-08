@@ -4,6 +4,8 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
+import pandas as pd
+
 from app.logger import log
 
 STRATEGY = "ORDER_FLOW_EXECUTION_AGENT"
@@ -611,7 +613,11 @@ def _check_sfp(m15_df: object, direction: str) -> bool | None:
         atr_margin = 0.0
         atr_val = _atr_m15(closed)
         if atr_val is not None and atr_val > 0:
-            atr_margin = 0.1 * atr_val
+            # COEUR_V2 chantier 2 (2026-07-08): _atr_m15() migrated SMA->Wilder
+            # RMA. Rescaled by 1/1.025855 (measured Wilder/SMA ratio,
+            # GOLD#+BTCUSD# M5 30j blended) to preserve the same effective
+            # margin — see COEUR_V2_REPORT.md chantier 2.
+            atr_margin = 0.09748 * atr_val
         if direction == "SELL":
             recent_high = float(prev["high"].max())
             sweep = float(last["high"]) > recent_high + atr_margin
@@ -628,21 +634,18 @@ def _check_sfp(m15_df: object, direction: str) -> bool | None:
 
 
 def _atr_m15(df: object, period: int = 14) -> float | None:
-    """Last ATR value on a closed-candle frame; None when unusable."""
+    """Last ATR value on a closed-candle frame; None when unusable. Wilder RMA
+    (COEUR_V2 chantier 2, was SMA — see COEUR_V2_REPORT.md)."""
     if df is None or getattr(df, "empty", True) or len(df) < 4:
         return None
     try:
+        from app.utils.indicators import atr_last
         effective = min(period, len(df) - 1)
         high = df["high"].astype(float)
         low = df["low"].astype(float)
         close = df["close"].astype(float)
-        prev_close = close.shift(1)
-        tr1 = high - low
-        tr2 = (high - prev_close).abs()
-        tr3 = (low - prev_close).abs()
-        tr = tr1.combine(tr2, max).combine(tr3, max)
-        out = float(tr.rolling(effective).mean().iloc[-1])
-        return out if math.isfinite(out) else None
+        out = atr_last(pd.DataFrame({"high": high, "low": low, "close": close}), period=effective)
+        return out if out is not None and math.isfinite(out) else None
     except (KeyError, TypeError, ValueError):
         return None
 
