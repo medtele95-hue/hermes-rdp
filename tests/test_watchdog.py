@@ -130,6 +130,40 @@ class Check7KillswitchTests(unittest.TestCase):
         self.assertEqual(wd.check_7_killswitch(deals, NOW), [])
 
 
+class Check10DashboardHeartbeatTests(unittest.TestCase):
+    """mission/DASHBOARD.md — le dashboard est optionnel : absence de
+    fichier = pas d'erreur, heartbeat périmé = INFO seulement (jamais
+    HAUTE/CRITIQUE, l'absence du dashboard n'affecte jamais le trading)."""
+
+    def test_no_file_is_clean_dashboard_never_started(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(wd, "DASHBOARD_HEARTBEAT_FILE", Path(tmp) / "absent.txt"):
+                self.assertEqual(wd.check_10_dashboard_heartbeat(NOW), [])
+
+    def test_fresh_heartbeat_is_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hb = Path(tmp) / "dashboard_heartbeat.txt"
+            hb.write_text((NOW - timedelta(minutes=1)).isoformat(), encoding="utf-8")
+            with patch.object(wd, "DASHBOARD_HEARTBEAT_FILE", hb):
+                self.assertEqual(wd.check_10_dashboard_heartbeat(NOW), [])
+
+    def test_stale_heartbeat_is_info_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hb = Path(tmp) / "dashboard_heartbeat.txt"
+            hb.write_text((NOW - timedelta(minutes=20)).isoformat(), encoding="utf-8")
+            with patch.object(wd, "DASHBOARD_HEARTBEAT_FILE", hb):
+                alerts = wd.check_10_dashboard_heartbeat(NOW)
+        self.assertTrue(any(key == "DASHBOARD_STALLED" and lvl == wd.INFO for lvl, key, _ in alerts))
+        self.assertFalse(any(lvl in (wd.HIGH, wd.CRITICAL) for lvl, _, _ in alerts))
+
+    def test_corrupt_heartbeat_file_does_not_raise(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hb = Path(tmp) / "dashboard_heartbeat.txt"
+            hb.write_text("not-a-timestamp", encoding="utf-8")
+            with patch.object(wd, "DASHBOARD_HEARTBEAT_FILE", hb):
+                self.assertEqual(wd.check_10_dashboard_heartbeat(NOW), [])
+
+
 class NoOrderOutsideEmergencyTests(unittest.TestCase):
     """LA preuve : hors mode urgence, le watchdog n'appelle JAMAIS order_send,
     même face à une position interdite. En mode urgence, il ne ferme QUE la

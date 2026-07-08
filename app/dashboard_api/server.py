@@ -16,7 +16,9 @@ app.dashboard_api.audit.
 """
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -26,6 +28,21 @@ from app.dashboard_api import actions, audit, data, security
 from app.logger import log
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+HEARTBEAT_FILE = Path(__file__).resolve().parents[2] / "logs" / "dashboard_heartbeat.txt"
+HEARTBEAT_INTERVAL_SECONDS = 30
+
+
+async def _heartbeat_loop() -> None:
+    """Independent of incoming HTTP traffic — proves the PROCESS is alive
+    even if nobody has the phone page open. Read by
+    scripts/dashboard_supervisor.ps1 and watchdog's dashboard check."""
+    while True:
+        try:
+            HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            HEARTBEAT_FILE.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        except OSError:
+            pass
+        await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
@@ -37,6 +54,7 @@ async def _lifespan(_app: FastAPI):
         log.warning("[DASHBOARD] Notez-le maintenant, il ne sera plus jamais affiche.")
         log.warning("[DASHBOARD] Changez-le en editant dashboard/.env si besoin.")
         log.warning("=" * 60)
+    heartbeat_task = asyncio.create_task(_heartbeat_loop())
     # dashboard_api is its own process (mission requirement) — it needs its
     # OWN MT5 handle to read account/positions/deals. This is the same
     # pattern watchdog/hermes_watchdog.py and scripts/daily_report.py
@@ -55,6 +73,7 @@ async def _lifespan(_app: FastAPI):
         log.warning("[DASHBOARD] MT5 indisponible au demarrage: %s", exc)
     log.info("[DASHBOARD] demarrage OK, port 127.0.0.1")
     yield
+    heartbeat_task.cancel()
     try:
         import MetaTrader5 as mt5
         mt5.shutdown()

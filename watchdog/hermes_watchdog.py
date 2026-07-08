@@ -9,7 +9,7 @@ bot — à UNE exception près : le MODE URGENCE (WATCHDOG_EMERGENCY_CLOSE=true
 dans watchdog/.env) qui autorise UNIQUEMENT la clôture d'une position sur
 symbole interdit (vérification 1), loggée [WATCHDOG_FORCE_CLOSE].
 
-Les 9 vérifications (chaque cycle) :
+Les 10 vérifications (chaque cycle) :
  1. SYMBOLES      : position/deal du jour hors allowlist (GOLD#, BTCUSD#) -> CRITIQUE
  2. MAX_OPEN      : plus d'1 position HERMES simultanée PAR symbole        -> CRITIQUE
  3. IDENTITÉ      : position lot != 0.01 ou magic != 909002                -> CRITIQUE
@@ -19,6 +19,7 @@ Les 9 vérifications (chaque cycle) :
  7. KILL-SWITCH   : pertes du jour broker > quota ET nouveaux trades       -> CRITIQUE
  8. MACHINE       : disque < 5 GB ; backup du jour manquant après 10h      -> ALERTE
  9. DOUBLE INSTANCE : plus d'un process python du bot                      -> CRITIQUE
+ 10. DASHBOARD HB   : heartbeat dashboard périmé (process optionnel séparé) -> INFO
 
 Heure broker explicite : les deals MT5 sont stampés heure broker (XM = UTC+3).
 La fenêtre "jour broker" = [minuit broker, now+2h] — même convention armored
@@ -54,6 +55,7 @@ DATASET_FILE = REPO_ROOT / "app" / "data" / "decision_dataset.jsonl"
 EVENTS_FILE = REPO_ROOT / "app" / "data" / "demo_pilot_events.jsonl"
 BOT_LOG_FILE = REPO_ROOT / "logs" / "hermes.log"
 BACKUPS_DIR = REPO_ROOT / "backups"
+DASHBOARD_HEARTBEAT_FILE = REPO_ROOT / "logs" / "dashboard_heartbeat.txt"
 
 # ── Invariants surveillés (miroir du routeur ; import best-effort) ──────────
 SYMBOL_ALLOWLIST = ("GOLD#", "BTCUSD#")
@@ -70,6 +72,7 @@ BROKER_UTC_OFFSET_HOURS = 3.0   # XM : deals stampés UTC+3 (explicite, jamais d
 MAX_LOSSES_PER_DAY = 6          # politique DEMO du bot (daily_killswitch)
 MAX_FLOATING_LOSS_PCT = 3.0
 BOT_STALL_MINUTES = 10
+DASHBOARD_STALL_MINUTES = 5  # mission/DASHBOARD.md — le dashboard bat toutes les 30s
 MIN_FREE_DISK_GB = 5.0
 CYCLE_SECONDS = 60
 RESEND_MINUTES = 30
@@ -282,6 +285,30 @@ def check_6_bot_heartbeat(now_utc: datetime) -> list:
     return []
 
 
+def check_10_dashboard_heartbeat(now_utc: datetime) -> list:
+    """mission/DASHBOARD.md — le dashboard est un process séparé et
+    OPTIONNEL : s'il n'a jamais démarré, ce n'est pas une erreur (pas
+    d'alerte). S'il a démarré puis s'est arrêté sans passer par l'action
+    dashboard stop (qui ne touche pas ce fichier), le heartbeat devient
+    périmé — alerte INFO seulement, jamais HAUTE/CRITIQUE : l'absence du
+    dashboard n'affecte jamais le trading (voir app/mt5/demo_router.py,
+    aucun couplage)."""
+    if not DASHBOARD_HEARTBEAT_FILE.exists():
+        return []
+    try:
+        stamp = datetime.fromisoformat(DASHBOARD_HEARTBEAT_FILE.read_text(encoding="utf-8").strip())
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+    except (OSError, ValueError):
+        return []
+    age_min = (now_utc - stamp).total_seconds() / 60.0
+    if age_min > DASHBOARD_STALL_MINUTES:
+        return [(INFO, "DASHBOARD_STALLED",
+                 f"Dashboard possiblement arrêté : heartbeat périmé depuis {age_min:.0f} min "
+                 f"(> {DASHBOARD_STALL_MINUTES} min) — le bot n'est pas affecté")]
+    return []
+
+
 def check_7_killswitch(deals, now_utc: datetime) -> list:
     losses = 0
     last_open_time = None
@@ -409,6 +436,7 @@ def run_cycle(mt5_module, alerts_mgr: AlertManager, cfg: dict, now_utc: datetime
         lambda: check_7_killswitch(deals, now_utc),
         lambda: check_8_machine(now_utc),
         lambda: check_9_double_instance(),
+        lambda: check_10_dashboard_heartbeat(now_utc),
     )
     for check in checks:
         try:

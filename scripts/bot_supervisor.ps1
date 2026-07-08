@@ -67,6 +67,14 @@ function Start-Bot {
     Start-Process -FilePath "python" -ArgumentList "-m", "app.main" -WorkingDirectory $repo -WindowStyle Hidden
 }
 
+function Test-StoppedByUser {
+    # mission/DASHBOARD.md (2026-07-08): dashboard's bot-stop action writes
+    # this flag before killing the process — the supervisor must NOT treat
+    # that as a crash and auto-restart it. Cleared by the dashboard's
+    # bot-start action (app.dashboard_api.actions.action_bot_start).
+    return Test-Path (Join-Path $repo "logs\stopped_by_user.flag")
+}
+
 function Test-WatchdogAlive {
     $hb = Join-Path $repo "watchdog\heartbeat.txt"
     if (-not (Test-Path $hb)) { return $false }
@@ -110,7 +118,11 @@ Write-SupLog "supervisor demarre"
 while ($true) {
     $state = Get-State
     if (-not (Test-BotAlive)) {
-        $state = Invoke-Restart $state "bot_restarts" "bot HERMES (app.main)" { Start-Bot }
+        if (Test-StoppedByUser) {
+            Write-SupLog "[DASHBOARD_STOP] bot arrete volontairement via dashboard, pas de redemarrage auto"
+        } else {
+            $state = Invoke-Restart $state "bot_restarts" "bot HERMES (app.main)" { Start-Bot }
+        }
     }
     if (-not (Test-WatchdogAlive)) {
         $state = Invoke-Restart $state "watchdog_restarts" "watchdog (gardien du gardien)" {
