@@ -122,7 +122,12 @@ def update_state() -> Path:
     lines += [
         "",
         "## Actions humaines (RÉSERVÉ SIMO) en attente",
-        "- Remote git privé toujours à créer (voir docs/BACKUP_SIMO.md) — tant qu'il est absent, le backup quotidien alerte chaque jour.",
+    ]
+    if _git("remote").strip():
+        lines.append("- Remote git privé configuré (voir `git remote -v`) — backup quotidien pousse automatiquement.")
+    else:
+        lines.append("- Remote git privé toujours à créer (voir docs/BACKUP_SIMO.md) — tant qu'il est absent, le backup quotidien alerte chaque jour.")
+    lines += [
         "- Décider de l'activation du MODE URGENCE du watchdog (watchdog/.env, WATCHDOG_EMERGENCY_CLOSE).",
         "- Configurer Telegram (watchdog/.env) pour recevoir les alertes watchdog + le bilan quotidien en push.",
     ]
