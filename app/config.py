@@ -168,10 +168,10 @@ class Settings(BaseModel):
     eurusd_topdown_min: float = 60.0
     eurusd_m15_required: bool = True
     eurusd_m1_required: bool = True
-    # INVARIANT GOLD-ONLY (2026-07-07) : seuls les symboles GOLD sont
-    # candidats au trade. Le choke-point (demo_router.SYMBOL_ALLOWLIST)
-    # bloque de toute façon tout ordre hors GOLD#.
-    hermes_trade_symbols: str = "GOLD#,GOLD,XAUUSD"
+    # GRAND_PLAN 2026-07-08 (décision SIMO) : deux symboles officiels,
+    # GOLD# + BTCUSD#. Le choke-point (demo_router.SYMBOL_ALLOWLIST)
+    # bloque de toute façon tout ordre hors GOLD#/BTCUSD#.
+    hermes_trade_symbols: str = "GOLD#,GOLD,XAUUSD,BTCUSD#,BTCUSD"
     hermes_analysis_only_symbols: str = ""
     gold_liquidity_mode: str = "false"
     gold_liquidity_strategy_enabled: bool = False
@@ -201,7 +201,7 @@ class Settings(BaseModel):
     order_flow_min_score: int = 75
     order_flow_min_rr: float = 1.5
     order_flow_cooldown_minutes: int = 15
-    order_flow_allowed_symbols: str = "GOLD,GOLD#,XAUUSD"
+    order_flow_allowed_symbols: str = "GOLD,GOLD#,XAUUSD,BTCUSD,BTCUSD#"
     hermes_strategy_pack_enabled: bool = True
     hermes_entry_gates_enabled: bool = False
     hermes_setup_tier_enabled: bool = False
@@ -248,7 +248,7 @@ class Settings(BaseModel):
     demo_allow_asia_trading: bool = False
 
     hermes_magic_number: int = 909001
-    symbols: str = "GOLD#"
+    symbols: str = "GOLD#,BTCUSD#"
     main_timeframe: str = "M5"
     poll_seconds: int = 5
 
@@ -397,7 +397,7 @@ class Settings(BaseModel):
     simo_atm_max_trades_per_day: int = 5
     simo_atm_max_daily_loss_percent: float = 2.0
 
-    hermes_main_symbols: str = "GOLD#"
+    hermes_main_symbols: str = "GOLD#,BTCUSD#"
     allow_time_block_override: bool = False
     demo_router_events_max_lines: int = 5000
     demo_router_events_max_bytes: int = 10485760
@@ -604,7 +604,7 @@ def get_settings() -> Settings:
         eurusd_m15_required=_bool_env("EURUSD_M15_REQUIRED", True),
         eurusd_m1_required=_bool_env("EURUSD_M1_REQUIRED", True),
         eurusd_broker_symbol=os.getenv("EURUSD_BROKER_SYMBOL", "EURUSD"),
-        hermes_trade_symbols=os.getenv("HERMES_TRADE_SYMBOLS", "GOLD#,GOLD,XAUUSD"),
+        hermes_trade_symbols=os.getenv("HERMES_TRADE_SYMBOLS", "GOLD#,GOLD,XAUUSD,BTCUSD#,BTCUSD"),
         hermes_analysis_only_symbols=os.getenv("HERMES_ANALYSIS_ONLY_SYMBOLS", ""),
         gold_liquidity_mode=os.getenv("GOLD_LIQUIDITY_MODE", "false").strip(),
         gold_liquidity_strategy_enabled=_bool_env("GOLD_LIQUIDITY_STRATEGY_ENABLED", False),
@@ -775,7 +775,7 @@ def get_settings() -> Settings:
         order_flow_min_score=_int_env("ORDER_FLOW_MIN_SCORE", 75),
         order_flow_min_rr=float(os.getenv("ORDER_FLOW_MIN_RR", "1.5")),
         order_flow_cooldown_minutes=_int_env("ORDER_FLOW_COOLDOWN_MINUTES", 15),
-        order_flow_allowed_symbols=os.getenv("ORDER_FLOW_ALLOWED_SYMBOLS", "GOLD,GOLD#,XAUUSD"),
+        order_flow_allowed_symbols=os.getenv("ORDER_FLOW_ALLOWED_SYMBOLS", "GOLD,GOLD#,XAUUSD,BTCUSD,BTCUSD#"),
         hermes_strategy_pack_enabled=_bool_env("HERMES_STRATEGY_PACK_ENABLED", True),
         hermes_entry_gates_enabled=_bool_env("HERMES_ENTRY_GATES_ENABLED", False),
         hermes_setup_tier_enabled=_bool_env("HERMES_SETUP_TIER_ENABLED", False),
@@ -824,7 +824,7 @@ def get_settings() -> Settings:
         simo_atm_pending_expiry_minutes=int(os.getenv("SIMO_ATM_PENDING_EXPIRY_MINUTES", "30")),
         simo_atm_max_trades_per_day=int(os.getenv("SIMO_ATM_MAX_TRADES_PER_DAY", "5")),
         simo_atm_max_daily_loss_percent=float(os.getenv("SIMO_ATM_MAX_DAILY_LOSS_PERCENT", "2.0")),
-        hermes_main_symbols=os.getenv("HERMES_MAIN_SYMBOLS", "GOLD#"),
+        hermes_main_symbols=os.getenv("HERMES_MAIN_SYMBOLS", "GOLD#,BTCUSD#"),
         allow_time_block_override=_bool_env("ALLOW_TIME_BLOCK_OVERRIDE", False),
         demo_router_events_max_lines=_int_env("DEMO_ROUTER_EVENTS_MAX_LINES", 5000),
         demo_router_events_max_bytes=_int_env("DEMO_ROUTER_EVENTS_MAX_BYTES", 10485760),

@@ -112,6 +112,17 @@ def is_gold_symbol(symbol: object) -> bool:
     return normalized.startswith("GOLD") or normalized.startswith("XAUUSD")
 
 
+def is_exit_v2_symbol(symbol: object) -> bool:
+    """Symbols whose exits belong EXCLUSIVELY to Exit V2.
+
+    GRAND_PLAN 2026-07-08 (décision SIMO, deux symboles officiels) : Exit V2
+    est l'autorité de sortie unique pour GOLD# ET BTCUSD#. Le moteur est
+    money-based (USD) donc symbol-agnostic par construction.
+    """
+    normalized = str(symbol or "").upper().strip()
+    return is_gold_symbol(normalized) or normalized.startswith("BTCUSD")
+
+
 def _to_float(value: object) -> float | None:
     try:
         if value is None:

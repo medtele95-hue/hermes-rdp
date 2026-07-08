@@ -2634,9 +2634,12 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
                 send.assert_not_called()
 
     def quick_exit_position(self, **overrides) -> SimpleNamespace:
+        # GRAND_PLAN 2026-07-08 : BTCUSD# appartient désormais à Exit V2 ;
+        # la mécanique legacy QUICK_EXIT ne se teste plus que sur un symbole
+        # hors allowlist (position résiduelle éventuelle).
         payload = {
             "ticket": 9001,
-            "symbol": "BTCUSD#",
+            "symbol": "EURUSD",
             "magic": 909002,
             "type": 0,
             "volume": 0.01,

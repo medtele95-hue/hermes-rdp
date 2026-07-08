@@ -56,9 +56,11 @@ def _settings(**kwargs) -> Settings:
 # ─── Issue 1: HERMES_MAIN_SYMBOLS includes US100Cash# ─────────────────────────
 
 class TestSymbolCycleConfig(unittest.TestCase):
-    def test_hermes_main_symbols_default_includes_us100(self) -> None:
+    def test_hermes_main_symbols_default_is_two_official_symbols(self) -> None:
+        # GRAND_PLAN 2026-07-08 (décision SIMO) : le cycle par défaut porte
+        # exactement les deux symboles officiels. US100 n'est plus au cycle.
         s = Settings()
-        self.assertIn("US100Cash#", s.hermes_main_symbol_list)
+        self.assertEqual(s.hermes_main_symbol_list, ["GOLD#", "BTCUSD#"])
 
     def test_hermes_main_symbol_list_property(self) -> None:
         s = _settings(hermes_main_symbols="BTCUSD#,GOLD#,EURUSD,US100Cash#")

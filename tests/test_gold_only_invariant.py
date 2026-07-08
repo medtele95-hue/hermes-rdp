@@ -1,14 +1,18 @@
-"""INVARIANTS HISTORIQUES ABSOLUS — preuve permanente (mission FIX_BTC 2026-07-07).
+"""INVARIANTS HISTORIQUES ABSOLUS — preuve permanente.
+
+Mission FIX_BTC 2026-07-07, amendée GRAND_PLAN 2026-07-08 (décision SIMO) :
+DEUX symboles officiels, SYMBOL_ALLOWLIST = (GOLD#, BTCUSD#).
 
 Ces tests sont le contrat : ils prouvent qu'AUCUN chemin de code ne peut
-envoyer un ordre sur un symbole hors SYMBOL_ALLOWLIST (=GOLD#), même avec
-un candidat parfait qui a déjà franchi toutes les gates amont — le verrou
-vit au choke-point, juste avant mt5.order_send. Ils prouvent aussi les
-quatre autres invariants : MAX_OPEN_TRADES_PER_SYMBOL=1, lot figé 0.01,
-magic 909002 sur tout ordre, SL/TP obligatoires (jamais d'ordre nu).
+envoyer un ordre sur un symbole hors SYMBOL_ALLOWLIST, même avec un candidat
+parfait qui a déjà franchi toutes les gates amont — le verrou vit au
+choke-point, juste avant mt5.order_send. Ils prouvent aussi les autres
+invariants, appliqués aux DEUX symboles : MAX_OPEN_TRADES_PER_SYMBOL=1
+(par symbole, indépendant), lot figé 0.01, magic 909002 sur tout ordre,
+SL/TP obligatoires (jamais d'ordre nu), Exit V2 autorité de sortie unique.
 
 NE PAS affaiblir ces tests. Si l'un d'eux casse, c'est que l'invariant
-GOLD-only a été perdu — le restaurer, pas adapter le test.
+allowlist a été perdu — le restaurer, pas adapter le test.
 """
 from __future__ import annotations
 
@@ -41,29 +45,29 @@ def _request(**overrides) -> dict:
 
 
 class SymbolAllowlistInvariantTests(unittest.TestCase):
-    """Invariant 1 — GOLD-ONLY : allowlist stricte au choke-point."""
+    """Invariant 1 — allowlist stricte au choke-point (GOLD# + BTCUSD#)."""
 
-    def test_allowlist_is_gold_hash_only(self) -> None:
-        self.assertEqual(tuple(SYMBOL_ALLOWLIST), ("GOLD#",))
+    def test_allowlist_is_gold_and_btc_exactly(self) -> None:
+        self.assertEqual(tuple(SYMBOL_ALLOWLIST), ("GOLD#", "BTCUSD#"))
 
-    def test_btcusd_perfect_candidate_is_blocked(self) -> None:
-        request = _request(symbol="BTCUSD#", price=63000.0, sl=63500.0, tp=62000.0)
-        with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
-            with self.assertLogs("hermes", level="WARNING") as captured:
-                reason = _execution_invariants_block(request, "BTC_SCALPING_AGENT")
-        self.assertEqual(reason, "SYMBOL_BLOCKED")
-        self.assertTrue(any("[SYMBOL_BLOCKED]" in line and "BTCUSD#" in line for line in captured.output))
-
-    def test_every_non_gold_symbol_is_blocked(self) -> None:
-        for symbol in ("BTCUSD", "BTCUSD#", "EURUSD", "US100Cash#", "US100", "NAS100", "USTEC", "GOLD", "XAUUSD", "GOLDCASH#", "", None):
+    def test_every_non_allowlisted_symbol_is_blocked(self) -> None:
+        for symbol in ("BTCUSD", "EURUSD", "US100Cash#", "US100", "NAS100", "USTEC", "GOLD", "XAUUSD", "GOLDCASH#", "", None):
             with self.subTest(symbol=symbol):
                 with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
-                    reason = _execution_invariants_block(_request(symbol=symbol), "ANY_STRATEGY")
+                    with self.assertLogs("hermes", level="WARNING") as captured:
+                        reason = _execution_invariants_block(_request(symbol=symbol), "ANY_STRATEGY")
                 self.assertEqual(reason, "SYMBOL_BLOCKED")
+                self.assertTrue(any("[SYMBOL_BLOCKED]" in line for line in captured.output))
 
     def test_gold_hash_passes(self) -> None:
         with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
             reason = _execution_invariants_block(_request(), "GOLD_LIQUIDITY_HUNTER_PRO")
+        self.assertIsNone(reason)
+
+    def test_btcusd_hash_passes(self) -> None:
+        request = _request(symbol="BTCUSD#", price=63000.0, sl=63500.0, tp=62000.0)
+        with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
+            reason = _execution_invariants_block(request, "BTC_SCALPING_AGENT")
         self.assertIsNone(reason)
 
 
@@ -143,6 +147,35 @@ class MaxOpenPerSymbolInvariantTests(unittest.TestCase):
             reason = _execution_invariants_block(_request(), "S", max_open_per_symbol=1)
         self.assertIsNone(reason)
 
+    def test_max_open_is_per_symbol_gold_does_not_block_btc(self) -> None:
+        """MAX_OPEN=1 PAR symbole : une position GOLD vivante ne bloque pas
+        un nouvel ordre BTCUSD# (et réciproquement). Le choke-point interroge
+        positions_get(symbol=...) — le mock reproduit ce filtre."""
+        gold_pos = SimpleNamespace(ticket=1, symbol="GOLD#", magic=MAGIC_HARD)
+
+        def _positions_for(symbol=None, **_kwargs):
+            return [gold_pos] if symbol == "GOLD#" else []
+
+        btc_request = _request(symbol="BTCUSD#", price=63000.0, sl=63500.0, tp=62000.0)
+        with patch("app.mt5.demo_router.mt5.positions_get", side_effect=_positions_for):
+            btc_reason = _execution_invariants_block(btc_request, "S", max_open_per_symbol=1)
+            gold_reason = _execution_invariants_block(_request(), "S", max_open_per_symbol=1)
+        self.assertIsNone(btc_reason)
+        self.assertEqual(gold_reason, "MAX_OPEN_TRADES_PER_SYMBOL")
+
+
+class ExitV2BothSymbolsTests(unittest.TestCase):
+    """GRAND_PLAN 2026-07-08 — Exit V2 est l'autorité de sortie unique pour
+    les DEUX symboles officiels (le routeur route GOLD et BTCUSD vers Exit V2,
+    jamais vers le QUICK_EXIT parasite)."""
+
+    def test_exit_v2_covers_gold_and_btc(self) -> None:
+        from app.services.exit_v2 import is_exit_v2_symbol
+        for symbol in ("GOLD#", "GOLD", "XAUUSD", "BTCUSD#", "BTCUSD"):
+            self.assertTrue(is_exit_v2_symbol(symbol), symbol)
+        for symbol in ("EURUSD", "US100Cash#", "", None):
+            self.assertFalse(is_exit_v2_symbol(symbol), symbol)
+
 
 class ChokePointEndToEndTests(unittest.TestCase):
     """Preuve au choke-point réel : un candidat parfait hors GOLD# n'atteint
@@ -201,8 +234,22 @@ class ChokePointEndToEndTests(unittest.TestCase):
             outcome = self.router._send_order(event)
         return outcome, send
 
-    def test_perfect_btc_candidate_never_reaches_order_send(self) -> None:
+    def test_perfect_btc_candidate_executes_with_invariants(self) -> None:
+        # GRAND_PLAN 2026-07-08 : BTCUSD# est officiel — un candidat parfait
+        # s'exécute, avec les MÊMES invariants forcés que GOLD (lot, magic, SL/TP).
         event = self._event("BTCUSD#", entry=63000.0, sl=63500.0, tp=62000.0, strategy="BTC_SCALPING_AGENT")
+        outcome, send = self._send(event)
+        send.assert_called_once()
+        request = send.call_args.args[0]
+        self.assertEqual(request["symbol"], "BTCUSD#")
+        self.assertEqual(request["volume"], LOT_HARD_CAP)
+        self.assertEqual(request["magic"], MAGIC_HARD)
+        self.assertGreater(request["sl"], 0)
+        self.assertGreater(request["tp"], 0)
+        self.assertEqual(outcome["event_type"], "DEMO_ORDER")
+
+    def test_btcusd_without_hash_never_reaches_order_send(self) -> None:
+        event = self._event("BTCUSD", entry=63000.0, sl=63500.0, tp=62000.0, strategy="BTC_SCALPING_AGENT")
         with self.assertLogs("hermes", level="WARNING") as captured:
             outcome, send = self._send(event)
         send.assert_not_called()

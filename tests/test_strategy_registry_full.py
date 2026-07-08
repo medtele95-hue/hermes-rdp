@@ -153,8 +153,8 @@ class TestRegistryClassification(unittest.TestCase):
 
 class TestSymbolStrategyRouting(unittest.TestCase):
     def test_simo_allowed_on_all_canonical_symbols(self) -> None:
-        # INVARIANT GOLD-ONLY (2026-07-07) : plus AUCUNE stratégie sur BTC.
-        self.assertFalse(allowed_for_symbol("SIMO_ATM_BREAKOUT", "BTCUSD#"))
+        # GRAND_PLAN 2026-07-08 : BTCUSD# redevient officiel aux côtés de GOLD#.
+        self.assertTrue(allowed_for_symbol("SIMO_ATM_BREAKOUT", "BTCUSD#"))
         self.assertTrue(allowed_for_symbol("SIMO_ATM_BREAKOUT", "GOLD#"))
         self.assertTrue(allowed_for_symbol("SIMO_ATM_BREAKOUT", "EURUSD"))
 
@@ -168,18 +168,28 @@ class TestSymbolStrategyRouting(unittest.TestCase):
         self.assertFalse(allowed_for_symbol("BTC_SCALPING_AGENT", "EURUSD"))
         self.assertFalse(allowed_for_symbol("QUANT_PRO_REGIME_SWITCHING", "EURUSD"))
 
-    def test_btc_is_hard_disabled_for_every_strategy(self) -> None:
-        # INVARIANT GOLD-ONLY (2026-07-07, mission FIX_BTC) : BTC hard-disabled.
-        # Aucune stratégie, quelle qu'elle soit, ne candidate sur BTCUSD.
-        self.assertEqual(ALLOWED_BTC_EXECUTION_STRATEGIES, frozenset())
-        for strat in ("BTC_SCALPING_AGENT", "ORDER_FLOW_EXECUTION_AGENT",
-                      "SIMO_ATM_BREAKOUT", "FIB_CONFLUENCE_EXECUTION_AGENT",
-                      "HERMES_STRATEGY_PACK_AGENT", "GOLD_LIQUIDITY_HUNTER_PRO"):
+    def test_btc_allowlisted_strategies_match_registry(self) -> None:
+        # GRAND_PLAN 2026-07-08 (décision SIMO) : BTCUSD# officiel. Les
+        # stratégies BTC du registry candidatent ; les stratégies GOLD-only
+        # et génériques restent interdites sur BTC.
+        self.assertEqual(
+            ALLOWED_BTC_EXECUTION_STRATEGIES,
+            frozenset({"SIMO_ATM_BREAKOUT", "BTC_SCALPING_AGENT",
+                       "FIB_CONFLUENCE_EXECUTION_AGENT",
+                       "ORDER_FLOW_EXECUTION_AGENT",
+                       "HERMES_STRATEGY_PACK_AGENT"}),
+        )
+        for strat in ALLOWED_BTC_EXECUTION_STRATEGIES:
+            self.assertTrue(
+                allowed_for_symbol(strat, "BTCUSD#"),
+                f"{strat} should be allowed on BTCUSD#",
+            )
+        for strat in ("GOLD_LIQUIDITY_HUNTER_PRO", "QUANT_PRO_REGIME_SWITCHING",
+                      "GOLD_M1_M5_EMA_SWEEP_SCALPER"):
             self.assertFalse(
                 allowed_for_symbol(strat, "BTCUSD#"),
                 f"{strat} must NEVER be allowed on BTCUSD#",
             )
-            self.assertFalse(allowed_for_symbol(strat, "BTCUSD"))
 
     def test_gold_execution_strategies_match_registry(self) -> None:
         for strat in ALLOWED_GOLD_EXECUTION_STRATEGIES:

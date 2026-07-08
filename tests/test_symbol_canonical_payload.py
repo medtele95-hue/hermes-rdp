@@ -444,9 +444,12 @@ class TestPhase9SymbolsBlockMode(unittest.TestCase):
         self.assertEqual(block["US100Cash#"]["mode"], "OBSERVATION_ONLY")
 
     def test_trade_symbols_have_route_allowed_true(self) -> None:
+        # GRAND_PLAN 2026-07-08 : seuls GOLD# et BTCUSD# sont routables ;
+        # EURUSD reste au payload (analyse) mais n'est plus route_allowed.
         block = self._block()
-        for sym in ("BTCUSD#", "GOLD#", "EURUSD"):
+        for sym in ("BTCUSD#", "GOLD#"):
             self.assertTrue(block[sym]["route_allowed"], f"{sym} route_allowed should be True")
+        self.assertFalse(block["EURUSD"]["route_allowed"], "EURUSD must not be routable")
 
     def test_analysis_only_symbol_has_route_allowed_false(self) -> None:
         s = _cfg(

@@ -171,12 +171,30 @@ class TestRouterGoldAuthority(unittest.TestCase):
         items, send = self._run(router, [pos])
         send.assert_not_called()
 
-    def test_btc_positions_keep_legacy_quick_exit(self) -> None:
-        router = self._router("btc_legacy")
-        # above the legacy quick-exit TP ($4.00 default) — still closes off-GOLD
-        # (the legacy engine computes profit from prices: exit bid 3300.0 vs
-        # entry 3295.0 at $1/price-unit = +$5.00)
+    def test_btc_positions_route_to_exit_v2(self) -> None:
+        # GRAND_PLAN 2026-07-08 (décision SIMO, deux symboles officiels) :
+        # Exit V2 est l'autorité de sortie unique pour BTCUSD# aussi. Le
+        # QUICK_EXIT parasite (TP money $4) ne touche plus JAMAIS une position
+        # BTC : à +$5.00 Exit V2 arme le BE et HOLD (le gagnant court), là où
+        # le parasite aurait fermé ; puis le trailing floor Exit V2 ferme.
+        router = self._router("btc_exit_v2")
         pos = _pos(symbol="BTCUSD#", profit=5.0)
+        pos.price_open = 3295.0
+        items, send = self._run(router, [pos])   # cycle 1: peak 5.0 -> HOLD
+        send.assert_not_called()                  # le parasite aurait fermé ici
+        self.assertFalse(any(str(item["data"].get("event_type", "")).startswith("QUICK_EXIT") for item in items))
+        pos.profit = 3.5                          # cycle 2: sous le floor 3.8
+        items, send = self._run(router, [pos])
+        send.assert_called_once()
+        events = [item["data"] for item in items]
+        close_event = next(e for e in events if e.get("event_type") == "EXIT_V2_CLOSE")
+        self.assertEqual(close_event.get("exit_v2_reason"), "EXIT_V2_TRAIL_FLOOR")
+
+    def test_eurusd_positions_keep_legacy_quick_exit(self) -> None:
+        # Hors allowlist (position résiduelle éventuelle) : le legacy engine
+        # reste le gestionnaire — Exit V2 est réservé aux symboles officiels.
+        router = self._router("eur_legacy")
+        pos = _pos(symbol="EURUSD", profit=5.0)
         pos.price_open = 3295.0
         items, send = self._run(router, [pos])
         send.assert_called_once()

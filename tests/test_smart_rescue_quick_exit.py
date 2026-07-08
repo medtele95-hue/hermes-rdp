@@ -370,37 +370,32 @@ class TestRouterRescueIntegration(unittest.TestCase):
                         account=self._demo_account(), mt5_connected=True
                     ), stub
 
-    def test_rescue_arms_when_profit_hits_drawdown(self) -> None:
+    def test_rescue_never_arms_on_exit_v2_symbol(self) -> None:
+        # GRAND_PLAN 2026-07-08 : Exit V2 est l'autorité de sortie UNIQUE des
+        # symboles officiels (GOLD#, BTCUSD#). Le Smart Rescue ne doit plus
+        # jamais armer un état sur une position BTC — elle appartient à Exit V2.
         router = _make_router()
         pos = _btc_pos(profit=-0.30)
         self._run_quick_exits(router, [pos])
-        ticket = int(pos.ticket)
-        self.assertIn(ticket, router._rescue_states)
-        self.assertTrue(router._rescue_states[ticket]["rescue_armed"])
+        self.assertEqual(router._rescue_states, {})
 
-    def test_rescue_close_called_when_armed_and_positive(self) -> None:
+    def test_rescue_close_never_called_on_exit_v2_symbol(self) -> None:
+        # Même pré-armé (état résiduel d'avant le pivot), le rescue ne ferme
+        # plus une position BTC : Exit V2 est l'autorité unique.
         router = _make_router()
-        # Pre-arm the rescue state
         router._rescue_states[100001] = {
             "ticket": 100001, "symbol": "BTCUSD#", "magic": 909002, "comment": "HERMES",
             "opened_at": 0, "min_seen_profit": -0.30, "max_seen_profit": -0.30,
             "was_negative": True, "rescue_armed": True, "last_seen_profit": -0.30,
         }
-        close_called = []
-
-        def fake_rescue_close(pos, rescue_action, now=None):
-            close_called.append(rescue_action["reason"])
-            return {"event_type": "RESCUE_CLOSE", "status": "ORDER_CONFIRMED", "created_at": "2026-01-01T00:00:00"}
-
         stub = _make_mt5_stub()
         stub.positions_get.return_value = [_btc_pos(profit=0.10)]
         with patch.object(_dr_module, "mt5", stub):
             with patch.object(router, "account_diagnostics", return_value=self._demo_account()):
-                with patch.object(router, "_rescue_close", side_effect=fake_rescue_close):
+                with patch.object(router, "_rescue_close") as mock_close:
                     with patch.object(router, "_record_event"):
                         router.process_quick_exits(account=self._demo_account(), mt5_connected=True)
-
-        self.assertIn("NEGATIVE_THEN_SMALL_POSITIVE", close_called)
+        mock_close.assert_not_called()
 
     def test_non_hermes_btc_position_skipped(self) -> None:
         router = _make_router()
@@ -471,28 +466,21 @@ class TestRouterRescueIntegration(unittest.TestCase):
                     router.process_quick_exits(account=self._demo_account(), mt5_connected=True)
         self.assertNotIn(999, router._rescue_states)
 
-    def test_emergency_closes_when_multiple_open(self) -> None:
+    def test_emergency_multiple_open_no_longer_closes_exit_v2_symbols(self) -> None:
+        # GRAND_PLAN 2026-07-08 : même à 2 positions BTC ouvertes, le rescue
+        # d'urgence ne ferme plus — Exit V2 est l'autorité unique des symboles
+        # officiels (et MAX_OPEN=1 par symbole empêche ce scénario en amont).
         router = _make_router()
         pos1 = _btc_pos(ticket=300001, profit=0.09)
         pos2 = _btc_pos(ticket=300002, profit=0.09)
-        close_reasons = []
-
-        def fake_rescue_close(pos, rescue_action, now=None):
-            close_reasons.append(rescue_action.get("reason", ""))
-            return {"event_type": "RESCUE_CLOSE", "status": "ORDER_CONFIRMED", "created_at": "2026-01-01"}
-
         stub = _make_mt5_stub()
         stub.positions_get.return_value = [pos1, pos2]
         with patch.object(_dr_module, "mt5", stub):
             with patch.object(router, "account_diagnostics", return_value=self._demo_account()):
-                with patch.object(router, "_rescue_close", side_effect=fake_rescue_close):
+                with patch.object(router, "_rescue_close") as mock_close:
                     with patch.object(router, "_record_event"):
                         router.process_quick_exits(account=self._demo_account(), mt5_connected=True)
-
-        self.assertTrue(
-            any(r == "EMERGENCY_MULTIPLE_POSITIONS" for r in close_reasons),
-            f"Expected EMERGENCY_MULTIPLE_POSITIONS, got: {close_reasons}",
-        )
+        mock_close.assert_not_called()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -32,7 +32,7 @@ from app.services.protected_calendar import (
     weekend_entry_block,
     weekend_flat_close_due,
 )
-from app.services.exit_v2 import ExitV2Config, evaluate_exit_v2, is_gold_symbol as _exit_v2_is_gold
+from app.services.exit_v2 import ExitV2Config, evaluate_exit_v2, is_exit_v2_symbol as _exit_v2_symbol
 from app.services.adaptive_confluence_threshold import evaluate_adaptive_confluence
 from app.services.mt5_pnl_truth import get_mt5_hermes_pnl_truth
 from app.services.quick_exit_manager import QuickExitConfig, hermes_dynamic_exit, manage_quick_exit_position
@@ -44,19 +44,28 @@ from app.utils.throttle import log_event_throttled
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# INVARIANTS HISTORIQUES ABSOLUS — restaurés le 2026-07-07 (mission FIX_BTC)
-# GOLD-ONLY : aucune NOUVELLE exposition hors SYMBOL_ALLOWLIST, quel que soit
-# le chemin de code. Enforcé par _execution_invariants_block() juste avant
+# INVARIANTS HISTORIQUES ABSOLUS — restaurés le 2026-07-07 (mission FIX_BTC),
+# amendés le 2026-07-08 (GRAND_PLAN, décision SIMO) : DEUX symboles officiels,
+# GOLD# + BTCUSD#. Aucune NOUVELLE exposition hors SYMBOL_ALLOWLIST, quel que
+# soit le chemin de code. Enforcé par _execution_invariants_block() juste avant
 # mt5.order_send dans _send_order (marché) et _send_pending_order (pending),
 # les deux seuls points du système qui créent de l'exposition. Les fermetures
 # et modifications de SL/TP de positions existantes restent permises
 # (réduction de risque uniquement). Constantes volontairement en dur :
 # PAS de flag .env, PAS de Settings, PAS de contournement possible.
-SYMBOL_ALLOWLIST = ("GOLD#",)
+# Invariants appliqués aux DEUX symboles : lot 0.01, RR>=1.0 (RR_FLOOR),
+# kill-switch quotidien partagé (compté par magic, tous symboles confondus),
+# Exit V2 actif, MAX_OPEN=1 PAR symbole, flat-weekend, SL/TP obligatoires.
+SYMBOL_ALLOWLIST = ("GOLD#", "BTCUSD#")
 LOT_HARD_CAP = 0.01
 MAGIC_HARD = 909002
 # ═════════════════════════════════════════════════════════════════════════
-ALLOWED_DEMO_SYMBOLS = {"GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#"}
+# Symboles SUPPORTÉS par la mécanique du routeur (gate d'analyse, pas
+# d'autorisation de trade). L'autorisation réelle = intersection avec
+# hermes_trade_symbols (.env) PUIS le verrou absolu SYMBOL_ALLOWLIST au
+# choke-point. EURUSD/US100 restent ici pour le harnais de tests génériques ;
+# ils ne peuvent JAMAIS trader (absents de .env et de l'allowlist).
+ALLOWED_DEMO_SYMBOLS = {"BTCUSD#", "BTCUSD", "GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#", "EURUSD", "US100Cash#", "US100Cash", "US100", "NAS100", "USTEC"}
 GOLD_GENERIC_DISABLED_STRATEGIES = {
     "TREND_CONTINUATION_BREAKDOWN",
     "QUANT_PRO_REGIME_SWITCHING",
@@ -188,10 +197,10 @@ def _execution_invariants_block(request: dict, strategy: object, max_open_per_sy
     """
     symbol = str(request.get("symbol") or "")
     strat = str(strategy or "UNKNOWN")
-    # Invariant 1 — GOLD-ONLY : allowlist stricte au choke-point.
+    # Invariant 1 — allowlist stricte au choke-point (GOLD# + BTCUSD#).
     if symbol not in SYMBOL_ALLOWLIST:
         log.warning(
-            "[SYMBOL_BLOCKED] symbol=%s strategy=%s allowlist=%s reason=GOLD_ONLY_INVARIANT",
+            "[SYMBOL_BLOCKED] symbol=%s strategy=%s allowlist=%s reason=SYMBOL_ALLOWLIST_INVARIANT",
             symbol, strat, list(SYMBOL_ALLOWLIST),
         )
         return "SYMBOL_BLOCKED"
@@ -566,10 +575,11 @@ class DemoKellyRouter:
             symbol = _pos_symbol
             tick = mt5.symbol_info_tick(symbol)
             info = mt5.symbol_info(symbol)
-            # BLOC 4: GOLD exits belong EXCLUSIVELY to Exit V2. The QUICK_EXIT
-            # parasite (TP money $1.50, sneaky lock-SL $0.80, trailing,
-            # dynamic exit) is skipped in full for GOLD.
-            if _exit_v2_is_gold(symbol):
+            # BLOC 4 + GRAND_PLAN 2026-07-08: GOLD and BTCUSD exits belong
+            # EXCLUSIVELY to Exit V2. The QUICK_EXIT parasite (TP money $1.50,
+            # sneaky lock-SL $0.80, trailing, dynamic exit) is skipped in full
+            # for both official symbols.
+            if _exit_v2_symbol(symbol):
                 for _v2_event in self._process_exit_v2_position(pos, account, now):
                     self._record_event(_v2_event)
                     items.append(self._ingest_event(_v2_event))
@@ -663,6 +673,13 @@ class DemoKellyRouter:
                         )
                     continue
 
+                # GRAND_PLAN 2026-07-08: Exit V2 est l'autorité de sortie
+                # UNIQUE des symboles officiels — le Smart Rescue parasite ne
+                # touche plus jamais une position gérée par Exit V2.
+                if _exit_v2_symbol(_pos_symbol_r):
+                    log.debug("[OLD_BTC_RESCUE_SKIP] ticket=%s reason=EXIT_V2_AUTHORITY", _pos_ticket)
+                    continue
+
                 if _pos_ticket in _quick_exit_closed:
                     continue  # already closed by normal quick exit this cycle
 
@@ -748,6 +765,12 @@ class DemoKellyRouter:
                 if not is_hermes_btc_pos(pos, int(getattr(self.settings, "demo_magic_number", 909002))):
                     if _pos_sym_d in {"BTCUSD#", "BTCUSD"}:
                         log.debug("[OLD_BTC_SMART_EXIT_SKIP] ticket=%s reason=NOT_HERMES_BTC", _pos_ticket_d)
+                    continue
+
+                # GRAND_PLAN 2026-07-08: Exit V2 autorité unique — le closer
+                # Market Danger ne touche plus les symboles Exit V2.
+                if _exit_v2_symbol(_pos_sym_d):
+                    log.debug("[OLD_BTC_SMART_EXIT_SKIP] ticket=%s reason=EXIT_V2_AUTHORITY", _pos_ticket_d)
                     continue
 
                 if _pos_ticket_d in _quick_exit_closed:
