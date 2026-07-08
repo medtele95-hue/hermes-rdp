@@ -1,9 +1,10 @@
 # HERMES_STATE — état vivant
-_Mis à jour automatiquement le 2026-07-08T04:28:51.220202+00:00 par scripts/update_hermes_state.py_
+_Mis à jour automatiquement le 2026-07-08T04:38:36.181256+00:00 par scripts/update_hermes_state.py_
 
 ## Version
 - Branche : `feature/geo-confluence-hardening`
 - Derniers tags :
+  - mission4-automation
   - mission2-math-core-audit
   - mission3-watchdog
   - safepoint-pre-math-core-audit
@@ -13,8 +14,8 @@ _Mis à jour automatiquement le 2026-07-08T04:28:51.220202+00:00 par scripts/upd
   - bloc11-hygiene
   - hui-done
   - bloc10-super-eyes
-  - safepoint-pre-bloc-11
 - Derniers commits :
+  - df1f499 mission4 (GRAND_PLAN): automatisation quotidien complete, 4 scripts + 3 taches
   - 0a8ffce mission2 (GRAND_PLAN): MATH_CORE_AUDIT - audit formule par formule, 1 bug CASSE corrige
   - c338a1b mission3 (GRAND_PLAN): WATCHDOG independant, 9 verifications, tache planifiee
   - 20d3b2e mission1 (GRAND_PLAN): pivot allowlist GOLD#+BTCUSD#, Exit V2 autorite unique, HERMES_LOG_FILE permanent
@@ -22,7 +23,6 @@ _Mis à jour automatiquement le 2026-07-08T04:28:51.220202+00:00 par scripts/upd
   - aa9a546 safepoint: verrou GOLD-only (etat intermediaire mission FIX_BTC v1, avant pivot BTC-allow)
   - f5cc776 safepoint: avant mission FIX_BTC (verrou GOLD-only)
   - 5d8323b final: RESURRECTION_REPORT + verified boot proof
-  - cb9ccb4 bloc11: hygiene + resilience (anti-loop, sync purge, bridge, backup, lock)
 
 ## Invariants actifs (verrou GRAND_PLAN mission1)
 - SYMBOL_ALLOWLIST = (GOLD#, BTCUSD#) — tout autre symbole → [SYMBOL_BLOCKED]
@@ -35,7 +35,7 @@ _Mis à jour automatiquement le 2026-07-08T04:28:51.220202+00:00 par scripts/upd
 ## Métriques cumulées (dataset, tout-temps)
 - Trades clôturés enregistrés : 22 (objectif pilote 50)
 - P&L net cumulé : -69.06 USD
-- Taille dataset : 1644 lignes
+- Taille dataset : 1647 lignes
 
 ## Alertes ouvertes (watchdog, dernières CRITIQUE/HAUTE)
 - 2026-07-08T04:19:03.569182+00:00 [HAUTE] BOT_STALLED :: Bot possiblement mort : aucun fichier modifié depuis 11 min (> 10 min, heures de marché)

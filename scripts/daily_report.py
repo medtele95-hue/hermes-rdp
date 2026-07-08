@@ -215,6 +215,55 @@ def _last_backup() -> str:
     return dated[0] if dated else "AUCUN"
 
 
+def _auto_medic_summary_today(today: str) -> str:
+    reports = sorted(REPORTS_DIR.glob(f"auto_medic_{today}*.md"), reverse=True)
+    if not reports:
+        return "RAS"
+    try:
+        text = reports[0].read_text(encoding="utf-8")
+    except OSError:
+        return "RAS"
+    for line in text.splitlines():
+        if line.strip().startswith("## Résumé") or line.strip().startswith("## Actions"):
+            idx = text.splitlines().index(line)
+            snippet = " / ".join(l.strip("- ").strip() for l in text.splitlines()[idx + 1:idx + 4] if l.strip())
+            return snippet or "voir rapport"
+    return f"voir {reports[0].name}"
+
+
+def _reserve_simo_items(backup_status: dict) -> list[str]:
+    items = []
+    if backup_status and not backup_status.get("remote_ok", False):
+        items.append("remote git manquant")
+    if backup_status and not backup_status.get("google_drive"):
+        items.append("Google Drive non détecté")
+    env_file = REPO_ROOT / "watchdog" / ".env"
+    if env_file.exists():
+        cfg_text = env_file.read_text(encoding="utf-8")
+        if "TELEGRAM_BOT_TOKEN=" in cfg_text and cfg_text.split("TELEGRAM_BOT_TOKEN=")[1].split("\n")[0].strip() == "":
+            items.append("Telegram non configuré")
+    return items
+
+
+def _build_telegram_message(
+    today: str, net_today: float, wins_today: int, losses_today: int, all_time: dict,
+    refused: Counter, watchdog_alerts: list[str], backup_status: dict,
+) -> str:
+    refus_parts = ", ".join(f"{k}:{v}" for k, v in refused.most_common()) if refused else "RAS"
+    watchdog_line = "RAS" if not watchdog_alerts else f"{len(watchdog_alerts)} alerte(s)"
+    medic_line = _auto_medic_summary_today(today)
+    reserve = _reserve_simo_items(backup_status)
+    reserve_line = "RAS" if not reserve else ", ".join(reserve)
+    return (
+        f"📊 HERMES {today} : P&L {net_today:+.2f} USD ({wins_today}G/{losses_today}P), "
+        f"cumul {all_time['total_trades']}/50 trades\n"
+        f"🛡️ Refus du jour : {refus_parts}\n"
+        f"🐕 Watchdog : {watchdog_line}\n"
+        f"🔧 Auto-médecin : {medic_line}\n"
+        f"⚠️ RÉSERVÉ SIMO : {reserve_line}"
+    )
+
+
 def _all_time_stats(dataset_rows: list[dict]) -> dict:
     outcomes = [r for r in dataset_rows if r.get("row_type") == "outcome" and r.get("pnl_reconciled") is not None]
     total = len(outcomes)
@@ -344,7 +393,9 @@ def build_report() -> Path:
     out_path = REPORTS_DIR / f"bilan_{today_broker}.md"
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
-    _send_telegram("📊 HERMES bilan " + today_broker + "\n" + "\n".join(summary))
+    _send_telegram(_build_telegram_message(
+        today_broker, net_today, wins_today, losses_today, all_time, refused, watchdog_alerts, backup_status,
+    ))
 
     try:
         sys.path.insert(0, str(REPO_ROOT / "scripts"))

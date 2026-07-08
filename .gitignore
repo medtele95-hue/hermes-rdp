@@ -5,8 +5,12 @@ __pycache__/
 
 # Runtime noise (root-level logs and dumps from old runs stay tracked; new ones ignored)
 *.log
+*.bak
 runtime_*.txt
 pilot_*.txt
+logs/
+watchdog/heartbeat.txt
+watchdog/alert_state.json
 
 # Local backups produced by the daily backup job
 backups/

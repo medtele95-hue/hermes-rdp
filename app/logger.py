@@ -20,6 +20,20 @@ from typing import Optional
 _DEFAULT_LOG_FILE = Path(__file__).resolve().parents[1] / "logs" / "hermes.log"
 
 
+class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler dont un rollover en échec (ex: fichier verrouillé par
+    un ancien process encore en train de mourir lors d'un restart) ne rend pas
+    le handler définitivement muet. Diagnostiqué par l'auto-médecin le
+    2026-07-08 : hermes.log s'est figé en silence après un double auto-restart
+    du superviseur, sans jamais faire remonter d'exception."""
+
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except OSError as exc:
+            sys.stderr.write(f"[HERMES_LOG_ROLLOVER_FAILED] {exc}\n")
+
+
 def _resolve_log_file() -> Path:
     override = str(os.getenv("HERMES_LOG_FILE") or "").strip()
     return Path(override) if override else _DEFAULT_LOG_FILE
@@ -40,7 +54,7 @@ def configure_logging() -> logging.Logger:
         try:
             log_file = _resolve_log_file()
             log_file.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
+            file_handler = SafeRotatingFileHandler(
                 str(log_file), maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
             )
             file_handler.setFormatter(
