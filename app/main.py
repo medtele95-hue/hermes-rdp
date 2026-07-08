@@ -365,7 +365,11 @@ class HermesBackend:
             self.paper_trader.reset_on_startup()
             self.log_paper_trading_enabled()
 
-        if not self.mt5.connect():
+        # mission/DASHBOARD.md (2026-07-08): connect using the active
+        # account_profiles.env profile if SIMO has configured one explicitly;
+        # resolves to {} (today's exact zero-arg behaviour) until then.
+        from app.mt5.account_profiles import resolve_active_connection_kwargs
+        if not self.mt5.connect(**resolve_active_connection_kwargs()):
             raise SystemExit(1)
         startup_account = self.reader.account_snapshot()
         # BLOC 11e — refuse to start when an instance already runs for the
