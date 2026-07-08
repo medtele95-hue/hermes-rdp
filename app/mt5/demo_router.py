@@ -95,6 +95,9 @@ REPORT_WINDOW_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_report
 # mission/DASHBOARD.md (2026-07-08): read-only cross-process snapshot, written
 # after every Exit V2 evaluation, read by app/dashboard_api (separate process).
 EXIT_V2_SNAPSHOT_PATH = Path(__file__).resolve().parents[1] / "data" / "exit_v2_state.json"
+# mission/DASHBOARD.md (2026-07-08): dashboard-controlled NARROWING of
+# SYMBOL_ALLOWLIST below — see _active_symbols_subset(). Never widens it.
+ACTIVE_SYMBOLS_FILE = Path(__file__).resolve().parents[1] / "data" / "active_symbols.json"
 _CAP_BLOCK_REASONS = {
     "MAX_TRADES_PER_SYMBOL_PER_DAY",
     "MAX_TRADES_PER_DAY_TOTAL",
@@ -188,6 +191,25 @@ def _final_rr(direction: object, entry: object, sl: object, tp: object) -> float
     return reward / risk
 
 
+def _active_symbols_subset() -> frozenset[str]:
+    """mission/DASHBOARD.md — runtime-narrowable subset of SYMBOL_ALLOWLIST,
+    re-read on every call (no restart needed for a symbol toggle to take
+    effect). Can ONLY narrow SYMBOL_ALLOWLIST, never widen it: any name in
+    the file that isn't already in SYMBOL_ALLOWLIST is silently dropped, and
+    an empty/corrupt/absent file fails open to the FULL allowlist (today's
+    behaviour) rather than fail closed to nothing — a malformed config file
+    must never silently halt all trading with no visible cause."""
+    try:
+        if ACTIVE_SYMBOLS_FILE.exists():
+            raw = json.loads(ACTIVE_SYMBOLS_FILE.read_text(encoding="utf-8"))
+            subset = frozenset(s for s in (raw or []) if s in SYMBOL_ALLOWLIST)
+            if subset:
+                return subset
+    except (OSError, json.JSONDecodeError, TypeError):
+        pass
+    return frozenset(SYMBOL_ALLOWLIST)
+
+
 def _execution_invariants_block(request: dict, strategy: object, max_open_per_symbol: int = 1) -> str | None:
     """Dernier rempart avant mt5.order_send pour toute NOUVELLE exposition.
 
@@ -201,12 +223,23 @@ def _execution_invariants_block(request: dict, strategy: object, max_open_per_sy
     symbol = str(request.get("symbol") or "")
     strat = str(strategy or "UNKNOWN")
     # Invariant 1 — allowlist stricte au choke-point (GOLD# + BTCUSD#).
+    # CE CHECK N'EST JAMAIS MODIFIÉ PAR LE DASHBOARD — SYMBOL_ALLOWLIST reste
+    # la constante en dur définie en tête de module, point final.
     if symbol not in SYMBOL_ALLOWLIST:
         log.warning(
             "[SYMBOL_BLOCKED] symbol=%s strategy=%s allowlist=%s reason=SYMBOL_ALLOWLIST_INVARIANT",
             symbol, strat, list(SYMBOL_ALLOWLIST),
         )
         return "SYMBOL_BLOCKED"
+    # mission/DASHBOARD.md (2026-07-08): sous-ensemble actif contrôlé par le
+    # dashboard, appliqué APRÈS l'invariant ci-dessus — peut seulement
+    # RÉTRÉCIR SYMBOL_ALLOWLIST, jamais l'élargir (voir _active_symbols_subset).
+    if symbol not in _active_symbols_subset():
+        log.warning(
+            "[SYMBOL_BLOCKED] symbol=%s strategy=%s reason=DASHBOARD_SYMBOL_DISABLED",
+            symbol, strat,
+        )
+        return "SYMBOL_DISABLED_VIA_DASHBOARD"
     # Invariant 4 — SL/TP obligatoires : jamais d'ordre nu.
     try:
         sl = float(request.get("sl") or 0.0)
