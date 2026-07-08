@@ -3409,17 +3409,31 @@ class DemoKellyRouter:
                 be_floor_usd=float(getattr(self.settings, "exit_v2_be_floor_usd", 0.10)),
                 trail_start_usd=float(getattr(self.settings, "exit_v2_trail_start_usd", 2.0)),
                 trail_gap_usd=float(getattr(self.settings, "exit_v2_trail_gap_usd", 1.2)),
+                # GRAND_PLAN_2 mission3 (2026-07-08, SIMO validé GO): BTC-only
+                # percentage thresholds — see app/services/exit_v2.py docstring.
+                btc_pct_thresholds_enabled=bool(getattr(self.settings, "exit_v2_btc_pct_thresholds_enabled", True)),
+                btc_be_arm_pct=float(getattr(self.settings, "exit_v2_btc_be_arm_pct", 0.05)),
+                btc_be_floor_pct=float(getattr(self.settings, "exit_v2_btc_be_floor_pct", 0.0025)),
+                btc_trail_start_pct=float(getattr(self.settings, "exit_v2_btc_trail_start_pct", 0.05)),
+                btc_trail_gap_pct=float(getattr(self.settings, "exit_v2_btc_trail_gap_pct", 0.03)),
             )
             tick = mt5.symbol_info_tick(symbol)
             info = mt5.symbol_info(symbol)
             action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state)
             account_type = self.account_diagnostics(account)["account_type"]
             shadow = cfg.mode != "ACTIVE" or account_type != "DEMO"
+            # mission GRAND_PLAN_2 mission3 (2026-07-08): effective threshold
+            # (scale + $ equivalent) shown per symbol on every evaluation —
+            # for GOLD this is always scale=USD matching cfg.be_arm_usd
+            # unchanged; for BTC it's the position's own %-of-entry-price
+            # value converted to $ via its tick specs.
             log.info(
-                "[EXIT_V2] ticket=%s symbol=%s action=%s reason=%s profit=%s peak=%s be_armed=%s mode=%s account=%s",
+                "[EXIT_V2] ticket=%s symbol=%s action=%s reason=%s profit=%s peak=%s be_armed=%s mode=%s account=%s "
+                "threshold_scale=%s be_arm_usd_effective=%s trail_start_usd_effective=%s",
                 ticket, symbol, action.get("action"), action.get("reason"),
                 action.get("profit_usd"), action.get("peak_usd"), action.get("be_armed"),
                 "SHADOW" if shadow else "ACTIVE", account_type,
+                action.get("threshold_scale"), action.get("be_arm_usd_effective"), action.get("trail_start_usd_effective"),
             )
             # mission/DASHBOARD.md (2026-07-08): read-only state snapshot for the
             # dashboard's /api/status (armed/peak/lock per position). Own
@@ -5115,10 +5129,17 @@ def _write_exit_v2_snapshot(
         "peak_usd": action.get("peak_usd"),
         "be_armed": action.get("be_armed"),
         "active_floor_usd": action.get("active_floor") or action.get("floor_usd"),
-        "trail_start_usd": cfg.trail_start_usd,
+        # GRAND_PLAN_2 mission3 (2026-07-08): the EFFECTIVE threshold this
+        # position actually evaluated against — for BTC that's the
+        # %-of-entry-price value converted to $, NOT the flat cfg.* default
+        # (which is only correct for GOLD or when % thresholds are
+        # disabled). Falls back to cfg.* only if the action dict didn't
+        # carry it (e.g. EXIT_V2_UNREADABLE_POSITION early-return).
+        "trail_start_usd": action.get("trail_start_usd_effective", cfg.trail_start_usd),
         "trail_gap_usd": cfg.trail_gap_usd,
-        "be_arm_usd": cfg.be_arm_usd,
+        "be_arm_usd": action.get("be_arm_usd_effective", cfg.be_arm_usd),
         "be_floor_usd": cfg.be_floor_usd,
+        "threshold_scale": action.get("threshold_scale"),
         "mode": "SHADOW" if shadow else "ACTIVE",
         "account_type": account_type,
         "updated_at": datetime.now(timezone.utc).isoformat(),

@@ -95,6 +95,14 @@ class Settings(BaseModel):
     exit_v2_be_floor_usd: float = 0.10
     exit_v2_trail_start_usd: float = 2.0
     exit_v2_trail_gap_usd: float = 1.2
+    # GRAND_PLAN_2 mission3 (2026-07-08, SIMO validé GO): BTCUSD#-only,
+    # percentage of entry price instead of flat $ — see app/services/exit_v2.py
+    # module docstring for the exact GOLD-equivalence each default reproduces.
+    exit_v2_btc_pct_thresholds_enabled: bool = True
+    exit_v2_btc_be_arm_pct: float = 0.05
+    exit_v2_btc_be_floor_pct: float = 0.0025
+    exit_v2_btc_trail_start_pct: float = 0.05
+    exit_v2_btc_trail_gap_pct: float = 0.03
     demo_allow_btc_weekend_bad_hour: bool = False
     demo_allow_contest: bool = False
     demo_allowed_login: str = ""
@@ -563,6 +571,11 @@ def get_settings() -> Settings:
         exit_v2_be_floor_usd=float(os.getenv("EXIT_V2_BE_FLOOR_USD", "0.10")),
         exit_v2_trail_start_usd=float(os.getenv("EXIT_V2_TRAIL_START_USD", "2.0")),
         exit_v2_trail_gap_usd=float(os.getenv("EXIT_V2_TRAIL_GAP_USD", "1.2")),
+        exit_v2_btc_pct_thresholds_enabled=_bool_env("EXIT_V2_BTC_PCT_THRESHOLDS_ENABLED", True),
+        exit_v2_btc_be_arm_pct=float(os.getenv("EXIT_V2_BTC_BE_ARM_PCT", "0.05")),
+        exit_v2_btc_be_floor_pct=float(os.getenv("EXIT_V2_BTC_BE_FLOOR_PCT", "0.0025")),
+        exit_v2_btc_trail_start_pct=float(os.getenv("EXIT_V2_BTC_TRAIL_START_PCT", "0.05")),
+        exit_v2_btc_trail_gap_pct=float(os.getenv("EXIT_V2_BTC_TRAIL_GAP_PCT", "0.03")),
         demo_allow_btc_weekend_bad_hour=_bool_env("DEMO_ALLOW_BTC_WEEKEND_BAD_HOUR", False),
         demo_allow_contest=_bool_env("DEMO_ALLOW_CONTEST", False),
         demo_allowed_login=os.getenv("DEMO_ALLOWED_LOGIN", "").strip(),
