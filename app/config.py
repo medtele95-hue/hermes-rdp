@@ -192,6 +192,12 @@ class Settings(BaseModel):
     gold_m1m5_min_score_relaxed: int = 65
     gold_m1m5_atr_low_relax_factor: float = 0.80
     gold_liquidity_relaxed_zone_stars: int = 2
+    # COEUR_V2 chantier 3 (2026-07-08, MATH_CORE_AUDIT.md audit item 19) : la
+    # seule stratégie du dépôt avec un vrai retest en 2 temps (détecter ->
+    # attendre le retest -> entrer) était morte par flag manquant — le
+    # câblage routeur/registry existait déjà (ACTIVE_EXECUTION_STRATEGIES,
+    # ALLOWED_GOLD_EXECUTION_STRATEGIES). Activée par défaut.
+    gold_range_breakout_enabled: bool = True
     order_flow_reader_enabled: bool = True
     gold_order_flow_execution_enabled: bool = False
     gold_order_flow_min_confidence: int = 70
@@ -205,7 +211,16 @@ class Settings(BaseModel):
     hermes_strategy_pack_enabled: bool = True
     hermes_entry_gates_enabled: bool = False
     hermes_setup_tier_enabled: bool = False
-    hermes_confluence_strategy_aware: bool = False
+    # COEUR_V2 chantier 3b (2026-07-08, MATH_CORE_AUDIT.md audit item 6) :
+    # les seuils par classe (58 OF-native / 65 SMC-native / 62 défaut,
+    # main.py ROUTER_BLOCK) n'étaient effectifs que pour les 4 stratégies
+    # câblées en dur (main.py:_of_native_strats) ; toutes les autres
+    # retombaient sur un seuil plat 55.0 quelle que soit leur classe réelle.
+    # Rejeu comparatif (COEUR_V2_REPORT.md) : 8/697 décisions récentes
+    # affectées (SIMO_ATM_BREAKOUT, FIB_CONFLUENCE_EXECUTION_AGENT), 0 flip
+    # observé dans cette fenêtre — activé par mandat de mission, pas parce
+    # que le rejeu a montré une urgence.
+    hermes_confluence_strategy_aware: bool = True
     # COEUR_V2 chantier 1 (2026-07-08) : FINAL_CONFLUENCE devient une somme
     # pondérée normalisée (geo/smc/mtfa/of chacun sur 0-100) au lieu d'une
     # somme brute où geo (0-100) dominait structurellement smc/mtfa (±15) et
@@ -634,6 +649,7 @@ def get_settings() -> Settings:
         gold_m1m5_min_score_relaxed=int(os.getenv("GOLD_M1M5_MIN_SCORE_RELAXED", "65")),
         gold_m1m5_atr_low_relax_factor=float(os.getenv("GOLD_M1M5_ATR_LOW_RELAX_FACTOR", "0.80")),
         gold_liquidity_relaxed_zone_stars=int(os.getenv("GOLD_LIQUIDITY_RELAXED_ZONE_STARS", "2")),
+        gold_range_breakout_enabled=_bool_env("GOLD_RANGE_BREAKOUT_ENABLED", True),
         order_flow_reader_enabled=_bool_env("ORDER_FLOW_READER_ENABLED", True),
         gold_order_flow_execution_enabled=_bool_env("ORDER_FLOW_ENTRY_ENABLED", False),
         gold_order_flow_min_confidence=int(os.getenv("GOLD_ORDER_FLOW_MIN_CONFIDENCE", "70")),
@@ -788,7 +804,7 @@ def get_settings() -> Settings:
         hermes_strategy_pack_enabled=_bool_env("HERMES_STRATEGY_PACK_ENABLED", True),
         hermes_entry_gates_enabled=_bool_env("HERMES_ENTRY_GATES_ENABLED", False),
         hermes_setup_tier_enabled=_bool_env("HERMES_SETUP_TIER_ENABLED", False),
-        hermes_confluence_strategy_aware=_bool_env("HERMES_CONFLUENCE_STRATEGY_AWARE", False),
+        hermes_confluence_strategy_aware=_bool_env("HERMES_CONFLUENCE_STRATEGY_AWARE", True),
         confluence_weight_geo=float(os.getenv("CONFLUENCE_WEIGHT_GEO", "0.25")),
         confluence_weight_smc=float(os.getenv("CONFLUENCE_WEIGHT_SMC", "0.25")),
         confluence_weight_mtfa=float(os.getenv("CONFLUENCE_WEIGHT_MTFA", "0.20")),
