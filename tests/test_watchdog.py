@@ -262,6 +262,34 @@ class AutoMedicTriggerTests(unittest.TestCase):
         self.assertIn("TEST_KEY3", content)
 
 
+class KillswitchHistoryQueryBoundsTests(unittest.TestCase):
+    """auto_medic (2026-07-08): run_cycle() passed broker_day_window()'s
+    TRUE-UTC bounds to mt5.history_deals_get() after only stripping tzinfo
+    (`start.replace(tzinfo=None)`), the exact bug mission/FIX_KILLSWITCH_PNL.md
+    already fixed in daily_killswitch.py and app/dashboard_api/data.py but
+    never migrated here — MT5 compares raw clock fields against the
+    broker's own wall clock (UTC+3), so the naive bounds queried 3h too
+    early and pulled in the prior broker day's deals, mislabeling them as
+    "today" and inflating the loss count (false KILLSWITCH_PIERCED)."""
+
+    def test_history_deals_get_uses_broker_shifted_bounds(self) -> None:
+        stub = _mt5_stub()
+        with tempfile.TemporaryDirectory() as tmp:
+            mgr = _mgr(Path(tmp))
+            with patch.object(wd, "ALERTS_LOG", Path(tmp) / "alerts.log"), \
+                 patch.object(wd, "HEARTBEAT_FILE", Path(tmp) / "hb.txt"):
+                wd.run_cycle(stub, mgr, {}, NOW)
+        start, end = wd.broker_day_window(NOW)
+        expected = wd.to_mt5_query_bounds(start, end, wd.BROKER_UTC_OFFSET_HOURS)
+        stub.history_deals_get.assert_called_once_with(*expected)
+        called_start, called_end = stub.history_deals_get.call_args.args
+        self.assertIsNone(called_start.tzinfo)
+        self.assertIsNone(called_end.tzinfo)
+        # la borne naive-mais-decalee doit differer de la borne naive-nue
+        # (sinon le test ne detecte rien) -- preuve que le decalage +3h est applique
+        self.assertNotEqual(called_start, start.replace(tzinfo=None))
+
+
 class CheckErrorNeverKillsGuardianTests(unittest.TestCase):
     def test_broken_check_is_contained(self) -> None:
         stub = _mt5_stub()
