@@ -21,7 +21,8 @@ mission`).
 | Exit V2 lecture | `app/mt5/demo_router.py::_write_exit_v2_snapshot` | `app/data/exit_v2_state.json`, snapshot passif après chaque évaluation |
 | Superviseur | `scripts/dashboard_supervisor.ps1` | anti-crash-loop dédié dashboard, indépendant du bot |
 | Watchdog | `watchdog/hermes_watchdog.py::check_10_dashboard_heartbeat` | INFO seulement, jamais couplé au trading |
-| Tailscale | `TAILSCALE_SETUP.md` | guide pas-à-pas — **installation manuelle requise, voir §5** |
+| Superviseur dashboard (tâche) | `HERMES_DASHBOARD_SUPERVISOR` | tâche planifiée créée et démarrée le 2026-07-08, boot-triggered |
+| Tailscale | `TAILSCALE_SETUP.md` | installé + connecté, dashboard déjà démarré — **1 action manuelle restante, voir §5** |
 
 ## 2. Garanties de sécurité — comment elles tiennent, pas seulement où
 
@@ -82,38 +83,59 @@ Trace complète dans `dashboard/actions_audit.log` (local, jamais commité).
   été puisqu'il n'existe aucun compte réel à basculer vers, par choix de
   conception — configurer un compte réel est un acte que seule SIMO doit
   poser.
-- **Redémarrage effectif via `scripts/dashboard_supervisor.ps1`** : le
-  script est écrit, parsé (`ParseFile` sans erreur), mais aucune tâche
-  planifiée `HERMES_DASHBOARD_SUPERVISOR` n'a été créée — je n'ai pas
-  installé de tâche planifiée Windows automatiquement (action système
-  persistante ; à créer à la main, voir §6).
+- **Accès distant réel depuis l'iPhone via Tailscale** : bloqué par une
+  action tailnet manuelle restante, voir §5.
 
-## 5. Tailscale — action manuelle requise
+## 5. Tailscale — mis à jour le 2026-07-08 (accès chiffré, statut réel)
 
-Tailscale n'était pas installé sur cette machine. L'installer et
-s'authentifier (`tailscale up`) nécessite un navigateur et le compte
-personnel de SIMO — je ne peux pas le faire à sa place. Guide complet dans
-`TAILSCALE_SETUP.md` : installation, `tailscale up`, `tailscale serve --bg
-8010` (jamais `funnel`), app téléphone, preuve de non-exposition publique
-(`netstat` ne doit jamais montrer `0.0.0.0:8010`).
+**Une demande a été faite le 2026-07-08 de faire écouter le dashboard sur
+`0.0.0.0` (toutes interfaces) pour le rendre joignable via Tailscale.
+Refusée et remplacée par `tailscale serve`**, pour deux raisons vérifiées
+concrètement, pas seulement théoriques :
+1. Le port cité (8000) est en réalité `app/local_api/server.py` — un
+   service **sans PIN ni authentification du tout** (confirmé : c'est le
+   process qui tournait sur ce port, pas le dashboard). L'exposer aurait
+   changé son modèle de sécurité entièrement.
+2. Même pour le vrai dashboard (8010, PIN-protégé) : le profil pare-feu
+   Windows "Privé" couvre en général aussi le Wi-Fi domestique — `0.0.0.0`
+   aurait pu exposer le dashboard à tout le réseau maison, pas seulement au
+   tailnet Tailscale.
 
-## 6. Pour démarrer le dashboard (une fois Tailscale configuré)
+État réel vérifié le 2026-07-08 :
+- Tailscale installé et connecté : ce PC = `100.74.170.107`, iPhone de
+  SIMO déjà sur le même tailnet = `100.78.150.18` (app déjà installée).
+- Dashboard démarré comme process autonome, confirmé listening sur
+  `127.0.0.1:8010` **uniquement** (`netstat`, jamais `0.0.0.0`), supervisé
+  en permanence par la nouvelle tâche planifiée `HERMES_DASHBOARD_SUPERVISOR`
+  (créée et démarrée le 2026-07-08, déclenchement au boot).
+- `tailscale serve --bg 8010` tenté : refusé par Tailscale lui-même avec
+  `Serve is not enabled on your tailnet` et une URL de login à visiter
+  (`https://login.tailscale.com/f/serve?node=...`) — **activation
+  tailnet ponctuelle liée au compte Tailscale de SIMO, geste que Claude
+  ne peut pas poser à sa place.** C'est la SEULE étape manuelle restante.
+  Détail complet (avec la commande exacte à relancer une fois activé) dans
+  `TAILSCALE_SETUP.md` §3.
+- Une fois activé, aucune autre action n'est nécessaire — le dashboard
+  tourne déjà, le PIN est déjà généré (voir §6), `tailscale serve status`
+  donnera directement l'URL `https://<machine>.<tailnet>.ts.net` à ouvrir
+  sur l'iPhone.
+
+## 6. Le dashboard tourne déjà — accès et PIN
 
 ```powershell
 python -m app.dashboard_api.server
 ```
 
+n'a plus besoin d'être relancé à la main : la tâche planifiée
+`HERMES_DASHBOARD_SUPERVISOR` (créée le 2026-07-08, même anti-crash-loop
+que `HERMES_BOT_SUPERVISOR`) le garde vivant en permanence, y compris après
+un redémarrage du PC.
+
 Le PIN est généré automatiquement au premier démarrage et affiché **une
 seule fois** dans `logs/hermes.log` (`[DASHBOARD] PREMIER DEMARRAGE — PIN
-genere: XXXXXX`) — à noter immédiatement. Pour le changer : supprimer
-`DASHBOARD_PIN_HASH`/`DASHBOARD_PIN_SALT` de `dashboard/.env` et relancer.
-
-Pour la supervision automatique (survit à un crash), créer une tâche
-planifiée déclenchée au boot, sur le modèle de `HERMES_BOT_SUPERVISOR` :
-
-```powershell
-schtasks /Create /TN "HERMES_DASHBOARD_SUPERVISOR" /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Admin\Documents\hermes-mt5-agent\scripts\dashboard_supervisor.ps1" /SC ONSTART /RL HIGHEST /F
-```
+genere: XXXXXX`) — à noter immédiatement si ce n'est pas déjà fait. Pour le
+changer : supprimer `DASHBOARD_PIN_HASH`/`DASHBOARD_PIN_SALT` de
+`dashboard/.env` et relancer.
 
 ## 7. Comportement documenté
 
