@@ -108,8 +108,20 @@ class TestOrderFlowNativeConfluence(unittest.TestCase):
 
     def test_gold_vwap_previous_dead_score_now_higher_than_without_fix(self):
         """Regression: OF clamping (strategy_aware=True) produces strictly higher score.
-        Without fix (strategy_aware=False): smc=-15, mtfa=-15, of_bonus=+5 → delta=-25.
-        With fix (strategy_aware=True): smc=0, mtfa=0, of_bonus=+8 → delta=+8. Improvement ≥ 20pts.
+
+        Legacy delta domain (`components`/`legacy_score`, unchanged since before
+        COEUR_V2): without fix smc=-15, mtfa=-15, of_bonus=+5 → delta=-25; with fix
+        smc=0, mtfa=0, of_bonus=+8 → delta=+8. Improvement ≥ 20pts — still true and
+        still asserted below via `legacy_score`, exactly as originally written.
+
+        Normalized v2 domain (`score`, COEUR_V2 chantier 1, 2026-07-08): the OF-native
+        clamp floors smc_norm/mtfa_norm at 50 (neutral) instead of 0 (legacy delta
+        clamp floor), and geo/of terms are now weighted (0.25/0.30) rather than
+        summed raw — so the absolute point gap shrinks (weighted average, not a raw
+        sum) even though the qualitative effect (OF-native beats SMC-native on the
+        same weak-SMC/MTFA context) is identical. For this fixed ctx/weights the v2
+        improvement is deterministically 15.75 (0.25*13+0.25*50+0.20*50+0.30*65 minus
+        0.25*13+0.25*15+0.20*15+0.30*65); asserted with a safety margin below that.
         """
         ctx = {
             "smc_confluence": {"smc_h4_direction": "BEARISH", "smc_h1_trend": "BEARISH", "smc_confluence_score": 15},
@@ -124,8 +136,11 @@ class TestOrderFlowNativeConfluence(unittest.TestCase):
         self.assertGreater(result_of["score"], result_smc["score"],
                            f"OF_NATIVE(aware) score={result_of['score']} must exceed SMC score={result_smc['score']}")
         improvement = result_of["score"] - result_smc["score"]
-        self.assertGreaterEqual(improvement, 20.0,
-                                f"Expected ≥20pt improvement from OF clamping, got {improvement}")
+        self.assertGreaterEqual(improvement, 15.0,
+                                f"Expected >=15pt v2 improvement from OF clamping, got {improvement}")
+        legacy_improvement = result_of["legacy_score"] - result_smc["legacy_score"]
+        self.assertGreaterEqual(legacy_improvement, 20.0,
+                                f"Legacy formula improvement must still be >=20pt, got {legacy_improvement}")
 
     def test_strategy_class_in_result(self):
         """evaluate() must return strategy_class key."""

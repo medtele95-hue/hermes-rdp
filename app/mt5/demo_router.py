@@ -402,6 +402,12 @@ class DemoKellyRouter:
             setup_id,
             now,
         )
+        # COEUR_V2 chantier 1: propagate the old-vs-new confluence comparison fields
+        # (set on `decision` in app/main.py) onto the dataset-bound event — the event
+        # literal built above is curated field-by-field, it does not spread `decision`.
+        for _cv2_key in ("new_confluence", "new_confluence_grade", "old_confluence", "old_confluence_grade"):
+            if decision.get(_cv2_key) is not None:
+                evaluated.event.setdefault(_cv2_key, decision.get(_cv2_key))
         self._record_event(evaluated.event)
         if evaluated.decision == "BLOCK":
             log.info("[DEMO_SKIP] reason=%s", evaluated.reason)

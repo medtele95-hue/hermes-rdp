@@ -1063,9 +1063,15 @@ class HermesBackend:
             _conf: dict = {}
             if _conf_strategy and _conf_strategy not in ("NONE", ""):
                 try:
+                    _conf_weights = {
+                        "geo": getattr(self.settings, "confluence_weight_geo", 0.25),
+                        "smc": getattr(self.settings, "confluence_weight_smc", 0.25),
+                        "mtfa": getattr(self.settings, "confluence_weight_mtfa", 0.20),
+                        "of": getattr(self.settings, "confluence_weight_of", 0.30),
+                    }
                     _conf = evaluate_confluence(
                         requested_symbol, _conf_strategy, frames, analysis,
-                        strategy_aware=_conf_strat_aware,
+                        strategy_aware=_conf_strat_aware, weights=_conf_weights,
                     )
                     self.latest_setup_hunter = {**hunter.best_candidate, **_conf}
                 except Exception:
@@ -1108,6 +1114,11 @@ class HermesBackend:
                 if _geo_bonus > 0.0 and bool(_conf):
                     _old_conf_score = float(_conf.get("score") or 0.0)
                     _conf["score"] = min(100.0, _old_conf_score + _geo_bonus)
+                    # COEUR_V2: apply the same override to legacy_score so the
+                    # old-vs-new dataset comparison stays apples-to-apples (both
+                    # formulas receive the same post-hoc overrides, as before).
+                    if _conf.get("legacy_score") is not None:
+                        _conf["legacy_score"] = min(100.0, float(_conf["legacy_score"]) + _geo_bonus)
                     log.info(
                         "[GEO_BONUS_APPLIED] symbol=%s old_score=%.1f bonus=%.1f"
                         " new_score=%.1f mode=ACTIVE",
@@ -1165,6 +1176,14 @@ class HermesBackend:
             # Pass confluence_engine score to adaptive_confluence (BTC RANGE mode / OF bonus aware)
             if _conf.get("score") is not None:
                 decision.setdefault("final_confluence_score", _conf["score"])
+            # COEUR_V2 chantier 1: capture both formulas in the dataset for the comparative
+            # replay window (see MATH_CORE_AUDIT.md RÉSERVÉ SIMO n°1 / COEUR_V2_REPORT.md).
+            if _conf.get("score") is not None:
+                decision.setdefault("new_confluence", _conf["score"])
+                decision.setdefault("new_confluence_grade", _conf.get("grade"))
+            if _conf.get("legacy_score") is not None:
+                decision.setdefault("old_confluence", _conf["legacy_score"])
+                decision.setdefault("old_confluence_grade", _conf.get("legacy_grade"))
 
             # Enrich ai_decisions with canonical fields before writing
             _best_cand = hunter.best_candidate or {}

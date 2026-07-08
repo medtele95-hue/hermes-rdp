@@ -42,6 +42,19 @@ _GRADE_THRESHOLDS = [
     (50, "C"),
 ]
 
+# COEUR_V2 chantier 1 (2026-07-08, MATH_CORE_AUDIT.md RÉSERVÉ SIMO n°1) — FINAL_CONFLUENCE
+# devient une somme pondérée normalisée (geo/smc/mtfa/of chacun sur 0-100) au lieu d'une
+# somme brute où geo_score (0-100) dominait structurellement smc/mtfa (±15) et of (-5/+20).
+# Poids par défaut si non fournis par app.config.Settings ; destinés à être recalibrés par
+# le futur moteur EV sur le dataset (voir COEUR_V2_REPORT.md).
+_DEFAULT_WEIGHTS = {"geo": 0.25, "smc": 0.25, "mtfa": 0.20, "of": 0.30}
+
+# Planchers "au pire SOFT_FAIL, jamais STRONG_FAIL" en domaine normalisé (0-100), miroir
+# des seuils app.agents.confirmation_matrix._SMC_SOFT_FAIL_THRESHOLD / _MTFA_SOFT_FAIL_THRESHOLD
+# — traduction de l'override BTC RANGE mode (qui, en domaine delta, plafonnait le malus à -5.0).
+_SMC_SOFT_FAIL_FLOOR = 40.0
+_MTFA_SOFT_FAIL_FLOOR = 35.0
+
 _BTC_SYMBOLS = frozenset({"BTCUSD#", "BTCUSD"})
 
 # §4.4 — strategies that run on order-flow signals, not SMC/MTFA structure
@@ -85,6 +98,7 @@ class ConfluenceEngine:
         frames: dict[str, pd.DataFrame] | None,
         context: dict | None = None,
         strategy_aware: bool = False,
+        weights: dict | None = None,
     ) -> dict:
         """Evaluate geometric + contextual confluence.
 
@@ -185,6 +199,10 @@ class ConfluenceEngine:
 
         # --- §4.4 Strategy-aware confluence: ORDER_FLOW_NATIVE never penalized by SMC/MTFA ---
         # Clamp is unconditional for ORDER_FLOW_NATIVE (not gated by strategy_aware param).
+        # NOTE: this whole block computes the LEGACY delta-domain contribution (smc_contrib,
+        # mtfa_contrib, of_bonus) — kept byte-for-byte identical to pre-COEUR_V2 behaviour so
+        # `components`/`legacy_score` remain a faithful comparison baseline. It no longer
+        # drives `score`/`grade` (see the v2 weighted-normalized block below).
         _of_native = str(strategy or "").upper() in _ORDER_FLOW_NATIVE
         if _of_native:
             log.info(
@@ -201,7 +219,54 @@ class ConfluenceEngine:
             # --- Order-flow: bonus/warning only, never hard-block (-5 to +5) ---
             of_bonus = _order_flow_bonus(ctx)
 
-        raw_score = geo_score + smc_contrib + mtfa_contrib + of_bonus
+        legacy_raw = geo_score + smc_contrib + mtfa_contrib + of_bonus
+        legacy_score = float(max(0.0, min(100.0, round(legacy_raw, 2))))
+        legacy_grade = _grade(legacy_score)
+
+        # --- COEUR_V2 chantier 1: normalized weighted sum (THIS is now `score`/`grade`) ---
+        geo_norm = float(max(0.0, min(100.0, geo_score)))
+        smc_norm = float(max(0.0, min(100.0, smc_raw)))
+        mtfa_norm = float(max(0.0, min(100.0, mtfa_raw)))
+        of_norm = _of_norm(ctx)
+
+        # BTC RANGE mode override, translated: floor at "no worse than SOFT_FAIL" instead of
+        # floor at -5.0 delta (mirrors the legacy override above, same trigger condition).
+        if _btc_sym and h4_dir == "RANGE" and h1_trend == "RANGE" and smc_norm < _SMC_SOFT_FAIL_FLOOR:
+            log.info(
+                "[CONFLUENCE_V2_BTC_RANGE_MODE] symbol=%s smc_norm=%.1f→%.1f h4=%s h1=%s",
+                symbol, smc_norm, _SMC_SOFT_FAIL_FLOOR, h4_dir, h1_trend,
+            )
+            smc_norm = _SMC_SOFT_FAIL_FLOOR
+        if _btc_sym and h1_bias == "NEUTRAL" and mtfa_norm < _MTFA_SOFT_FAIL_FLOOR:
+            log.info(
+                "[CONFLUENCE_V2_BTC_RANGE_MODE] symbol=%s mtfa_norm=%.1f→%.1f h1_bias=%s",
+                symbol, mtfa_norm, _MTFA_SOFT_FAIL_FLOOR, h1_bias,
+            )
+            mtfa_norm = _MTFA_SOFT_FAIL_FLOOR
+
+        # §4.5 SMC arbitrator override, translated: pull halfway toward neutral (50) instead
+        # of halving the delta penalty. Same trigger condition as the legacy override above.
+        if smc_cal_status == "SOFT_FAIL" and smc_norm < 50.0:
+            _arb_score_v2 = float((ctx.get("order_flow_reader") or {}).get("score") or 0.0)
+            if _arb_score_v2 >= 90.0:
+                smc_norm = (smc_norm + 50.0) / 2.0
+
+        # OF-native clamp, translated: never let SMC/MTFA drag an OF-native strategy below
+        # neutral (50) — mirrors the legacy `max(0.0, contrib)` clamp in normalized domain.
+        if _of_native:
+            smc_norm = max(50.0, smc_norm)
+            mtfa_norm = max(50.0, mtfa_norm)
+
+        weights = weights or _DEFAULT_WEIGHTS
+        w_geo = float(weights.get("geo", _DEFAULT_WEIGHTS["geo"]))
+        w_smc = float(weights.get("smc", _DEFAULT_WEIGHTS["smc"]))
+        w_mtfa = float(weights.get("mtfa", _DEFAULT_WEIGHTS["mtfa"]))
+        w_of = float(weights.get("of", _DEFAULT_WEIGHTS["of"]))
+        _weight_sum = w_geo + w_smc + w_mtfa + w_of
+        if _weight_sum <= 0:
+            w_geo, w_smc, w_mtfa, w_of = _DEFAULT_WEIGHTS.values()
+            _weight_sum = sum(_DEFAULT_WEIGHTS.values())
+        raw_score = (w_geo * geo_norm + w_smc * smc_norm + w_mtfa * mtfa_norm + w_of * of_norm) / _weight_sum
         final_score = float(max(0.0, min(100.0, round(raw_score, 2))))
         grade = _grade(final_score)
 
@@ -211,6 +276,13 @@ class ConfluenceEngine:
             "mtfa": round(mtfa_contrib, 2),
             "order_flow_bonus": round(of_bonus, 2),
         }
+        components_v2 = {
+            "geo_norm": round(geo_norm, 2),
+            "smc_norm": round(smc_norm, 2),
+            "mtfa_norm": round(mtfa_norm, 2),
+            "of_norm": round(of_norm, 2),
+        }
+        weights_used = {"geo": w_geo, "smc": w_smc, "mtfa": w_mtfa, "of": w_of}
 
         recommendation = "TRADE" if final_score >= 65 else ("WATCH" if final_score >= 50 else "WAIT")
 
@@ -221,6 +293,13 @@ class ConfluenceEngine:
             final_score,
             grade,
             ",".join(f"{k}={v}" for k, v in components.items()),
+        )
+        log.info(
+            "[CONFLUENCE_V2] symbol=%s strategy=%s geo=%.2f smc=%.2f mtfa=%.2f of=%.2f"
+            " w_geo=%.2f w_smc=%.2f w_mtfa=%.2f w_of=%.2f score=%.2f grade=%s"
+            " legacy_score=%.2f legacy_grade=%s",
+            symbol, strategy, geo_norm, smc_norm, mtfa_norm, of_norm,
+            w_geo, w_smc, w_mtfa, w_of, final_score, grade, legacy_score, legacy_grade,
         )
 
         _smc_native = str(strategy or "").upper() in _SMC_NATIVE
@@ -236,6 +315,10 @@ class ConfluenceEngine:
             "score": final_score,
             "grade": grade,
             "components": components,
+            "components_v2": components_v2,
+            "weights": weights_used,
+            "legacy_score": legacy_score,
+            "legacy_grade": legacy_grade,
             "recommendation": recommendation,
             "dominant_pattern": geo.get("dominant_pattern", "NONE"),
             "trend_direction": (channel or {}).get("direction", "FLAT"),
@@ -260,9 +343,10 @@ def evaluate_confluence(
     frames: dict | None,
     context: dict | None = None,
     strategy_aware: bool = False,
+    weights: dict | None = None,
 ) -> dict:
     """Module-level convenience wrapper around ConfluenceEngine.evaluate."""
-    return _engine.evaluate(symbol, strategy, frames, context, strategy_aware)
+    return _engine.evaluate(symbol, strategy, frames, context, strategy_aware, weights)
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +409,26 @@ def _order_flow_bonus(ctx: dict) -> float:
     if signal in {"BUY", "SELL"} and score < 30.0:
         return -5.0
     return 0.0
+
+
+def _of_norm(ctx: dict) -> float:
+    """COEUR_V2: order-flow score already on 0-100 ("le score OF 0-100 existant"), used
+    as the `of` weighted component. Same underlying score `_order_flow_bonus`/
+    `_order_flow_bonus_graded` already read (`analysis["order_flow_reader"]["score"]`,
+    populated for every symbol in app/main.py before evaluate_confluence is called).
+    Falls back to neutral (50.0) when no OF signal is available — mirrors the legacy
+    bonus's "no data → 0.0 delta (neither helps nor hurts)" behaviour in normalized domain.
+    """
+    of_data = ctx.get("order_flow_reader") or ctx.get("gold_order_flow_cvd_vwap") or {}
+    if not isinstance(of_data, dict):
+        return 50.0
+    score = of_data.get("score") or of_data.get("cvd_score") or of_data.get("confidence")
+    if score is None:
+        return 50.0
+    try:
+        return float(max(0.0, min(100.0, float(score))))
+    except (TypeError, ValueError):
+        return 50.0
 
 
 def _order_flow_bonus_graded(ctx: dict) -> float:

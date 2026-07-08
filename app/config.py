@@ -206,6 +206,15 @@ class Settings(BaseModel):
     hermes_entry_gates_enabled: bool = False
     hermes_setup_tier_enabled: bool = False
     hermes_confluence_strategy_aware: bool = False
+    # COEUR_V2 chantier 1 (2026-07-08) : FINAL_CONFLUENCE devient une somme
+    # pondérée normalisée (geo/smc/mtfa/of chacun sur 0-100) au lieu d'une
+    # somme brute où geo (0-100) dominait structurellement smc/mtfa (±15) et
+    # of (-5/+20). Poids initiaux documentés dans COEUR_V2_REPORT.md,
+    # destinés à être recalibrés par le futur moteur EV sur le dataset.
+    confluence_weight_geo: float = 0.25
+    confluence_weight_smc: float = 0.25
+    confluence_weight_mtfa: float = 0.20
+    confluence_weight_of: float = 0.30
     of_native_key_level_tol_atr: float = 0.25
     geometric_confluence_mode: str = "SHADOW"
     geometric_mode: Literal["SHADOW", "BONUS", "SOFT_CONFIRM", "EXECUTION_FILTER", "LIVE"] = "SHADOW"
@@ -780,6 +789,10 @@ def get_settings() -> Settings:
         hermes_entry_gates_enabled=_bool_env("HERMES_ENTRY_GATES_ENABLED", False),
         hermes_setup_tier_enabled=_bool_env("HERMES_SETUP_TIER_ENABLED", False),
         hermes_confluence_strategy_aware=_bool_env("HERMES_CONFLUENCE_STRATEGY_AWARE", False),
+        confluence_weight_geo=float(os.getenv("CONFLUENCE_WEIGHT_GEO", "0.25")),
+        confluence_weight_smc=float(os.getenv("CONFLUENCE_WEIGHT_SMC", "0.25")),
+        confluence_weight_mtfa=float(os.getenv("CONFLUENCE_WEIGHT_MTFA", "0.20")),
+        confluence_weight_of=float(os.getenv("CONFLUENCE_WEIGHT_OF", "0.30")),
         of_native_key_level_tol_atr=float(os.getenv("OF_NATIVE_KEY_LEVEL_TOL_ATR", "0.25")),
         geometric_confluence_mode=os.getenv("GEOMETRIC_CONFLUENCE_MODE", "SHADOW").strip().upper(),
         geometric_mode=os.getenv("GEOMETRIC_MODE", GEOMETRIC_MODE_DEFAULT).strip().upper(),
