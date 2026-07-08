@@ -71,6 +71,21 @@
   #toast.err { border-color: var(--red); }
   .pill { display:inline-block; padding: 2px 6px; border-radius: 6px; background:#1c2530; font-size:11px; margin-right:4px; }
   details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .filterrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+  .filter-btn {
+    width: auto; margin-top: 0; padding: 6px 10px; font-size: 12px;
+    background: #0e141a; border-radius: 14px;
+  }
+  .filter-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .trade-card {
+    padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .trade-card:last-child { border-bottom: none; }
+  .trade-head { display: flex; justify-content: space-between; align-items: center; }
+  .trade-symbol { font-weight: 600; }
+  .trade-pnl { font-weight: 700; font-size: 15px; }
+  .trade-meta { color: var(--muted); font-size: 11.5px; margin-top: 3px; line-height: 1.6; }
+  .trade-meta .pill { margin: 2px 4px 0 0; }
 </style>
 </head>
 <body>
@@ -120,10 +135,19 @@
 </section>
 
 <section id="sec-journal">
-  <h2>5. Journal</h2>
-  <table id="j-table"><thead><tr><th>Symbole</th><th>PnL</th><th>Stratégie</th></tr></thead><tbody></tbody></table>
+  <h2>5. Journal (aujourd'hui, heure broker UTC+3)</h2>
+  <div class="row"><span class="k">Total net</span><span id="j-total" class="big">—</span></div>
+  <div class="filterrow" id="j-filters">
+    <button class="filter-btn active" data-filter="result" data-value="">Tous</button>
+    <button class="filter-btn" data-filter="result" data-value="win">Gagnants</button>
+    <button class="filter-btn" data-filter="result" data-value="loss">Perdants</button>
+    <button class="filter-btn" data-filter="symbol" data-value="GOLD#">GOLD</button>
+    <button class="filter-btn" data-filter="symbol" data-value="BTCUSD#">BTC</button>
+  </div>
+  <div id="j-cards"></div>
   <div class="btnrow" style="margin-top:8px">
     <button onclick="journalPage(-1)">‹ préc.</button>
+    <span id="j-page-label" style="align-self:center;color:var(--muted);font-size:12px">page 1</span>
     <button onclick="journalPage(1)">suiv. ›</button>
   </div>
 </section>
@@ -177,6 +201,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let journalPageNum = 1;
+let journalFilters = {result: '', symbol: ''};
 
 function fmtUsd(v) {
   if (v === null || v === undefined) return '—';
@@ -184,6 +209,29 @@ function fmtUsd(v) {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + ' $';
 }
 function cls(v) { return v > 0 ? 'pos' : (v < 0 ? 'neg' : ''); }
+
+// Journal timestamps are true-UTC (app.utils.broker_time.from_mt5_deal_time
+// already reversed MT5's broker-wall-clock stamping) — displayed here in
+// BROKER time (+3h, XM/UTC+3) to match what SIMO sees in the MT5 terminal
+// itself, always labeled explicitly so it's never ambiguous.
+function fmtBrokerDateTime(isoUtc) {
+  if (!isoUtc) return '—';
+  const d = new Date(isoUtc);
+  const broker = new Date(d.getTime() + 3 * 3600 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(broker.getUTCDate())}/${pad(broker.getUTCMonth() + 1)} ${pad(broker.getUTCHours())}:${pad(broker.getUTCMinutes())}`;
+}
+
+function fmtDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  const s = Math.round(seconds);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'min';
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return `${h}h${String(remM).padStart(2, '0')}`;
+}
 
 async function getJSON(url) {
   const r = await fetch(url);
@@ -299,19 +347,61 @@ async function refreshSystem() {
 }
 
 async function refreshJournal() {
-  const d = await getJSON(`/api/journal?page=${journalPageNum}&page_size=10`);
-  const tbody = document.querySelector('#j-table tbody');
-  tbody.innerHTML = (d.entries || []).map(e => `<tr>
-    <td>${e.symbol} ${e.direction || ''}</td>
-    <td class="${cls(e.pnl_usd)}">${fmtUsd(e.pnl_usd)}</td>
-    <td style="font-size:11px">${e.strategy || '—'}</td>
-  </tr>`).join('');
+  const params = new URLSearchParams({page: journalPageNum, page_size: 10});
+  if (journalFilters.result) params.set('result', journalFilters.result);
+  if (journalFilters.symbol) params.set('symbol', journalFilters.symbol);
+  const d = await getJSON(`/api/journal?${params.toString()}`);
+
+  $('j-total').textContent = fmtUsd(d.net_total_usd);
+  $('j-total').className = 'big ' + cls(d.net_total_usd);
+  $('j-page-label').textContent = `page ${d.page} / ${d.total_pages} (${d.total} trades)`;
+
+  const cardsDiv = $('j-cards');
+  if (!d.entries || !d.entries.length) {
+    cardsDiv.innerHTML = '<div class="k" style="font-size:13px;padding:8px 0">Aucun trade pour ce filtre</div>';
+    return;
+  }
+  cardsDiv.innerHTML = d.entries.map(e => {
+    const entryPrice = e.entry != null ? Number(e.entry).toFixed(2) : '—';
+    const exitPrice = e.exit != null ? Number(e.exit).toFixed(2) : '—';
+    return `<div class="trade-card">
+      <div class="trade-head">
+        <span class="trade-symbol">${(e.symbol || '').replace('#', '')} ${e.direction || ''}</span>
+        <span class="trade-pnl ${cls(e.pnl_usd)}">${fmtUsd(e.pnl_usd)}</span>
+      </div>
+      <div class="trade-meta">
+        ${fmtBrokerDateTime(e.opened_at)} → ${fmtBrokerDateTime(e.closed_at)} (broker) · durée ${fmtDuration(e.duration_seconds)}<br>
+        entrée ${entryPrice} → sortie ${exitPrice}<br>
+        <span class="pill">${e.close_mode || 'INCONNU'}</span>
+        ${e.strategy ? `<span class="pill">${e.strategy}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function journalPage(delta) {
   journalPageNum = Math.max(1, journalPageNum + delta);
   refreshJournal();
 }
+
+document.querySelectorAll('#j-filters .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const filterKey = btn.dataset.filter;
+    const value = btn.dataset.value;
+    if (filterKey === 'result') {
+      journalFilters.result = value;
+      document.querySelectorAll('#j-filters .filter-btn[data-filter="result"]').forEach(b => b.classList.toggle('active', b === btn));
+    } else if (filterKey === 'symbol') {
+      // toggle: clicking the already-active symbol filter clears it back to "all"
+      const nowActive = btn.classList.contains('active');
+      journalFilters.symbol = nowActive ? '' : value;
+      document.querySelectorAll('#j-filters .filter-btn[data-filter="symbol"]').forEach(b => b.classList.remove('active'));
+      if (!nowActive) btn.classList.add('active');
+    }
+    journalPageNum = 1;
+    refreshJournal();
+  });
+});
 
 async function refreshAudit() {
   try {
