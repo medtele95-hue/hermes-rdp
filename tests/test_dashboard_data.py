@@ -14,6 +14,71 @@ from unittest.mock import MagicMock, patch
 from app.dashboard_api import data
 
 
+class TestEnsureMt5Connected(unittest.TestCase):
+    """The actual root cause of a real production symptom (2026-07-08):
+    dashboard_api connects once at server startup; if that connection later
+    drops for any reason, every subsequent read silently returned None
+    forever, with no self-recovery. NOT a "MT5 only allows one connection"
+    limitation — watchdog and the bot hold independent live connections at
+    the same time this runs; verified live via a 3rd fresh connection
+    succeeding while the dashboard's own connection was stale."""
+
+    def test_already_connected_skips_reinitialize(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.terminal_info.return_value = object()
+        result = data._ensure_mt5_connected(mock_mt5)
+        self.assertTrue(result)
+        mock_mt5.initialize.assert_not_called()
+
+    def test_dropped_connection_triggers_reinitialize(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.terminal_info.return_value = None
+        mock_mt5.initialize.return_value = True
+        result = data._ensure_mt5_connected(mock_mt5)
+        self.assertTrue(result)
+        mock_mt5.initialize.assert_called_once()
+
+    def test_reinitialize_failure_returns_false_without_raising(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.terminal_info.return_value = None
+        mock_mt5.initialize.return_value = False
+        result = data._ensure_mt5_connected(mock_mt5)
+        self.assertFalse(result)
+
+    def test_terminal_info_exception_falls_through_to_reinitialize(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.terminal_info.side_effect = Exception("IPC error")
+        mock_mt5.initialize.return_value = True
+        result = data._ensure_mt5_connected(mock_mt5)
+        self.assertTrue(result)
+
+    def test_initialize_exception_never_raises(self) -> None:
+        mock_mt5 = MagicMock()
+        mock_mt5.terminal_info.return_value = None
+        mock_mt5.initialize.side_effect = Exception("no IPC connection")
+        result = data._ensure_mt5_connected(mock_mt5)
+        self.assertFalse(result)
+
+    def test_build_status_recovers_after_reconnect(self) -> None:
+        """End-to-end: a dropped connection (terminal_info=None) must not
+        leave build_status() stuck returning nulls forever — after
+        _ensure_mt5_connected() re-initializes, the same account_info()
+        call in this same invocation succeeds."""
+        mock_mt5 = MagicMock()
+        mock_mt5.ACCOUNT_TRADE_MODE_DEMO = 0
+        mock_mt5.terminal_info.return_value = None  # looks dropped
+        mock_mt5.initialize.return_value = True  # reconnect succeeds
+        mock_mt5.account_info.return_value = SimpleNamespace(
+            equity=9077.72, balance=9077.72, login=345297734, server="XMGlobal-MT5 10", trade_mode=0,
+        )
+        mock_mt5.positions_get.return_value = []
+        with patch.dict("sys.modules", {"MetaTrader5": mock_mt5}):
+            result = data.build_status()
+        self.assertEqual(result["equity"], 9077.72)
+        self.assertTrue(result["mt5_connected"])
+        mock_mt5.initialize.assert_called_once()
+
+
 class TestBuildStatusNoMt5(unittest.TestCase):
     def test_no_raise_when_mt5_import_fails(self) -> None:
         with patch.dict("sys.modules", {"MetaTrader5": None}):

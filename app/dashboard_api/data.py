@@ -51,6 +51,32 @@ def _broker_day_window(now_utc: datetime) -> tuple[datetime, datetime]:
     return broker_day_window(now_utc, BROKER_UTC_OFFSET_HOURS)
 
 
+def _ensure_mt5_connected(mt5_module) -> bool:
+    """Self-healing connection check, called at the top of every MT5-reading
+    function below. dashboard_api connects once at server startup (see
+    server.py's lifespan handler) — but a long-running process can see that
+    single connection drop for reasons unrelated to "too many connections"
+    (terminal restart, brief network blip, Windows session change, etc.).
+    Multiple concurrent Python processes holding independent MT5 handles is
+    NOT the limiting factor here — watchdog/hermes_watchdog.py and the bot
+    itself (app.main) both hold their own live connections at the same time
+    this function runs, proving the terminal accepts more than one handle.
+    Without this check, a single dropped connection at any point in the
+    process's lifetime would silently return None from every MT5 call
+    forever after, with no way to self-recover short of a manual restart.
+    terminal_info() is used as the cheap liveness probe (no side effects);
+    initialize() is idempotent and safe to call when already connected."""
+    try:
+        if mt5_module.terminal_info() is not None:
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(mt5_module.initialize())
+    except Exception:
+        return False
+
+
 def _read_json(path: Path, default=None):
     if not path.exists():
         return default
@@ -99,6 +125,7 @@ def build_status() -> dict:
     positions = []
     try:
         import MetaTrader5 as mt5
+        _ensure_mt5_connected(mt5)
         acc_obj = mt5.account_info()
         raw_positions = mt5.positions_get() or []
         for p in raw_positions:
@@ -146,6 +173,7 @@ def build_today() -> dict:
     trades = []
     try:
         import MetaTrader5 as mt5
+        _ensure_mt5_connected(mt5)
         start, end = _broker_day_window(now)
         deals = mt5.history_deals_get(start.replace(tzinfo=None), end.replace(tzinfo=None)) or []
         opens = {d.position_id: d for d in deals if int(getattr(d, "entry", -1) or 0) == 0}
@@ -334,6 +362,7 @@ def build_senses(symbol: str = "GOLD#") -> dict:
     try:
         import MetaTrader5 as mt5
         from app.agents.ees import compute_ees
+        _ensure_mt5_connected(mt5)
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 25)
         if rates is not None and len(rates) >= 10:
             candles = [
