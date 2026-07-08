@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 
 from app.config import Settings
+from app.utils.broker_time import broker_now_utc
 
 
 TIME_GATE_FIELDS = [
@@ -62,7 +63,7 @@ class TimeEngine:
         now: datetime | None = None,
         news_blackout: bool | None = None,
     ) -> dict:
-        utc_dt = _as_utc(now) or datetime.now(timezone.utc)
+        utc_dt = _as_utc(now) or broker_now_utc()
         local_zone = _zone(getattr(self.settings, "timezone_local", None) or self.settings.report_timezone)
         local_dt = utc_dt.astimezone(local_zone)
         broker_dt = _broker_time_estimate(frames or {}, tick, utc_dt)
@@ -245,16 +246,32 @@ def _is_bad_hour(symbol: str, local_hour: int, settings: Settings) -> bool:
     return local_hour in _int_set(getattr(settings, "fx_bad_hours", "0,1,22,23"))
 
 
+_STALE_TICK_HOURS = 6.0  # mission/FIX_KILLSWITCH_DATE.md (2026-07-08)
+
+
 def _broker_time_estimate(frames: dict, tick: dict | object | None, utc_dt: datetime) -> datetime:
+    """Estimates the broker's live clock from a tick/candle timestamp when
+    available (more precise than a naive UTC+offset guess). Hardened
+    2026-07-08: an MT5 reconnect can hand back a cached tick/candle object
+    from well before the disconnect — trusting its timestamp blindly would
+    silently mis-classify session/asia-window/bad-hour for as long as the
+    stale data lingers. Any candidate more than _STALE_TICK_HOURS away from
+    the wall clock (utc_dt) is rejected and the next, more conservative
+    source is tried — utc_dt itself is always fresh (see
+    app.utils.broker_time) and is therefore never rejected."""
     tick_time = _extract_time(tick)
-    if tick_time is not None:
+    if tick_time is not None and not _is_stale(tick_time, utc_dt):
         return tick_time
     for timeframe in ("M1", "M5", "M15", "H1", "H4"):
         frame = frames.get(timeframe) if isinstance(frames, dict) else None
         frame_time = _last_frame_time(frame)
-        if frame_time is not None:
+        if frame_time is not None and not _is_stale(frame_time, utc_dt):
             return frame_time
     return utc_dt
+
+
+def _is_stale(candidate: datetime, utc_dt: datetime) -> bool:
+    return abs((utc_dt - candidate).total_seconds()) / 3600.0 > _STALE_TICK_HOURS
 
 
 def _last_frame_time(frame: object) -> datetime | None:
