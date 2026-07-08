@@ -92,6 +92,9 @@ EXPLORATION_SESSIONS = {"ASIA_MAIN", "LONDON", "OVERLAP", "NEW_YORK"}
 EVENTS_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_pilot_events.jsonl"
 BACKEND_START_PATH = Path(__file__).resolve().parents[1] / "data" / "backend_started_at.json"
 REPORT_WINDOW_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_report_window.json"
+# mission/DASHBOARD.md (2026-07-08): read-only cross-process snapshot, written
+# after every Exit V2 evaluation, read by app/dashboard_api (separate process).
+EXIT_V2_SNAPSHOT_PATH = Path(__file__).resolve().parents[1] / "data" / "exit_v2_state.json"
 _CAP_BLOCK_REASONS = {
     "MAX_TRADES_PER_SYMBOL_PER_DAY",
     "MAX_TRADES_PER_DAY_TOTAL",
@@ -3385,6 +3388,14 @@ class DemoKellyRouter:
                 action.get("profit_usd"), action.get("peak_usd"), action.get("be_armed"),
                 "SHADOW" if shadow else "ACTIVE", account_type,
             )
+            # mission/DASHBOARD.md (2026-07-08): read-only state snapshot for the
+            # dashboard's /api/status (armed/peak/lock per position). Own
+            # try/except so a write failure (disk full, permission) can NEVER
+            # cascade into the outer except and skip real exit evaluation.
+            try:
+                _write_exit_v2_snapshot(ticket, symbol, action, cfg, shadow, account_type)
+            except Exception:
+                pass
             if str(action.get("action")) != "CLOSE":
                 return events
             if shadow:
@@ -5047,6 +5058,40 @@ def _order_failure_reason(result: object, ticket: object) -> str:
     if not _ticket_present(ticket):
         return "ORDER_TICKET_MISSING"
     return "ORDER_RESULT_UNCONFIRMED"
+
+
+def _write_exit_v2_snapshot(
+    ticket: int, symbol: str, action: dict, cfg: "ExitV2Config", shadow: bool, account_type: str,
+) -> None:
+    """mission/DASHBOARD.md — best-effort read-only snapshot for the
+    dashboard's /api/status. Never raises (caller also wraps in try/except,
+    this is belt-and-suspenders); never called anywhere except immediately
+    after the real [EXIT_V2] log line, so it can only ever be a passive
+    mirror of what already happened, never a decision input."""
+    snapshot = {}
+    if EXIT_V2_SNAPSHOT_PATH.exists():
+        try:
+            snapshot = json.loads(EXIT_V2_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            snapshot = {}
+    snapshot[str(ticket)] = {
+        "symbol": symbol,
+        "action": action.get("action"),
+        "reason": action.get("reason"),
+        "profit_usd": action.get("profit_usd"),
+        "peak_usd": action.get("peak_usd"),
+        "be_armed": action.get("be_armed"),
+        "active_floor_usd": action.get("active_floor") or action.get("floor_usd"),
+        "trail_start_usd": cfg.trail_start_usd,
+        "trail_gap_usd": cfg.trail_gap_usd,
+        "be_arm_usd": cfg.be_arm_usd,
+        "be_floor_usd": cfg.be_floor_usd,
+        "mode": "SHADOW" if shadow else "ACTIVE",
+        "account_type": account_type,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    EXIT_V2_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EXIT_V2_SNAPSHOT_PATH.write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
 
 
 def _quick_exit_event(event_type: str, status: str, payload: dict, now: datetime | None = None) -> dict:

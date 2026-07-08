@@ -20,6 +20,9 @@ backups/
 app/data/decision_dataset.jsonl
 app/data/position_closed_seen.json
 app/data/hermes_instance_*.lock
+app/data/exit_v2_state.json
+logs/active_profile.txt
+logs/stopped_by_user.flag
 
 *.bak
 app/data/*.jsonl
