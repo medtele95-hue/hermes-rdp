@@ -128,10 +128,22 @@ $testExit = $LASTEXITCODE
 Write-Health "test suite exit=$testExit"
 
 if ($testExit -ne 0) {
-    # ROLLBACK TOTAL -- tout ce que la session a fait, committe ou non
+    # ROLLBACK -- tout changement TRACKE de la session est annule.
+    # DELIBEREMENT PAS de "git clean -fd" ici : trouve pendant le TEST DE
+    # FEU (2026-07-08, branche jetable) que cette commande supprime AUSSI
+    # tout fichier untracked legitime present au moment du safepoint (ici,
+    # des fichiers mission/*.md donnes par SIMO qui n'avaient jamais ete
+    # commites) -- pas seulement les fichiers parasites qu'une mauvaise
+    # session aurait crees. reset --hard seul suffit a annuler tout
+    # changement sur les fichiers TRACKES (ce que les tests verifient) ;
+    # les fichiers untracked residuels sont juste LISTES ci-dessous pour
+    # revue humaine, jamais supprimes automatiquement.
     Write-Health "TESTS FAILED -> rollback to $safepointTag"
     git reset --hard $safepointTag 2>&1 | Out-Null
-    git clean -fd 2>&1 | Out-Null
+    $untracked = git status --porcelain 2>&1 | Where-Object { $_ -match "^\?\? " }
+    if ($untracked) {
+        Write-Health "untracked files remain after rollback (NOT deleted, review manually): $($untracked -join '; ')"
+    }
     $state.rollback_streak += 1
     $state.last_run = $now.ToString("o")
 
