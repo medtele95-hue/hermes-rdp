@@ -526,6 +526,18 @@ class DashboardStatusPayloadTests(unittest.TestCase):
 
 class SetupHunterTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Ce harnais valide la mécanique générique du SetupHunter avec des
+        # symboles de test EUR/BTC. En production BTC est hard-disabled
+        # (registry.ALLOWED_BTC_EXECUTION_STRATEGIES = frozenset(), invariant
+        # GOLD-only 2026-07-07) — la preuve dédiée vit dans
+        # test_gold_only_invariant.py. Ici on restaure la table legacy pour
+        # que les candidats atteignent les gates testées.
+        btc_registry_patcher = patch(
+            "app.strategies.registry.ALLOWED_BTC_EXECUTION_STRATEGIES",
+            frozenset({"SIMO_ATM_BREAKOUT", "BTC_SCALPING_AGENT", "FIB_CONFLUENCE_EXECUTION_AGENT", "ORDER_FLOW_EXECUTION_AGENT", "HERMES_STRATEGY_PACK_AGENT"}),
+        )
+        btc_registry_patcher.start()
+        self.addCleanup(btc_registry_patcher.stop)
         self.hunter = SetupHunter(demo_settings())
         self.time_gate = {
             "session_name": "LONDON",
@@ -2218,8 +2230,28 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
             return_value=SimpleNamespace(retcode=10009, comment="Done"),
         )
         self.order_check_patcher.start()
+        # Ce harnais valide la mécanique d'exécution générique (pricing au
+        # tick, caps, exploration...) avec des symboles de test EUR/BTC.
+        # L'invariant GOLD-only de PRODUCTION (SYMBOL_ALLOWLIST=("GOLD#",))
+        # a sa preuve dédiée dans test_gold_only_invariant.py qui exerce la
+        # vraie constante sans ce patch. Ne pas retirer ce commentaire.
+        self.allowlist_patcher = patch(
+            "app.mt5.demo_router.SYMBOL_ALLOWLIST",
+            ("GOLD#", "GOLD", "XAUUSD", "EURUSD", "BTCUSD#", "BTCUSD", "US100Cash#"),
+        )
+        self.allowlist_patcher.start()
+        # Même logique pour ALLOWED_DEMO_SYMBOLS (gate SYMBOL_NOT_ALLOWED,
+        # amont du choke-point) : restauré au superset legacy pour que les
+        # scénarios EUR/BTC atteignent la gate qu'ils testent réellement.
+        self.demo_symbols_patcher = patch(
+            "app.mt5.demo_router.ALLOWED_DEMO_SYMBOLS",
+            {"BTCUSD#", "BTCUSD", "GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#", "EURUSD", "US100Cash#", "US100Cash", "US100", "NAS100", "USTEC"},
+        )
+        self.demo_symbols_patcher.start()
 
     def tearDown(self) -> None:
+        self.demo_symbols_patcher.stop()
+        self.allowlist_patcher.stop()
         self.order_check_patcher.stop()
         self.tick_patcher.stop()
         self.tmp.cleanup()
