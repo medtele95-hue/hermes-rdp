@@ -29,6 +29,14 @@ from pathlib import Path
 from app.logger import log
 
 SCHEMA_VERSION = 2
+# COEUR_V2 (2026-07-08, mission/COEUR_V2.md) : version du coeur mathematique/
+# geometrique qui a produit cette ligne, distincte de SCHEMA_VERSION (qui suit
+# la structure JSON, pas la formule). 1 = pre-COEUR_V2 (confluence brute
+# geo-dominante, ATR=SMA, GOLD_RANGE_BREAKOUT inactif). 2 = post-COEUR_V2
+# (confluence normalisee ponderee, ATR=Wilder RMA, GOLD_RANGE_BREAKOUT actif,
+# strategy_aware par defaut). Frontiere nette pour toute analyse future du
+# dataset. Lignes sans ce champ = core_version 1 implicite.
+CORE_VERSION = 2
 DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "decision_dataset.jsonl"
 
 _KILL_ZONES_UTC = ((7, 9), (12, 14), (1, 3))
@@ -123,6 +131,7 @@ def build_decision_row(event: dict, extras: dict | None = None) -> dict:
     row: dict = {
         "row_type": "decision",
         "schema_version": SCHEMA_VERSION,
+        "core_version": CORE_VERSION,
         "recorded_at": now.isoformat(),
     }
     for key, value in (event or {}).items():
@@ -217,7 +226,7 @@ class DecisionDataset:
 
     def record_outcome(self, outcome: dict) -> None:
         try:
-            self._append({"row_type": "outcome", "schema_version": SCHEMA_VERSION, **outcome})
+            self._append({"row_type": "outcome", "schema_version": SCHEMA_VERSION, "core_version": CORE_VERSION, **outcome})
         except Exception:
             pass
 
