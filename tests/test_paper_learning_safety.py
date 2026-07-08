@@ -2218,8 +2218,19 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
             return_value=SimpleNamespace(retcode=10009, comment="Done"),
         )
         self.order_check_patcher.start()
+        # Ce harnais valide la mécanique d'exécution générique (pricing au
+        # tick, caps, exploration...) avec des symboles de test EUR/BTC.
+        # L'invariant GOLD-only de PRODUCTION (SYMBOL_ALLOWLIST=("GOLD#",))
+        # a sa preuve dédiée dans test_gold_only_invariant.py qui exerce la
+        # vraie constante sans ce patch. Ne pas retirer ce commentaire.
+        self.allowlist_patcher = patch(
+            "app.mt5.demo_router.SYMBOL_ALLOWLIST",
+            ("GOLD#", "GOLD", "XAUUSD", "EURUSD", "BTCUSD#", "BTCUSD", "US100Cash#"),
+        )
+        self.allowlist_patcher.start()
 
     def tearDown(self) -> None:
+        self.allowlist_patcher.stop()
         self.order_check_patcher.stop()
         self.tick_patcher.stop()
         self.tmp.cleanup()

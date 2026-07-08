@@ -43,7 +43,20 @@ from app.utils.risk_math import reward_risk
 from app.utils.throttle import log_event_throttled
 
 
-ALLOWED_DEMO_SYMBOLS = {"BTCUSD#", "BTCUSD", "GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#", "EURUSD", "US100Cash#", "US100Cash", "US100", "NAS100", "USTEC"}
+# ═════════════════════════════════════════════════════════════════════════
+# INVARIANTS HISTORIQUES ABSOLUS — restaurés le 2026-07-07 (mission FIX_BTC)
+# GOLD-ONLY : aucune NOUVELLE exposition hors SYMBOL_ALLOWLIST, quel que soit
+# le chemin de code. Enforcé par _execution_invariants_block() juste avant
+# mt5.order_send dans _send_order (marché) et _send_pending_order (pending),
+# les deux seuls points du système qui créent de l'exposition. Les fermetures
+# et modifications de SL/TP de positions existantes restent permises
+# (réduction de risque uniquement). Constantes volontairement en dur :
+# PAS de flag .env, PAS de Settings, PAS de contournement possible.
+SYMBOL_ALLOWLIST = ("GOLD#",)
+LOT_HARD_CAP = 0.01
+MAGIC_HARD = 909002
+# ═════════════════════════════════════════════════════════════════════════
+ALLOWED_DEMO_SYMBOLS = {"GOLD#", "GOLD", "GOLDCASH#", "XAUUSD", "XAUUSD#"}
 GOLD_GENERIC_DISABLED_STRATEGIES = {
     "TREND_CONTINUATION_BREAKDOWN",
     "QUANT_PRO_REGIME_SWITCHING",
@@ -161,6 +174,85 @@ def _final_rr(direction: object, entry: object, sl: object, tp: object) -> float
     if risk <= 0:
         return None
     return reward / risk
+
+
+def _execution_invariants_block(request: dict, strategy: object, max_open_per_symbol: int = 1) -> str | None:
+    """Dernier rempart avant mt5.order_send pour toute NOUVELLE exposition.
+
+    Vérifie les invariants historiques absolus (voir SYMBOL_ALLOWLIST en tête
+    de module) sur la requête FINALE, après toute normalisation. Retourne la
+    raison du blocage, ou None si l'ordre est conforme. Normalise en place
+    volume (LOT_HARD_CAP) et magic (MAGIC_HARD) — jamais bloquant, toujours
+    corrigé vers l'invariant. Ne s'applique qu'aux ordres qui OUVRENT de
+    l'exposition ; les fermetures/modifications ne passent pas par ici.
+    """
+    symbol = str(request.get("symbol") or "")
+    strat = str(strategy or "UNKNOWN")
+    # Invariant 1 — GOLD-ONLY : allowlist stricte au choke-point.
+    if symbol not in SYMBOL_ALLOWLIST:
+        log.warning(
+            "[SYMBOL_BLOCKED] symbol=%s strategy=%s allowlist=%s reason=GOLD_ONLY_INVARIANT",
+            symbol, strat, list(SYMBOL_ALLOWLIST),
+        )
+        return "SYMBOL_BLOCKED"
+    # Invariant 4 — SL/TP obligatoires : jamais d'ordre nu.
+    try:
+        sl = float(request.get("sl") or 0.0)
+    except (TypeError, ValueError):
+        sl = 0.0
+    try:
+        tp = float(request.get("tp") or 0.0)
+    except (TypeError, ValueError):
+        tp = 0.0
+    if sl <= 0.0 or tp <= 0.0:
+        log.warning(
+            "[NAKED_ORDER_BLOCKED] symbol=%s strategy=%s sl=%s tp=%s",
+            symbol, strat, request.get("sl"), request.get("tp"),
+        )
+        return "NAKED_ORDER_BLOCKED"
+    # Invariant 2 — lot figé : plafond dur, jamais au-dessus de LOT_HARD_CAP.
+    try:
+        volume = float(request.get("volume") or 0.0)
+    except (TypeError, ValueError):
+        volume = 0.0
+    if volume <= 0.0:
+        log.warning("[LOT_INVALID_BLOCKED] symbol=%s strategy=%s volume=%s", symbol, strat, request.get("volume"))
+        return "LOT_INVALID_BLOCKED"
+    if volume > LOT_HARD_CAP + 1e-9:
+        log.warning(
+            "[LOT_HARD_CAP] symbol=%s strategy=%s volume=%s forced=%s",
+            symbol, strat, volume, LOT_HARD_CAP,
+        )
+        request["volume"] = LOT_HARD_CAP
+    # Invariant 3 — magic 909002 sur tout ordre émis.
+    try:
+        magic = int(request.get("magic") or 0)
+    except (TypeError, ValueError):
+        magic = 0
+    if magic != MAGIC_HARD:
+        log.warning(
+            "[MAGIC_FORCED] symbol=%s strategy=%s magic=%s forced=%s",
+            symbol, strat, magic, MAGIC_HARD,
+        )
+        request["magic"] = MAGIC_HARD
+    # Invariant 5 — MAX_OPEN_TRADES_PER_SYMBOL au choke-point : aucun nouvel
+    # ordre tant qu'une position HERMES vit sur ce symbole. Fail-open si MT5
+    # est indisponible (les gates amont portent déjà ce cap) pour ne pas
+    # bloquer sur un artefact de connexion.
+    open_count = 0
+    try:
+        positions = mt5.positions_get(symbol=symbol)
+        if positions:
+            open_count = sum(1 for p in positions if int(getattr(p, "magic", 0) or 0) == MAGIC_HARD)
+    except (TypeError, ValueError, AttributeError):
+        open_count = 0
+    if open_count >= max(1, int(max_open_per_symbol or 1)):
+        log.warning(
+            "[MAX_OPEN_BLOCKED] symbol=%s strategy=%s open_count=%s cap=%s",
+            symbol, strat, open_count, max_open_per_symbol,
+        )
+        return "MAX_OPEN_TRADES_PER_SYMBOL"
+    return None
 
 
 @dataclass(frozen=True)
@@ -2949,6 +3041,22 @@ class DemoKellyRouter:
                 "order_success": False,
                 "order_failure_reason": reason,
             }
+        _invariant_reason = _execution_invariants_block(
+            request, event.get("strategy"), self.settings.demo_max_open_trades_per_symbol
+        )
+        if _invariant_reason:
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": _invariant_reason,
+                "failed_gate": _invariant_reason,
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": request,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": _invariant_reason,
+            }
         _send_started = _time.perf_counter()
         result = mt5.order_send(request)
         _fill_latency_ms = (_time.perf_counter() - _send_started) * 1000.0
@@ -3147,6 +3255,22 @@ class DemoKellyRouter:
                 "order_failure_reason": reason,
             }
 
+        _invariant_reason = _execution_invariants_block(
+            request, event.get("strategy"), self.settings.demo_max_open_trades_per_symbol
+        )
+        if _invariant_reason:
+            return {
+                "event_type": "DEMO_SKIP",
+                "status": "BLOCK",
+                "reason": _invariant_reason,
+                "failed_gate": _invariant_reason,
+                "raw_payload": _demo_order_raw_payload(event),
+                "order_request": request,
+                "order_result": None,
+                "order_retcode": None,
+                "order_success": False,
+                "order_failure_reason": _invariant_reason,
+            }
         result = mt5.order_send(request)
         order_result = _order_result_payload(result)
         ticket = order_result.get("ticket")
