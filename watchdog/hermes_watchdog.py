@@ -331,31 +331,52 @@ def check_10_dashboard_heartbeat(now_utc: datetime) -> list:
 
 
 def check_7_killswitch(deals, now_utc: datetime) -> list:
-    losses = 0
-    last_open_time = None
-    trades = []
+    # trouvé en production (2026-07-09) : la version précédente déclenchait
+    # KILLSWITCH_PIERCED (CRITIQUE) dès qu'une SEULE position avait été
+    # ouverte n'importe quand dans la journée, quota dépassé ou non — donc
+    # sur TOUTE journée avec >6 pertes (qui, par construction, exige d'avoir
+    # ouvert au moins 6 positions), l'alerte se déclenchait en boucle même
+    # si le kill-switch réel (app/services/daily_killswitch.py, appelé
+    # depuis demo_router.py) bloquait déjà correctement les nouvelles
+    # entrées. Le commentaire d'origine disait bien vérifier les ouvertures
+    # "APRÈS le quota" mais le code ne comparait aucun horodatage : on
+    # trie maintenant les deals par heure et on ne marque PIERCED que si une
+    # ouverture a un timestamp postérieur à l'instant où la perte de trop
+    # (n°7) a été enregistrée.
+    events = []
     for d in deals or []:
         if int(getattr(d, "magic", 0) or 0) != MAGIC_HARD:
             continue
         entry = int(getattr(d, "entry", -1) or 0)
+        t = int(getattr(d, "time", 0) or 0)
         if entry == 1:  # DEAL_ENTRY_OUT
             net = (float(getattr(d, "profit", 0) or 0) + float(getattr(d, "commission", 0) or 0)
                    + float(getattr(d, "swap", 0) or 0))
-            trades.append(net)
-            if net < 0:
-                losses += 1
+            events.append((t, "OUT", net < 0))
         elif entry == 0:  # DEAL_ENTRY_IN
-            t = int(getattr(d, "time", 0) or 0)
-            last_open_time = max(last_open_time or 0, t)
+            events.append((t, "IN", False))
+    events.sort(key=lambda e: e[0])
+
+    losses = 0
+    breach_time = None
+    open_after_breach = False
+    for t, kind, is_loss in events:
+        if kind == "OUT":
+            if is_loss:
+                losses += 1
+                if losses > MAX_LOSSES_PER_DAY and breach_time is None:
+                    breach_time = t
+        elif breach_time is not None and t >= breach_time:
+            open_after_breach = True
+
     if losses <= MAX_LOSSES_PER_DAY:
         return []
-    # quota dépassé : de nouveaux trades s'ouvrent-ils APRÈS le quota ?
-    if last_open_time:
+    if open_after_breach:
         return [(CRITICAL, "KILLSWITCH_PIERCED",
                  f"KILL-SWITCH PERCÉ : {losses} pertes jour broker (> quota {MAX_LOSSES_PER_DAY}) "
-                 f"et des ouvertures existent — vérifier immédiatement")]
+                 f"et des ouvertures existent APRÈS le dépassement — vérifier immédiatement")]
     return [(HIGH, "KILLSWITCH_QUOTA",
-             f"{losses} pertes jour broker > quota {MAX_LOSSES_PER_DAY} (aucune ouverture récente vue)")]
+             f"{losses} pertes jour broker > quota {MAX_LOSSES_PER_DAY} (aucune ouverture après le dépassement)")]
 
 
 def check_8_machine(now_utc: datetime) -> list:

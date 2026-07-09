@@ -121,13 +121,27 @@ class Check6HeartbeatTests(unittest.TestCase):
 
 class Check7KillswitchTests(unittest.TestCase):
     def test_pierced_killswitch_is_critical(self) -> None:
-        deals = [_deal(profit=-1.0) for _ in range(7)] + [_deal(entry=0, time=1800000000)]
+        # 7 pertes (heures croissantes 1700000000..1700000600) puis une
+        # ouverture APRÈS la 7e perte -> le kill-switch a vraiment été percé.
+        deals = [_deal(profit=-1.0, time=1700000000 + i * 100) for i in range(7)]
+        deals.append(_deal(entry=0, time=1800000000))
         alerts = wd.check_7_killswitch(deals, NOW)
         self.assertTrue(any(key == "KILLSWITCH_PIERCED" and lvl == wd.CRITICAL for lvl, key, _ in alerts))
 
     def test_quota_ok_is_clean(self) -> None:
         deals = [_deal(profit=-1.0) for _ in range(3)]
         self.assertEqual(wd.check_7_killswitch(deals, NOW), [])
+
+    def test_positions_opened_before_breach_are_not_pierced(self) -> None:
+        # trouvé en production (2026-07-09) : toutes les ouvertures ont eu
+        # lieu AVANT que la 7e perte ne dépasse le quota (ce qui est le cas
+        # normal — le kill-switch bloque bien les nouvelles entrées après
+        # coup) -> doit rester HIGH/KILLSWITCH_QUOTA, jamais CRITIQUE.
+        deals = [_deal(entry=0, time=1700000000 + i * 10) for i in range(7)]
+        deals += [_deal(profit=-1.0, time=1700000500 + i * 100) for i in range(7)]
+        alerts = wd.check_7_killswitch(deals, NOW)
+        self.assertFalse(any(key == "KILLSWITCH_PIERCED" for _, key, _ in alerts))
+        self.assertTrue(any(key == "KILLSWITCH_QUOTA" and lvl == wd.HIGH for lvl, key, _ in alerts))
 
 
 class Check10DashboardHeartbeatTests(unittest.TestCase):
