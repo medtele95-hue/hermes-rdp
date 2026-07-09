@@ -198,7 +198,20 @@ def get_index() -> FileResponse:
 
 def run(host: str = "127.0.0.1", port: int = 8010) -> None:
     import uvicorn
-    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+    # GRAND_PLAN_2 cloture (2026-07-09) : trouve ~150 connexions TCP
+    # "Established" simultanees sur ce port, serveur completement bloque
+    # (timeout sur toute nouvelle requete) apres ~11h de service continu
+    # via Tailscale. Cause racine non isolee avec certitude (client mobile
+    # qui rouvre des connexions sans fermer les anciennes, ou connexions
+    # keep-alive jamais liberees cote serveur) mais defendable des deux
+    # cotes : timeout_keep_alive borne la duree de vie d'une connexion
+    # inactive, limit_concurrency fait repondre 503 au-dela d'un seuil
+    # large plutot que de saturer indefiniment le serveur au point de ne
+    # plus repondre du tout a un simple /api/status.
+    uvicorn.run(
+        app, host=host, port=port, log_level="warning", access_log=False,
+        timeout_keep_alive=15, limit_concurrency=100,
+    )
 
 
 if __name__ == "__main__":
