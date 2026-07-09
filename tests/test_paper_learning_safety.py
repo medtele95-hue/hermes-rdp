@@ -1361,11 +1361,24 @@ class Mt5PositionSyncTests(unittest.TestCase):
     def setUp(self) -> None:
         # BLOC 11a: the [POSITION_CLOSED] idempotence set is PERSISTENT by
         # design — reset it so each test sees a fresh state.
-        from app.services.mt5_position_sync import POSITION_SYNC_EVENTS_PATH, _closed_seen_path
-
-        seen = _closed_seen_path(POSITION_SYNC_EVENTS_PATH)
-        if seen.exists():
-            seen.unlink()
+        #
+        # mission4 auto-medecin (2026-07-08, premiere ronde autonome reelle) :
+        # cette classe resolvait POSITION_SYNC_EVENTS_PATH par defaut dans la
+        # plupart de ses tests (events_path = fallback_events_path or
+        # POSITION_SYNC_EVENTS_PATH, la majorite des tests ici ne passent pas
+        # fallback_events_path) -- ce setUp() supprimait donc le VRAI fichier
+        # de production app/data/position_closed_seen.json a chaque test, et
+        # les tests eux-memes lisaient/ecrivaient dedans. Avec le bot live
+        # tournant en parallele (verrou fichier Windows), ca causait un
+        # PermissionError flaky -- confirme en trouvant la cause exacte d'un
+        # faux rollback auto-medecin. Isole desormais via un repertoire
+        # temporaire propre a chaque test, jamais le fichier reel.
+        self._position_sync_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._position_sync_tmp.cleanup)
+        isolated_events_path = Path(self._position_sync_tmp.name) / "position_sync_events.jsonl"
+        patcher = patch("app.services.mt5_position_sync.POSITION_SYNC_EVENTS_PATH", isolated_events_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     class FakeIngest:
         def __init__(self, open_rows: list[dict] | None = None) -> None:
