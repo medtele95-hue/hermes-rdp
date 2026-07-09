@@ -44,6 +44,9 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.utils.broker_time import to_mt5_query_bounds  # noqa: E402
+
 WATCHDOG_DIR = Path(__file__).resolve().parent
 REPO_ROOT = WATCHDOG_DIR.parent
 ALERTS_LOG = WATCHDOG_DIR / "WATCHDOG_ALERTS.log"
@@ -439,7 +442,8 @@ def run_cycle(mt5_module, alerts_mgr: AlertManager, cfg: dict, now_utc: datetime
     try:
         positions = list(mt5_module.positions_get() or [])
         start, end = broker_day_window(now_utc)
-        deals = list(mt5_module.history_deals_get(start.replace(tzinfo=None), end.replace(tzinfo=None)) or [])
+        q_start, q_end = to_mt5_query_bounds(start, end, BROKER_UTC_OFFSET_HOURS)
+        deals = list(mt5_module.history_deals_get(q_start, q_end) or [])
         account = mt5_module.account_info()
     except Exception as exc:
         all_alerts.append((HIGH, "MT5_UNREADABLE", f"MT5 illisible : {str(exc)[:150]}"))
