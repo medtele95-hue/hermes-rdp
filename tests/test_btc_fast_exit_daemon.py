@@ -290,6 +290,17 @@ class TestFastExitDemoSafety(unittest.TestCase):
         with (
             patch("app.mt5.btc_fast_exit_daemon.mt5.positions_get") as mock_pos,
             patch("app.mt5.btc_fast_exit_daemon.mt5.account_info") as mock_ai,
+            # copy_rates_from_pos is NOT otherwise mocked in this test. On a
+            # machine with a live MT5 terminal connection, the daemon's
+            # `_tick()` calls the real MetaTrader5 API and receives genuine
+            # BTCUSD# M5 candles, which flips _evaluate_position into
+            # "dynamic" exit mode (TP computed from real ATR, e.g. $6.00)
+            # instead of the fixed $0.03 fast-exit threshold this test
+            # exercises -- profit=0.05 then never crosses the dynamic TP,
+            # so no close happens and the assertion below fails, but only
+            # on machines/sessions with a real connection already open.
+            # Force fallback mode explicitly so the test is hermetic.
+            patch("app.mt5.btc_fast_exit_daemon.mt5.copy_rates_from_pos", return_value=None),
         ):
             account = SimpleNamespace(trade_mode=0)  # MT5_ACCOUNT_TRADE_MODE_DEMO = 0
             mock_ai.return_value = account
