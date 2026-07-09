@@ -144,6 +144,26 @@ if ($testExit -ne 0) {
     if ($untracked) {
         Write-Health "untracked files remain after rollback (NOT deleted, review manually): $($untracked -join '; ')"
     }
+
+    # AUTO_MEDIC_MISSION.md instruit la session claude de ne JAMAIS pousser
+    # elle-meme -- mais avec --dangerously-skip-permissions rien ne l'EN
+    # EMPECHE mecaniquement. Trouve en usage reel (2026-07-08, premiere
+    # ronde autonome) : la session a pousse un commit correct AVANT que ce
+    # rollback (declenche par des tests flaky sans rapport avec son fix)
+    # ne s'execute -- un reset --hard local seul aurait laisse le commit
+    # sur GitHub, rendant le rollback cosmetique. Verifie donc explicitement
+    # si origin a avance au-dela du safepoint et, si oui, force le remote a
+    # revenir au safepoint aussi -- c'est le vrai filet de securite, pas
+    # l'instruction seule.
+    $branchName = (git rev-parse --abbrev-ref HEAD 2>&1 | Select-Object -First 1)
+    git fetch origin $branchName 2>&1 | Out-Null
+    $remoteHead = (git rev-parse "origin/$branchName" 2>&1 | Select-Object -First 1)
+    if ($remoteHead -and $remoteHead -ne $preHeadHash) {
+        Write-Health "remote advanced past safepoint (session pushed despite instructions) -> forcing origin back to safepoint"
+        git push origin "HEAD:$branchName" --force 2>&1 | Out-Null
+        Write-Audit @{ ts = $now.ToString("o"); outcome = "REMOTE_ROLLBACK_FORCED"; report = $reportPath; safepoint = $safepointTag; bad_remote_head = $remoteHead }
+    }
+
     $state.rollback_streak += 1
     $state.last_run = $now.ToString("o")
 

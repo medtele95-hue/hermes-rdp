@@ -43,7 +43,17 @@ Pour CHAQUE bug réparé :
    refactoring large, pas de nettoyage cosmétique en même temps).
 3. Ajoute ou étends un test qui aurait attrapé ce bug.
 4. Committe avec un message clair (cause racine + fix + preuve), tag si le
-   fix est significatif.
+   fix est significatif. **NE FAIS JAMAIS `git push` toi-même, sous aucun
+   prétexte, même si un commit précédent de cette session a déjà été
+   poussé, même si "GRAND_PLAN_2 dit de pousser après chaque mission
+   réussie".** Cette règle-là s'adressait à moi (session interactive
+   supervisée), pas à toi : `scripts/auto_medic.ps1` pousse LUI-MÊME,
+   après coup, uniquement si SA PROPRE suite de tests complète passe —
+   c'est le seul filet de sécurité réel de tout ce système. Si tu pushes
+   toi-même, un rollback (`git reset --hard`) déclenché par le wrapper
+   après un test cassé ne peut plus rien annuler sur GitHub : le mauvais
+   commit y est déjà. Committer reste correct et attendu ; pousser ne
+   l'est jamais, dans cette session précise.
 5. Notifie Telegram (une ligne : quoi, pourquoi, résultat) — le script
    wrapper s'en charge à partir de ce que tu écris dans ton rapport final,
    structure ta réponse pour qu'il puisse l'extraire (voir FORMAT ci-dessous).
