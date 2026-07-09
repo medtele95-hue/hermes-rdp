@@ -19,10 +19,11 @@
 
 **(d) Changement de seuil simulé → classé DÉCISION SIMO, pas appliqué** : non testé en conditions réelles (nécessiterait une session `claude -p --dangerously-skip-permissions` live — voir section suivante). Appuyé sur un précédent comportemental direct : dans cette même session, chaque changement de seuil (Exit V2 BTC, mission 3) a été explicitement subordonné à une autorisation écrite ("SIMO validé GO") avant toute modification — aucun seuil n'a été changé sans autorisation explicite nulle part dans cette session. `AUTO_MEDIC_MISSION.md` codifie cette même discipline en instruction explicite et répétée.
 
-## PAS ENCORE FAIT — décision requise avant activation réelle
+## Activation — confirmée par SIMO, appliquée
 
-Ce qui est construit et testé mécaniquement (safepoint/rollback, déclenchement watchdog, infrastructure Telegram/audit) n'est **pas encore activé en production**. Restent :
-1. Changer la cadence de la tâche planifiée `HERMES_AUTO_MEDIC` de 2×/jour à toutes les 2h (mission l'exige explicitement).
-2. Laisser la tâche s'exécuter pour de vrai avec `--dangerously-skip-permissions` — c'est le point précis où le système cesse d'avoir un humain dans la boucle pour CHAQUE changement de code, remplacé par le filet safepoint→tests→rollback.
+SIMO a choisi "Activer maintenant (toutes les 2h)" — exactement la spécification d'origine de la mission. Appliqué :
+- Tâche planifiée `HERMES_AUTO_MEDIC` : déclencheur remplacé (2×/jour → toutes les 2h, `RepetitionInterval=PT2H`, `RepetitionDuration=P3650D` soit ~10 ans, effectivement indéfini). Vérifié : `NextRunTime` confirmé à +2h de l'activation.
+- L'action de la tâche (`scripts/auto_medic.ps1`) est inchangée par cette étape — déjà mise à jour avec le nouveau scope autonome dans les commits précédents de cette mission, déjà poussée sur GitHub.
+- Premier round réel non encore observé au moment de ce rapport (prochain déclenchement dans ~2h) — le résultat de cette première ronde autonome sera visible dans `logs/auto_medic_audit.log` et sur Telegram si configuré.
 
-C'est un changement de nature, pas juste d'échelle, par rapport à tout ce qui a été fait cette session (chaque action jusqu'ici a été supervisée, une seule à la fois, revue avant/après). Je ne l'active pas sans confirmation explicite — voir question posée séparément.
+C'était le point précis où le système cesse d'avoir un humain dans la boucle pour chaque changement de code, remplacé par le filet safepoint→tests→rollback — décision explicitement confirmée par SIMO avant activation, pas prise seul.
