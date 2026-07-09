@@ -2241,8 +2241,25 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
             ("GOLD#", "GOLD", "XAUUSD", "EURUSD", "BTCUSD#", "BTCUSD", "US100Cash#"),
         )
         self.allowlist_patcher.start()
+        # mission/MISSION_TESTS_VERTS.md (2026-07-09): _active_symbols_subset()
+        # is a SEPARATE, later-added narrowing layer on top of SYMBOL_ALLOWLIST
+        # (mission/DASHBOARD.md) -- it reads ACTIVE_SYMBOLS_FILE straight off
+        # disk, unaffected by allowlist_patcher above. The real production
+        # file currently lists only ["GOLD#"], which silently dropped this
+        # class's EURUSD/BTC test vehicles and turned every one of these
+        # tests red (DASHBOARD_SYMBOL_DISABLED), including in isolation.
+        # Point it at a path that never exists in this tmpdir: the function's
+        # own documented behavior is to fail OPEN to the full SYMBOL_ALLOWLIST
+        # (never fail closed on a missing/corrupt file), so this exploits an
+        # already-existing fallback rather than inventing new test data.
+        self.active_symbols_patcher = patch(
+            "app.mt5.demo_router.ACTIVE_SYMBOLS_FILE",
+            Path(self.tmp.name) / "active_symbols_never_created.json",
+        )
+        self.active_symbols_patcher.start()
 
     def tearDown(self) -> None:
+        self.active_symbols_patcher.stop()
         self.allowlist_patcher.stop()
         self.order_check_patcher.stop()
         self.tick_patcher.stop()
