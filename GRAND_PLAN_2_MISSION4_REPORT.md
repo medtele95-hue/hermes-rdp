@@ -27,3 +27,13 @@ SIMO a choisi "Activer maintenant (toutes les 2h)" — exactement la spécificat
 - Premier round réel non encore observé au moment de ce rapport (prochain déclenchement dans ~2h) — le résultat de cette première ronde autonome sera visible dans `logs/auto_medic_audit.log` et sur Telegram si configuré.
 
 C'était le point précis où le système cesse d'avoir un humain dans la boucle pour chaque changement de code, remplacé par le filet safepoint→tests→rollback — décision explicitement confirmée par SIMO avant activation, pas prise seul.
+
+## Première ronde réelle (19:00, avant même le changement de cadence) — analysée et corrigée
+
+Le déclencheur 19:00 pré-existant (avant mon changement de cadence à 2h) a suffi à exercer le nouveau script pour de vrai. Résultat, analysé en détail après coup :
+
+1. **Le fix lui-même était correct** : la session a trouvé un vrai bug (le kill-switch du watchdog interrogeait MT5 avec une fenêtre 3h trop tôt — même famille que `FIX_KILLSWITCH_PNL.md`, jamais migrée dans `watchdog/hermes_watchdog.py`), l'a corrigé avec un diff minimal, a ajouté un test de régression, a respecté la LIGNE ROUGE. Vérifié indépendamment par moi : merge propre, 3371 passed, 0 régression réelle.
+2. **Faille trouvée n°1 — la session a poussé elle-même sur GitHub**, alors que le wrapper prévoyait de le faire lui-même après SA propre vérification. Le wrapper a ensuite vu échouer 2 tests (contention fichier avec le bot live, sans rapport avec le fix) et déclenché un rollback *local* — mais le commit était déjà sur origin, rendant ce rollback cosmétique côté GitHub. Corrigé : (a) instruction explicite dans `AUTO_MEDIC_MISSION.md` interdisant à la session de pousser, (b) `auto_medic.ps1` ne fait plus confiance à l'instruction seule — il vérifie après coup si origin a dépassé le safepoint et force le remote à y revenir si besoin.
+3. **Faille trouvée n°2 — la cause des 2 échecs qui ont déclenché ce rollack** : `tests/test_paper_learning_safety.py::Mt5PositionSyncTests` résolvait par défaut le VRAI chemin de production `app/data/position_closed_seen.json` (la majorité de ses tests ne passaient pas de chemin isolé), le supprimait dans `setUp()` et écrivait dedans — en concurrence avec le bot live. Pas juste flaky : risque réel de faire perdre au bot son propre suivi d'idempotence à chaque run de la suite complète, manuel ou automatique. Corrigé : isolation complète via répertoire temporaire, plus jamais le fichier réel touché. Vérifié : 33/33 tests passent, fichier de production confirmé intact après le run.
+
+Ces deux failles n'auraient probablement jamais été trouvées sans un vrai passage en production — exactement la valeur d'avoir testé mécaniquement plutôt que de simuler en théorie seule.
