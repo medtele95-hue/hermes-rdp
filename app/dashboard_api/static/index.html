@@ -14,7 +14,7 @@
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 15px; padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    font-size: 15px; padding-bottom: 40px;
   }
   header {
     padding: 12px 16px; border-bottom: 1px solid var(--border);
@@ -62,7 +62,7 @@
   }
   label { font-size: 12px; color: var(--muted); display: block; margin-top: 10px; }
   #toast {
-    position: fixed; bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 8px); left: 12px; right: 12px; padding: 12px;
+    position: fixed; bottom: 12px; left: 12px; right: 12px; padding: 12px;
     border-radius: 8px; background: var(--panel); border: 1px solid var(--border);
     display: none; z-index: 100; font-size: 13px;
   }
@@ -111,30 +111,10 @@
   .dot-detail { font-size: 11px; color: var(--red); margin-top: 6px; }
   .dot-na { font-size: 10.5px; color: var(--muted); margin-top: 6px; }
 
-  .positions-compact { margin-top: 4px; }
-  .position-card { background: #0e141a; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: 12.5px; }
-  .position-card .row { font-size: 12.5px; }
-  .position-card .p-dist { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .positions-compact .row { font-size: 12.5px; }
 
   section.danger-zone { border: 1px solid #7a2020; background: #1a0f0f; }
   section.danger-zone h2 { color: #ffb4ab; }
-
-  /* --- onglets (mission/MISSION_DASHBOARD_ONGLETS.md) --- */
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
-  #tabbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-    display: flex; background: var(--panel); border-top: 1px solid var(--border);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .tab-btn {
-    flex: 1; background: none; border: none; margin: 0; width: auto;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 8px 4px 6px; color: var(--muted); font-size: 10.5px; cursor: pointer;
-  }
-  .tab-btn svg { width: 20px; height: 20px; }
-  .tab-btn.active { color: var(--blue); }
-  .tab-btn:active { opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -144,174 +124,126 @@
   <div><span id="conn-dot"></span><span id="conn-text" style="font-size:12px;color:var(--muted)">...</span></div>
 </header>
 
-<!-- ============ ONGLET 1 : LIVE (defaut) ============ -->
-<div class="tab-panel active" id="tab-live">
+<!-- ============ MONITORING (compact, toujours visible) ============ -->
 
-  <section id="sec-status">
-    <div class="grid2">
-      <div><div class="label-sm">Équité</div><div class="big" id="s-equity">—</div></div>
-      <div><div class="label-sm">P&amp;L jour</div><div class="big" id="t-net">—</div></div>
-    </div>
-    <div class="row" style="margin-top:6px"><span class="k">Balance</span><span id="s-balance">—</span></div>
-    <div class="row"><span class="k">Mode</span><span id="s-mode">—</span></div>
-  </section>
+<section id="sec-status">
+  <div class="grid2">
+    <div><div class="label-sm">Équité</div><div class="big" id="s-equity">—</div></div>
+    <div><div class="label-sm">P&amp;L jour</div><div class="big" id="t-net">—</div></div>
+  </div>
+  <div class="row" style="margin-top:6px"><span class="k">Balance</span><span id="s-balance">—</span></div>
+  <div class="row"><span class="k">Mode</span><span id="s-mode">—</span></div>
+  <div id="s-positions" class="positions-compact" style="margin-top:6px"></div>
+</section>
 
-  <section id="sec-killswitch">
-    <h2>Kill-switch</h2>
-    <div id="ks-banner" class="kswrap ok">
-      <div class="k-main" id="ks-main">—</div>
-      <div class="k-sub" id="ks-sub">—</div>
-    </div>
-  </section>
+<section id="sec-killswitch">
+  <h2>Kill-switch</h2>
+  <div id="ks-banner" class="kswrap ok">
+    <div class="k-main" id="ks-main">—</div>
+    <div class="k-sub" id="ks-sub">—</div>
+  </div>
+</section>
 
-  <section id="sec-positions">
-    <h2>Positions ouvertes</h2>
-    <div id="s-positions" class="positions-compact"></div>
-  </section>
+<section id="sec-senses">
+  <h2>Capteurs</h2>
+  <div class="sensegrid">
+    <div class="sensepill"><div class="sp-label">EES sell</div><div class="sp-val" id="se-sell">—</div></div>
+    <div class="sensepill"><div class="sp-label">EES buy</div><div class="sp-val" id="se-buy">—</div></div>
+    <div class="sensepill"><div class="sp-label">Session</div><div class="sp-val" id="se-session">—</div></div>
+    <div class="sensepill"><div class="sp-label">DXY</div><div class="sp-val" id="se-dxy">—</div></div>
+    <div class="sensepill"><div class="sp-label">Régime ATR</div><div class="sp-val" id="se-atr">—</div></div>
+    <div class="sensepill"><div class="sp-label">Prochaine news</div><div class="sp-val" id="se-news">—</div></div>
+  </div>
+</section>
 
-  <section id="sec-system">
-    <h2>Santé</h2>
-    <div class="dotrow" id="sys-dots"></div>
-    <div id="sys-detail"></div>
-  </section>
+<section id="sec-activity">
+  <h2>Activité récente</h2>
+  <div id="activity-list"><div class="k" style="font-size:12.5px">—</div></div>
+</section>
 
-</div>
+<section id="sec-system">
+  <h2>Système</h2>
+  <div class="dotrow" id="sys-dots"></div>
+  <div id="sys-detail"></div>
+</section>
 
-<!-- ============ ONGLET 2 : CAPTEURS ============ -->
-<div class="tab-panel" id="tab-senses">
+<!-- ============ COMMANDES (du moins au plus dangereux) ============ -->
 
-  <section id="sec-senses">
-    <h2>Capteurs</h2>
-    <div class="sensegrid">
-      <div class="sensepill"><div class="sp-label">EES sell</div><div class="sp-val" id="se-sell">—</div></div>
-      <div class="sensepill"><div class="sp-label">EES buy</div><div class="sp-val" id="se-buy">—</div></div>
-      <div class="sensepill"><div class="sp-label">Session</div><div class="sp-val" id="se-session">—</div></div>
-      <div class="sensepill"><div class="sp-label">DXY</div><div class="sp-val" id="se-dxy">—</div></div>
-      <div class="sensepill"><div class="sp-label">Régime ATR</div><div class="sp-val" id="se-atr">—</div></div>
-      <div class="sensepill"><div class="sp-label">Prochaine news</div><div class="sp-val" id="se-news">—</div></div>
-    </div>
-  </section>
+<section id="sec-pin">
+  <h2>PIN (requis pour toute commande)</h2>
+  <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••">
+</section>
 
-</div>
+<section id="sec-symbols">
+  <h2>Symboles actifs <span class="label-sm">(risque faible)</span></h2>
+  <div class="btnrow">
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-gold" checked style="width:auto;margin:0"> GOLD#
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-btc" checked style="width:auto;margin:0"> BTCUSD#
+    </label>
+  </div>
+  <button onclick="submitSymbols()">Appliquer</button>
+</section>
 
-<!-- ============ ONGLET 3 : ACTIVITE ============ -->
-<div class="tab-panel" id="tab-activity">
+<section id="sec-bot">
+  <h2>Robot <span class="label-sm">(risque moyen — confirmation requise sur stop/restart)</span></h2>
+  <div class="btnrow">
+    <button id="btn-stop" class="danger" onclick="confirmThenAction(this,'bot_stop','/api/action/bot/stop',{})">Stop</button>
+    <button onclick="doAction('bot_start','/api/action/bot/start',{})">Start</button>
+    <button id="btn-restart" class="warn" onclick="confirmThenAction(this,'bot_restart','/api/action/bot/restart',{})">Restart</button>
+  </div>
+</section>
 
-  <section id="sec-activity">
-    <h2>Activité récente</h2>
-    <div id="activity-list"><div class="k" style="font-size:12.5px">—</div></div>
-  </section>
+<section id="sec-account" class="danger-zone">
+  <h2>Mode compte <span class="label-sm">(le plus dangereux — PIN + confirmation texte)</span></h2>
+  <label>Compte cible</label>
+  <select id="acc-target">
+    <option value="DEMO">DEMO</option>
+    <option value="REAL">REAL</option>
+  </select>
+  <div id="real-confirm" style="display:none">
+    <label>Tapez REAL en toutes lettres pour confirmer</label>
+    <input type="text" id="real-text" placeholder="REAL">
+  </div>
+  <button class="danger" onclick="submitAccountSwitch()">Basculer</button>
+</section>
 
-  <details style="margin:12px">
-    <summary>Journal complet du jour</summary>
-    <div class="row" style="margin-top:8px"><span class="k">Total net</span><span id="j-total" class="big" style="font-size:18px">—</span></div>
-    <div class="filterrow" id="j-filters">
-      <button class="filter-btn active" data-filter="result" data-value="">Tous</button>
-      <button class="filter-btn" data-filter="result" data-value="win">Gagnants</button>
-      <button class="filter-btn" data-filter="result" data-value="loss">Perdants</button>
-      <button class="filter-btn" data-filter="symbol" data-value="GOLD#">GOLD</button>
-      <button class="filter-btn" data-filter="symbol" data-value="BTCUSD#">BTC</button>
-    </div>
-    <div id="j-cards"></div>
-    <div class="btnrow" style="margin-top:8px">
-      <button onclick="journalPage(-1)">‹ préc.</button>
-      <span id="j-page-label" style="align-self:center;color:var(--muted);font-size:12px">page 1</span>
-      <button onclick="journalPage(1)">suiv. ›</button>
-    </div>
-  </details>
+<!-- ============ Détail complet, replié par défaut ============ -->
 
-</div>
+<details style="margin:12px">
+  <summary>Journal complet du jour</summary>
+  <div class="row" style="margin-top:8px"><span class="k">Total net</span><span id="j-total" class="big" style="font-size:18px">—</span></div>
+  <div class="filterrow" id="j-filters">
+    <button class="filter-btn active" data-filter="result" data-value="">Tous</button>
+    <button class="filter-btn" data-filter="result" data-value="win">Gagnants</button>
+    <button class="filter-btn" data-filter="result" data-value="loss">Perdants</button>
+    <button class="filter-btn" data-filter="symbol" data-value="GOLD#">GOLD</button>
+    <button class="filter-btn" data-filter="symbol" data-value="BTCUSD#">BTC</button>
+  </div>
+  <div id="j-cards"></div>
+  <div class="btnrow" style="margin-top:8px">
+    <button onclick="journalPage(-1)">‹ préc.</button>
+    <span id="j-page-label" style="align-self:center;color:var(--muted);font-size:12px">page 1</span>
+    <button onclick="journalPage(1)">suiv. ›</button>
+  </div>
+</details>
 
-<!-- ============ ONGLET 4 : CONTROLE (du moins au plus dangereux) ============ -->
-<div class="tab-panel" id="tab-control">
-
-  <section id="sec-pin">
-    <h2>PIN (requis pour toute commande)</h2>
-    <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••">
-  </section>
-
-  <section id="sec-symbols">
-    <h2>Symboles actifs <span class="label-sm">(risque faible)</span></h2>
-    <div class="btnrow">
-      <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
-        <input type="checkbox" id="sym-gold" checked style="width:auto;margin:0"> GOLD#
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
-        <input type="checkbox" id="sym-btc" checked style="width:auto;margin:0"> BTCUSD#
-      </label>
-    </div>
-    <button onclick="submitSymbols()">Appliquer</button>
-  </section>
-
-  <section id="sec-bot">
-    <h2>Robot <span class="label-sm">(risque moyen — confirmation requise sur stop/restart)</span></h2>
-    <div class="btnrow">
-      <button id="btn-stop" class="danger" onclick="confirmThenAction(this,'bot_stop','/api/action/bot/stop',{})">Stop</button>
-      <button onclick="doAction('bot_start','/api/action/bot/start',{})">Start</button>
-      <button id="btn-restart" class="warn" onclick="confirmThenAction(this,'bot_restart','/api/action/bot/restart',{})">Restart</button>
-    </div>
-  </section>
-
-  <section id="sec-account" class="danger-zone">
-    <h2>Mode compte <span class="label-sm">(le plus dangereux — PIN + confirmation texte)</span></h2>
-    <label>Compte cible</label>
-    <select id="acc-target">
-      <option value="DEMO">DEMO</option>
-      <option value="REAL">REAL</option>
-    </select>
-    <div id="real-confirm" style="display:none">
-      <label>Tapez REAL en toutes lettres pour confirmer</label>
-      <input type="text" id="real-text" placeholder="REAL">
-    </div>
-    <button class="danger" onclick="submitAccountSwitch()">Basculer</button>
-  </section>
-
-  <details style="margin:12px">
-    <summary>Journal d'audit récent</summary>
-    <table id="audit-table" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
-      <thead><tr><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Heure</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Action</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Résultat</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </details>
-
-</div>
+<details style="margin:12px">
+  <summary>Journal d'audit récent</summary>
+  <table id="audit-table" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+    <thead><tr><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Heure</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Action</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Résultat</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</details>
 
 <div id="toast"></div>
-
-<nav id="tabbar">
-  <button class="tab-btn active" id="tabbtn-live" onclick="switchTab('live')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 7,12 9,5 13,19 15,12 22,12"/></svg>
-    Live
-  </button>
-  <button class="tab-btn" id="tabbtn-senses" onclick="switchTab('senses')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
-    Capteurs
-  </button>
-  <button class="tab-btn" id="tabbtn-activity" onclick="switchTab('activity')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 16,14"/></svg>
-    Activité
-  </button>
-  <button class="tab-btn" id="tabbtn-control" onclick="switchTab('control')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="4" x2="5" y2="20"/><circle cx="5" cy="9" r="2.2" fill="currentColor" stroke="none"/><line x1="12" y1="4" x2="12" y2="20"/><circle cx="12" cy="15" r="2.2" fill="currentColor" stroke="none"/><line x1="19" y1="4" x2="19" y2="20"/><circle cx="19" cy="7" r="2.2" fill="currentColor" stroke="none"/></svg>
-    Contrôle
-  </button>
-</nav>
 
 <script>
 const $ = (id) => document.getElementById(id);
 let journalPageNum = 1;
 let journalFilters = {result: '', symbol: ''};
-
-// Bascule d'onglets (mission/MISSION_DASHBOARD_ONGLETS.md) : pur JS cote
-// client, affiche/masque les panneaux deja presents dans le DOM. Aucune
-// donnee n'est rechargee au changement d'onglet — refreshAll() tourne en
-// continu en arriere-plan quel que soit l'onglet actif (identique a avant).
-function switchTab(name) {
-  document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  $('tab-' + name).classList.add('active');
-  $('tabbtn-' + name).classList.add('active');
-}
 
 function fmtUsd(v) {
   if (v === null || v === undefined) return '—';
@@ -438,12 +370,7 @@ async function refreshStatus() {
   } else {
     posDiv.innerHTML = d.positions.map(p => {
       const ev = p.exit_v2 || {};
-      const distSl = (p.current != null && p.sl != null) ? Math.abs(p.current - p.sl).toFixed(2) : '—';
-      const distTp = (p.current != null && p.tp != null) ? Math.abs(p.tp - p.current).toFixed(2) : '—';
-      return `<div class="position-card">
-        <div class="row"><span>${(p.symbol||'').replace('#','')} ${p.direction}${ev.be_armed ? ' <span class="pill">BE</span>' : ''}</span><span class="${cls(p.floating_usd)}">${fmtUsd(p.floating_usd)}</span></div>
-        <div class="p-dist">Δ SL ${distSl} · Δ TP ${distTp}</div>
-      </div>`;
+      return `<div class="row"><span>${(p.symbol||'').replace('#','')} ${p.direction}${ev.be_armed ? ' <span class="pill">BE</span>' : ''}</span><span class="${cls(p.floating_usd)}">${fmtUsd(p.floating_usd)}</span></div>`;
     }).join('');
   }
   $('conn-dot').className = d.mt5_connected ? 'ok' : 'bad';
@@ -494,7 +421,7 @@ async function refreshSenses() {
 // Activite recente (FIX LONGUEUR n1) : les 4-5 dernieres lignes du journal
 // du jour, une ligne compacte chacune — pas les cartes multi-lignes
 // verbeuses (celles-ci restent disponibles dans le <details> "Journal
-// complet", desormais dans l'onglet Activite, rien n'est supprime).
+// complet" plus bas, rien n'est supprime, juste pas affiche par defaut).
 async function refreshActivity() {
   const d = await getJSON('/api/journal?page=1&page_size=5');
   const list = $('activity-list');
