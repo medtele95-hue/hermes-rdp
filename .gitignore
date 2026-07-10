@@ -33,4 +33,5 @@ logs/*.log
 # mission/DASHBOARD.md — local-only secrets, never committed
 account_profiles.env
 dashboard/.env
+watchdog/.env
 dashboard/actions_audit.log

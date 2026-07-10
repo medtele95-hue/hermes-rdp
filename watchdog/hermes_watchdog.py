@@ -37,12 +37,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import ssl
 import sys
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import truststore
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.utils.broker_time import to_mt5_query_bounds  # noqa: E402
@@ -179,7 +182,14 @@ class AlertManager:
         try:
             data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
             req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            # 2026-07-10: certifi's bundled CA chain doesn't validate against
+            # api.telegram.org on this host even though the leaf cert is
+            # genuine (Windows' own cert store validates it fine) — use the
+            # OS trust store via truststore instead of certifi. Full
+            # verification stays on (ssl.CERT_REQUIRED default), only the
+            # trust anchor source changes.
+            ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 return resp.status == 200
         except Exception as exc:  # fail-safe : jamais bloquant
             print(f"[WATCHDOG] telegram_indisponible: {str(exc)[:120]}", flush=True)
