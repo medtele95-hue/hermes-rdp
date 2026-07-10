@@ -8,7 +8,7 @@
   :root {
     --bg: #0b0f14; --panel: #131a22; --border: #232d38; --text: #e6edf3;
     --muted: #8896a3; --green: #2ea043; --red: #da3633; --amber: #d29922;
-    --blue: #388bfd;
+    --blue: #388bfd; --grey: #4b5560;
   }
   * { box-sizing: border-box; }
   body {
@@ -17,30 +17,28 @@
     font-size: 15px; padding-bottom: 40px;
   }
   header {
-    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
     display: flex; justify-content: space-between; align-items: center;
     position: sticky; top: 0; background: var(--bg); z-index: 10;
   }
-  header h1 { font-size: 17px; margin: 0; }
+  header h1 { font-size: 16px; margin: 0; }
   #conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
   #conn-dot.ok { background: var(--green); }
   #conn-dot.bad { background: var(--red); }
   section {
-    margin: 12px; padding: 14px; background: var(--panel);
+    margin: 10px 12px; padding: 12px 14px; background: var(--panel);
     border: 1px solid var(--border); border-radius: 10px;
   }
   section h2 {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--muted); margin: 0 0 10px 0;
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); margin: 0 0 8px 0;
   }
-  .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13.5px; }
   .row .k { color: var(--muted); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .big { font-size: 24px; font-weight: 600; }
+  .big { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .label-sm { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .pos { color: var(--green); } .neg { color: var(--red); }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
-  th { color: var(--muted); font-weight: 500; }
   .badge {
     display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px;
     font-weight: 600; text-transform: uppercase;
@@ -49,12 +47,13 @@
   .badge.real { background: #da363333; color: var(--red); }
   .badge.hold { background: #8896a333; color: var(--muted); }
   button {
-    font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 14px; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--border);
     background: #1c2530; color: var(--text); width: 100%; margin-top: 8px; cursor: pointer;
   }
   button:active { opacity: 0.7; }
   button.danger { background: #4a1616; border-color: #7a2020; color: #ffb4ab; }
   button.warn { background: #4a3a16; border-color: #7a5f20; color: #ffdca3; }
+  button.confirming { background: var(--red) !important; border-color: var(--red) !important; color: #fff !important; }
   .btnrow { display: flex; gap: 8px; }
   .btnrow button { margin-top: 0; }
   input[type=text], input[type=password], select {
@@ -77,15 +76,45 @@
     background: #0e141a; border-radius: 14px;
   }
   .filter-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .trade-card {
-    padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px;
-  }
+  .trade-card { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .trade-card:last-child { border-bottom: none; }
   .trade-head { display: flex; justify-content: space-between; align-items: center; }
   .trade-symbol { font-weight: 600; }
   .trade-pnl { font-weight: 700; font-size: 15px; }
   .trade-meta { color: var(--muted); font-size: 11.5px; margin-top: 3px; line-height: 1.6; }
   .trade-meta .pill { margin: 2px 4px 0 0; }
+
+  /* --- compact monitoring blocks (mission/MISSION_DASHBOARD_COMPACT.md) --- */
+  .kswrap { border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 4px; }
+  .kswrap.ok { background: #10331833; border: 1px solid #1a5c2b; }
+  .kswrap.triggered { background: #4a161633; border: 1px solid #7a2020; }
+  .kswrap .k-main { font-weight: 700; }
+  .kswrap .k-sub { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+  .sensegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .sensepill {
+    background: #0e141a; border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 8px; font-size: 12px;
+  }
+  .sensepill .sp-label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; }
+  .sensepill .sp-val { font-weight: 600; margin-top: 1px; }
+  .band-SAIN { color: var(--green); } .band-PRUDENCE { color: var(--amber); } .band-EXTREME { color: var(--red); }
+
+  .activity-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+  .activity-row:last-child { border-bottom: none; }
+  .activity-row .a-meta { color: var(--muted); }
+
+  .dotrow { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .dotitem { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.green { background: var(--green); } .dot.red { background: var(--red); } .dot.grey { background: var(--grey); }
+  .dot-detail { font-size: 11px; color: var(--red); margin-top: 6px; }
+  .dot-na { font-size: 10.5px; color: var(--muted); margin-top: 6px; }
+
+  .positions-compact .row { font-size: 12.5px; }
+
+  section.danger-zone { border: 1px solid #7a2020; background: #1a0f0f; }
+  section.danger-zone h2 { color: #ffb4ab; }
 </style>
 </head>
 <body>
@@ -95,48 +124,97 @@
   <div><span id="conn-dot"></span><span id="conn-text" style="font-size:12px;color:var(--muted)">...</span></div>
 </header>
 
+<!-- ============ MONITORING (compact, toujours visible) ============ -->
+
 <section id="sec-status">
-  <h2>1. État</h2>
   <div class="grid2">
-    <div><div class="k row"><span>Équité</span></div><div class="big" id="s-equity">—</div></div>
-    <div><div class="k row"><span>Floating</span></div><div class="big" id="s-floating">—</div></div>
+    <div><div class="label-sm">Équité</div><div class="big" id="s-equity">—</div></div>
+    <div><div class="label-sm">P&amp;L jour</div><div class="big" id="t-net">—</div></div>
   </div>
-  <div class="row"><span class="k">Balance</span><span id="s-balance">—</span></div>
+  <div class="row" style="margin-top:6px"><span class="k">Balance</span><span id="s-balance">—</span></div>
   <div class="row"><span class="k">Mode</span><span id="s-mode">—</span></div>
-  <div class="row"><span class="k">Compte</span><span id="s-login">—</span></div>
-  <div id="s-positions" style="margin-top:10px"></div>
+  <div id="s-positions" class="positions-compact" style="margin-top:6px"></div>
 </section>
 
-<section id="sec-today">
-  <h2>2. Aujourd'hui</h2>
-  <div class="row"><span class="k">Net</span><span id="t-net" class="big">—</span></div>
-  <div class="row"><span class="k">W / L</span><span id="t-wl">—</span></div>
-  <div id="t-refused" style="margin-top:6px"></div>
+<section id="sec-killswitch">
+  <h2>Kill-switch</h2>
+  <div id="ks-banner" class="kswrap ok">
+    <div class="k-main" id="ks-main">—</div>
+    <div class="k-sub" id="ks-sub">—</div>
+  </div>
 </section>
 
 <section id="sec-senses">
-  <h2>3. Senses</h2>
-  <div class="row"><span class="k">EES BUY</span><span id="se-buy">—</span></div>
-  <div class="row"><span class="k">EES SELL</span><span id="se-sell">—</span></div>
-  <div class="row"><span class="k">DXY</span><span id="se-dxy">—</span></div>
-  <div class="row"><span class="k">ATR percentile</span><span id="se-atr">—</span></div>
-  <div class="row"><span class="k">Session</span><span id="se-session">—</span></div>
-  <div class="row"><span class="k">Prochaine news HIGH</span><span id="se-news">—</span></div>
+  <h2>Capteurs</h2>
+  <div class="sensegrid">
+    <div class="sensepill"><div class="sp-label">EES sell</div><div class="sp-val" id="se-sell">—</div></div>
+    <div class="sensepill"><div class="sp-label">EES buy</div><div class="sp-val" id="se-buy">—</div></div>
+    <div class="sensepill"><div class="sp-label">Session</div><div class="sp-val" id="se-session">—</div></div>
+    <div class="sensepill"><div class="sp-label">DXY</div><div class="sp-val" id="se-dxy">—</div></div>
+    <div class="sensepill"><div class="sp-label">Régime ATR</div><div class="sp-val" id="se-atr">—</div></div>
+    <div class="sensepill"><div class="sp-label">Prochaine news</div><div class="sp-val" id="se-news">—</div></div>
+  </div>
+</section>
+
+<section id="sec-activity">
+  <h2>Activité récente</h2>
+  <div id="activity-list"><div class="k" style="font-size:12.5px">—</div></div>
 </section>
 
 <section id="sec-system">
-  <h2>4. Système</h2>
-  <div class="row"><span class="k">Kill-switch</span><span id="sy-ks">—</span></div>
-  <div class="row"><span class="k">Watchdog</span><span id="sy-wd">—</span></div>
-  <div class="row"><span class="k">core_version</span><span id="sy-core">—</span></div>
-  <div class="row"><span class="k">Dernier backup</span><span id="sy-backup">—</span></div>
-  <div class="row"><span class="k">Profil actif</span><span id="sy-profile">—</span></div>
-  <div id="sy-alerts" style="margin-top:6px"></div>
+  <h2>Système</h2>
+  <div class="dotrow" id="sys-dots"></div>
+  <div id="sys-detail"></div>
 </section>
 
-<section id="sec-journal">
-  <h2>5. Journal (aujourd'hui, heure broker UTC+3)</h2>
-  <div class="row"><span class="k">Total net</span><span id="j-total" class="big">—</span></div>
+<!-- ============ COMMANDES (du moins au plus dangereux) ============ -->
+
+<section id="sec-pin">
+  <h2>PIN (requis pour toute commande)</h2>
+  <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••">
+</section>
+
+<section id="sec-symbols">
+  <h2>Symboles actifs <span class="label-sm">(risque faible)</span></h2>
+  <div class="btnrow">
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-gold" checked style="width:auto;margin:0"> GOLD#
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
+      <input type="checkbox" id="sym-btc" checked style="width:auto;margin:0"> BTCUSD#
+    </label>
+  </div>
+  <button onclick="submitSymbols()">Appliquer</button>
+</section>
+
+<section id="sec-bot">
+  <h2>Robot <span class="label-sm">(risque moyen — confirmation requise sur stop/restart)</span></h2>
+  <div class="btnrow">
+    <button id="btn-stop" class="danger" onclick="confirmThenAction(this,'bot_stop','/api/action/bot/stop',{})">Stop</button>
+    <button onclick="doAction('bot_start','/api/action/bot/start',{})">Start</button>
+    <button id="btn-restart" class="warn" onclick="confirmThenAction(this,'bot_restart','/api/action/bot/restart',{})">Restart</button>
+  </div>
+</section>
+
+<section id="sec-account" class="danger-zone">
+  <h2>Mode compte <span class="label-sm">(le plus dangereux — PIN + confirmation texte)</span></h2>
+  <label>Compte cible</label>
+  <select id="acc-target">
+    <option value="DEMO">DEMO</option>
+    <option value="REAL">REAL</option>
+  </select>
+  <div id="real-confirm" style="display:none">
+    <label>Tapez REAL en toutes lettres pour confirmer</label>
+    <input type="text" id="real-text" placeholder="REAL">
+  </div>
+  <button class="danger" onclick="submitAccountSwitch()">Basculer</button>
+</section>
+
+<!-- ============ Détail complet, replié par défaut ============ -->
+
+<details style="margin:12px">
+  <summary>Journal complet du jour</summary>
+  <div class="row" style="margin-top:8px"><span class="k">Total net</span><span id="j-total" class="big" style="font-size:18px">—</span></div>
   <div class="filterrow" id="j-filters">
     <button class="filter-btn active" data-filter="result" data-value="">Tous</button>
     <button class="filter-btn" data-filter="result" data-value="win">Gagnants</button>
@@ -150,50 +228,14 @@
     <span id="j-page-label" style="align-self:center;color:var(--muted);font-size:12px">page 1</span>
     <button onclick="journalPage(1)">suiv. ›</button>
   </div>
-</section>
-
-<section id="sec-pin">
-  <h2>6. PIN</h2>
-  <label>Code PIN (6 chiffres)</label>
-  <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••">
-</section>
-
-<section id="sec-bot">
-  <h2>7. Contrôle bot</h2>
-  <div class="btnrow">
-    <button class="danger" onclick="doAction('bot_stop','/api/action/bot/stop',{})">Stop</button>
-    <button onclick="doAction('bot_start','/api/action/bot/start',{})">Start</button>
-    <button class="warn" onclick="doAction('bot_restart','/api/action/bot/restart',{})">Restart</button>
-  </div>
-  <label style="margin-top:14px">Symboles actifs</label>
-  <div class="btnrow">
-    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
-      <input type="checkbox" id="sym-gold" checked style="width:auto;margin:0"> GOLD#
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text)">
-      <input type="checkbox" id="sym-btc" checked style="width:auto;margin:0"> BTCUSD#
-    </label>
-  </div>
-  <button onclick="submitSymbols()">Appliquer</button>
-</section>
-
-<section id="sec-account">
-  <h2>8. Bascule compte</h2>
-  <label>Compte cible</label>
-  <select id="acc-target">
-    <option value="DEMO">DEMO</option>
-    <option value="REAL">REAL</option>
-  </select>
-  <div id="real-confirm" style="display:none">
-    <label>Tapez REAL en toutes lettres pour confirmer</label>
-    <input type="text" id="real-text" placeholder="REAL">
-  </div>
-  <button class="warn" onclick="submitAccountSwitch()">Basculer</button>
-</section>
+</details>
 
 <details style="margin:12px">
   <summary>Journal d'audit récent</summary>
-  <table id="audit-table" style="margin-top:8px"><thead><tr><th>Heure</th><th>Action</th><th>Résultat</th></tr></thead><tbody></tbody></table>
+  <table id="audit-table" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+    <thead><tr><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Heure</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Action</th><th style="text-align:left;padding:6px 4px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500">Résultat</th></tr></thead>
+    <tbody></tbody>
+  </table>
 </details>
 
 <div id="toast"></div>
@@ -220,6 +262,13 @@ function fmtBrokerDateTime(isoUtc) {
   const broker = new Date(d.getTime() + 3 * 3600 * 1000);
   const pad = (n) => String(n).padStart(2, '0');
   return `${pad(broker.getUTCDate())}/${pad(broker.getUTCMonth() + 1)} ${pad(broker.getUTCHours())}:${pad(broker.getUTCMinutes())}`;
+}
+function fmtBrokerTime(isoUtc) {
+  if (!isoUtc) return '—';
+  const d = new Date(isoUtc);
+  const broker = new Date(d.getTime() + 3 * 3600 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(broker.getUTCHours())}:${pad(broker.getUTCMinutes())}`;
 }
 
 function fmtDuration(seconds) {
@@ -267,6 +316,32 @@ async function doAction(label, url, extraBody) {
   }
 }
 
+// Anti-faux-doigt mobile (mission/MISSION_DASHBOARD_COMPACT.md) : premier
+// tap passe le bouton en état "Confirmer ?" pendant 4s, second tap dans ce
+// délai exécute réellement l'action. Sans second tap, revient à l'état
+// normal sans rien déclencher.
+const _pendingConfirms = new WeakMap();
+function confirmThenAction(btn, label, url, extraBody) {
+  const pending = _pendingConfirms.get(btn);
+  if (pending) {
+    clearTimeout(pending.timer);
+    _pendingConfirms.delete(btn);
+    btn.classList.remove('confirming');
+    btn.textContent = pending.originalText;
+    doAction(label, url, extraBody);
+    return;
+  }
+  const originalText = btn.textContent;
+  btn.classList.add('confirming');
+  btn.textContent = 'Confirmer ?';
+  const timer = setTimeout(() => {
+    btn.classList.remove('confirming');
+    btn.textContent = originalText;
+    _pendingConfirms.delete(btn);
+  }, 4000);
+  _pendingConfirms.set(btn, {timer, originalText});
+}
+
 function submitSymbols() {
   doAction('symboles', '/api/action/symbols', {
     gold_active: $('sym-gold').checked, btc_active: $('sym-btc').checked,
@@ -287,63 +362,114 @@ function submitAccountSwitch() {
 async function refreshStatus() {
   const d = await getJSON('/api/status');
   $('s-equity').textContent = d.equity != null ? d.equity.toFixed(2) + ' $' : '—';
-  $('s-floating').textContent = fmtUsd(d.floating_pnl);
-  $('s-floating').className = 'big ' + cls(d.floating_pnl || 0);
   $('s-balance').textContent = d.balance != null ? d.balance.toFixed(2) + ' $' : '—';
   $('s-mode').innerHTML = `<span class="badge ${d.mode === 'REAL' ? 'real' : 'demo'}">${d.mode}</span>`;
-  $('s-login').textContent = d.account_login || '—';
   const posDiv = $('s-positions');
   if (!d.positions || !d.positions.length) {
-    posDiv.innerHTML = '<div class="k" style="font-size:13px">Aucune position ouverte</div>';
+    posDiv.innerHTML = '<div class="k" style="font-size:12.5px">Aucune position ouverte</div>';
   } else {
     posDiv.innerHTML = d.positions.map(p => {
       const ev = p.exit_v2 || {};
-      return `<div class="row"><span>${p.symbol} ${p.direction}</span><span class="${cls(p.floating_usd)}">${fmtUsd(p.floating_usd)}</span></div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
-        ${ev.be_armed ? '<span class="pill">BE armé</span>' : ''}
-        ${ev.active_floor_usd != null ? `<span class="pill">floor ${ev.active_floor_usd.toFixed(2)}$</span>` : ''}
-        ${ev.mode ? `<span class="pill">${ev.mode}</span>` : ''}
-      </div>`;
+      return `<div class="row"><span>${(p.symbol||'').replace('#','')} ${p.direction}${ev.be_armed ? ' <span class="pill">BE</span>' : ''}</span><span class="${cls(p.floating_usd)}">${fmtUsd(p.floating_usd)}</span></div>`;
     }).join('');
   }
   $('conn-dot').className = d.mt5_connected ? 'ok' : 'bad';
   $('conn-text').textContent = d.mt5_connected ? 'MT5 connecté' : 'MT5 déconnecté';
+  return d;
 }
 
 async function refreshToday() {
   const d = await getJSON('/api/today');
   $('t-net').textContent = fmtUsd(d.net_today_usd);
   $('t-net').className = 'big ' + cls(d.net_today_usd);
-  $('t-wl').textContent = `${d.wins}W / ${d.losses}L`;
-  const refused = Object.entries(d.refused_by_reason || {});
-  $('t-refused').innerHTML = refused.length
-    ? refused.map(([k, v]) => `<span class="pill">${k}: ${v}</span>`).join(' ')
-    : '';
+}
+
+// Bandeau kill-switch : etat + heure de reprise (reset jour broker a 21:00
+// UTC, convention etablie app.utils.broker_time.broker_day_window) + nb
+// positions (source /api/status, deja recuperee par refreshStatus).
+async function refreshKillswitch(statusData) {
+  const d = await getJSON('/api/system');
+  const ks = d.kill_switch || {};
+  const banner = $('ks-banner');
+  const nPos = (statusData && statusData.positions) ? statusData.positions.length : 0;
+  if (ks.triggered) {
+    banner.className = 'kswrap triggered';
+    const now = new Date();
+    let resetUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 21, 0, 0));
+    if (now.getUTCHours() >= 21) resetUtc.setUTCDate(resetUtc.getUTCDate() + 1);
+    const pad = (n) => String(n).padStart(2, '0');
+    $('ks-main').textContent = `DÉCLENCHÉ — ${ks.losses_today}/${ks.max_losses_per_day} pertes`;
+    $('ks-sub').textContent = `reprise ~${pad(resetUtc.getUTCHours())}:${pad(resetUtc.getUTCMinutes())} UTC (21:00 UTC = minuit broker) · ${nPos} position(s) ouverte(s)`;
+  } else {
+    banner.className = 'kswrap ok';
+    $('ks-main').textContent = `OK — ${ks.losses_today ?? '—'}/${ks.max_losses_per_day ?? '—'} pertes`;
+    $('ks-sub').textContent = `${nPos} position(s) ouverte(s)`;
+  }
 }
 
 async function refreshSenses() {
   const d = await getJSON('/api/senses');
-  const fmtEes = (e) => e ? `${e.band} (${e.score})` : 'n/d';
-  $('se-buy').textContent = fmtEes(d.ees_buy);
-  $('se-sell').textContent = fmtEes(d.ees_sell);
+  const fmtEes = (e) => e && e.band ? `<span class="band-${e.band}">${e.band}</span> (${e.score ?? '—'})` : 'n/d';
+  $('se-buy').innerHTML = fmtEes(d.ees_buy);
+  $('se-sell').innerHTML = fmtEes(d.ees_sell);
   $('se-dxy').textContent = d.dxy && d.dxy.trend ? `${d.dxy.trend} (${d.dxy.gold_divergence || ''})` : '—';
   $('se-atr').textContent = d.atr_percentile != null ? d.atr_percentile + '%' : '—';
   $('se-session').textContent = d.session || '—';
-  $('se-news').textContent = d.next_high_news ? `${d.next_high_news.title} (${d.next_high_news.country})` : 'aucune';
+  $('se-news').textContent = d.next_high_news ? `${d.next_high_news.title}` : 'aucune';
 }
 
+// Activite recente (FIX LONGUEUR n1) : les 4-5 dernieres lignes du journal
+// du jour, une ligne compacte chacune — pas les cartes multi-lignes
+// verbeuses (celles-ci restent disponibles dans le <details> "Journal
+// complet" plus bas, rien n'est supprime, juste pas affiche par defaut).
+async function refreshActivity() {
+  const d = await getJSON('/api/journal?page=1&page_size=5');
+  const list = $('activity-list');
+  if (!d.entries || !d.entries.length) {
+    list.innerHTML = '<div class="k" style="font-size:12.5px">Aucun trade aujourd\'hui</div>';
+    return;
+  }
+  list.innerHTML = d.entries.map(e => `<div class="activity-row">
+    <span class="a-meta">${fmtBrokerTime(e.closed_at)} ${(e.symbol||'').replace('#','')} ${e.direction||''}</span>
+    <span class="${cls(e.pnl_usd)}">${fmtUsd(e.pnl_usd)}</span>
+  </div>`).join('');
+}
+
+// Systeme (FIX LONGUEUR n2) : rangee de puces vert/rouge/gris, detail
+// affiche seulement si un point est rouge ou non disponible. bot/watchdog
+// ont une vraie source de donnees (voir DASHBOARD_AUDIT.md) ; git/tests/
+// medecin n'ont aucun endpoint qui les expose aujourd'hui -> gris "n/d",
+// signale honnetement plutot que fabrique.
 async function refreshSystem() {
   const d = await getJSON('/api/system');
-  const ks = d.kill_switch || {};
-  $('sy-ks').innerHTML = ks.triggered
-    ? `<span class="badge real">DÉCLENCHÉ</span> ${ks.losses_today}/${ks.max_losses_per_day}`
-    : `${ks.losses_today ?? '—'}/${ks.max_losses_per_day ?? '—'}`;
-  $('sy-wd').textContent = d.watchdog_heartbeat_age_seconds != null
-    ? Math.round(d.watchdog_heartbeat_age_seconds) + 's' : 'n/d';
-  $('sy-core').textContent = d.core_version ?? '—';
-  $('sy-backup').textContent = d.last_backup || '—';
-  $('sy-profile').innerHTML = `<span class="badge ${d.active_profile === 'REAL' ? 'real' : 'demo'}">${d.active_profile}</span>`;
-  $('sy-alerts').innerHTML = (d.open_alerts_today || []).slice(-3).map(a => `<div style="font-size:11px;color:var(--amber)">${a}</div>`).join('');
+  const dotsDiv = $('sys-dots');
+  const detailDiv = $('sys-detail');
+  const items = [];
+  let details = [];
+
+  // "bot" : aucun endpoint n'expose directement l'etat vivant du process
+  // bot (voir audit) — proxy honnete : connexion MT5 du process dashboard
+  // lui-meme (mt5_connected dans /api/status, deja recuperee).
+  const mt5ok = window.__lastStatus ? window.__lastStatus.mt5_connected : null;
+  items.push({label: 'bot (MT5)', state: mt5ok === true ? 'green' : (mt5ok === false ? 'red' : 'grey')});
+  if (mt5ok === false) details.push('bot (MT5) : connexion MT5 indisponible cote dashboard.');
+
+  const wdAge = d.watchdog_heartbeat_age_seconds;
+  const wdOk = wdAge != null && wdAge < 90;
+  items.push({label: 'watchdog', state: wdAge == null ? 'grey' : (wdOk ? 'green' : 'red')});
+  if (wdAge != null && !wdOk) details.push(`watchdog : dernier heartbeat il y a ${Math.round(wdAge)}s (> 90s).`);
+  if (wdAge == null) details.push('watchdog : heartbeat indisponible.');
+
+  ['git', 'tests', 'médecin'].forEach(label => {
+    items.push({label, state: 'grey'});
+  });
+  details.push('git / tests / médecin : aucun endpoint ne les expose actuellement (voir DASHBOARD_AUDIT.md).');
+
+  dotsDiv.innerHTML = items.map(it => `<div class="dotitem"><span class="dot ${it.state}"></span>${it.label}</div>`).join('');
+  const hasProblem = items.some(it => it.state === 'red');
+  detailDiv.innerHTML = hasProblem
+    ? details.filter(t => !t.startsWith('git')).map(t => `<div class="dot-detail">${t}</div>`).join('') + `<div class="dot-na">${details[details.length-1]}</div>`
+    : `<div class="dot-na">${details[details.length-1]}</div>`;
 }
 
 async function refreshJournal() {
@@ -392,7 +518,6 @@ document.querySelectorAll('#j-filters .filter-btn').forEach(btn => {
       journalFilters.result = value;
       document.querySelectorAll('#j-filters .filter-btn[data-filter="result"]').forEach(b => b.classList.toggle('active', b === btn));
     } else if (filterKey === 'symbol') {
-      // toggle: clicking the already-active symbol filter clears it back to "all"
       const nowActive = btn.classList.contains('active');
       journalFilters.symbol = nowActive ? '' : value;
       document.querySelectorAll('#j-filters .filter-btn[data-filter="symbol"]').forEach(b => b.classList.remove('active'));
@@ -408,16 +533,21 @@ async function refreshAudit() {
     const d = await getJSON('/api/audit?limit=15');
     const tbody = document.querySelector('#audit-table tbody');
     tbody.innerHTML = (d.entries || []).slice().reverse().map(e => `<tr>
-      <td style="font-size:11px">${(e.ts || '').slice(11, 19)}</td>
-      <td style="font-size:11px">${e.action}</td>
-      <td style="font-size:11px">${e.result}</td>
+      <td style="font-size:11px;padding:6px 4px;border-bottom:1px solid var(--border)">${(e.ts || '').slice(11, 19)}</td>
+      <td style="font-size:11px;padding:6px 4px;border-bottom:1px solid var(--border)">${e.action}</td>
+      <td style="font-size:11px;padding:6px 4px;border-bottom:1px solid var(--border)">${e.result}</td>
     </tr>`).join('');
   } catch (e) { /* audit is best-effort UI */ }
 }
 
 async function refreshAll() {
   try {
-    await Promise.all([refreshStatus(), refreshToday(), refreshSenses(), refreshSystem(), refreshJournal(), refreshAudit()]);
+    const statusData = await refreshStatus();
+    window.__lastStatus = statusData;
+    await Promise.all([
+      refreshToday(), refreshKillswitch(statusData), refreshSenses(),
+      refreshActivity(), refreshSystem(), refreshJournal(), refreshAudit(),
+    ]);
   } catch (e) {
     $('conn-dot').className = 'bad';
     $('conn-text').textContent = 'erreur de lecture';
