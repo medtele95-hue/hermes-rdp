@@ -19,6 +19,7 @@ already use.
 from __future__ import annotations
 
 import json
+import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -86,21 +87,95 @@ def _read_json(path: Path, default=None):
         return default
 
 
+# mission (2026-07-11): decision_dataset.jsonl grew to ~80MB/8000+ lines.
+# Every dashboard read used to re-read+re-parse the WHOLE file on every
+# single API call (several times per call, via the two _load_*_index
+# helpers below) -- under normal 30s polling this exhausted the request
+# thread pool entirely (py-spy dump: every worker thread stuck inside this
+# function's old full-file readlines()). Fix: one in-memory cache of ALL
+# parsed rows, invalidated on mtime/size change, refreshed via a true tail
+# seek -- only the bytes appended since the last read are ever touched.
+# Correct because decision_dataset.jsonl is append-only by construction
+# (app.services.decision_dataset never rewrites or truncates it, only
+# appends) -- this module never writes to it, only reads. A partial
+# trailing line (caught mid-write) is carried over and completed on the
+# NEXT read rather than dropped, so no row is ever lost or corrupted.
+_dataset_cache_lock = threading.Lock()
+_dataset_cache: dict = {"path": None, "mtime": None, "size": None, "offset": 0, "rows": [], "carry": b""}
+
+
+def _refresh_dataset_cache() -> list[dict]:
+    with _dataset_cache_lock:
+        current_path = str(DATASET_FILE)
+        if current_path != _dataset_cache["path"]:
+            # DATASET_FILE itself changed (only ever happens in tests, which
+            # patch.object() it to a fresh temp file per test) -- the old
+            # cache belongs to a DIFFERENT file and must never be reused,
+            # even if the new file's mtime/size coincidentally match.
+            _dataset_cache.update(path=current_path, mtime=None, size=None, offset=0, rows=[], carry=b"")
+
+        if not DATASET_FILE.exists():
+            _dataset_cache.update(mtime=None, size=None, offset=0, rows=[], carry=b"")
+            return _dataset_cache["rows"]
+
+        stat = DATASET_FILE.stat()
+        if (
+            _dataset_cache["size"] is not None
+            and stat.st_mtime == _dataset_cache["mtime"]
+            and stat.st_size == _dataset_cache["size"]
+        ):
+            return _dataset_cache["rows"]  # unchanged since last read -- zero I/O
+
+        # cold start, or the file shrank/was replaced (should never happen
+        # given append-only, but never trust that blindly): full re-read.
+        cold = _dataset_cache["size"] is None or stat.st_size < _dataset_cache["offset"]
+        rows: list[dict] = [] if cold else list(_dataset_cache["rows"])
+        start_offset = 0 if cold else _dataset_cache["offset"]
+        carry = b"" if cold else _dataset_cache["carry"]
+
+        with DATASET_FILE.open("rb") as f:
+            f.seek(start_offset)
+            chunk = carry + f.read()
+
+        parts = chunk.split(b"\n")
+        tail = parts.pop()
+        for raw in parts:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        # the last fragment lacks a trailing \n either because it's the
+        # tail of a genuinely complete file (no writer required to end on a
+        # newline) or because we caught a write mid-flight -- json.loads()
+        # is the only reliable way to tell them apart: if it parses, it's
+        # complete and safe to consume now; only an UNPARSEABLE tail is
+        # held back as carry and retried once more bytes arrive.
+        tail_line = tail.strip()
+        if not tail_line:
+            carry = b""
+        else:
+            try:
+                rows.append(json.loads(tail_line))
+                carry = b""
+            except json.JSONDecodeError:
+                carry = tail
+
+        _dataset_cache["mtime"] = stat.st_mtime
+        _dataset_cache["size"] = stat.st_size
+        _dataset_cache["offset"] = stat.st_size
+        _dataset_cache["carry"] = carry
+        _dataset_cache["rows"] = rows
+        return rows
+
+
 def _iter_dataset_rows(row_type: str | None = None, limit_recent: int | None = None):
-    if not DATASET_FILE.exists():
-        return
-    with DATASET_FILE.open(encoding="utf-8") as f:
-        lines = f.readlines()
+    rows = _refresh_dataset_cache()
     if limit_recent:
-        lines = lines[-limit_recent:]
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+        rows = rows[-limit_recent:]
+    for row in rows:
         if row_type and row.get("row_type") != row_type:
             continue
         yield row
@@ -427,7 +502,7 @@ def build_system() -> dict:
         except OSError:
             pass
 
-    dataset_lines = sum(1 for _ in _read_lines(DATASET_FILE))
+    dataset_lines = len(_refresh_dataset_cache())
     core_version = None
     for row in _iter_dataset_rows(row_type="decision", limit_recent=1):
         core_version = row.get("core_version")
