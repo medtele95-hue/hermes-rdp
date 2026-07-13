@@ -84,28 +84,36 @@ def _send_telegram_alert(text: str) -> None:
             pass
 
 
-def _notify_mt5_unreadable(detail: str) -> None:
-    """Alerte MT5 muet. Deux garde-fous voulus :
+_alert_cooldowns: dict[str, float] = {}
+
+
+def send_critical_alert(text: str, cooldown_key: str = "default") -> None:
+    """Alerte CRITIQUE best-effort. Deux garde-fous voulus :
     - THREAD daemon : zero seconde de blocage dans la boucle de trading. C'est
       exactement l'inverse de dashboard_api/audit.py:99, dont l'appel Telegram
       synchrone (timeout 10 s) dans l'event loop est un suspect serieux du gel
       du dashboard apres ~11 h.
-    - COOLDOWN 15 min : une deconnexion dure des minutes et le cycle tourne
+    - COOLDOWN 15 min par cle : une panne dure des minutes et le cycle tourne
       toutes les ~5 s ; sans cooldown ce sont des centaines de messages."""
-    global _last_alert_monotonic
     now = time.monotonic()
-    if _last_alert_monotonic is not None and (now - _last_alert_monotonic) < _ALERT_COOLDOWN_SECONDS:
+    last = _alert_cooldowns.get(cooldown_key)
+    if last is not None and (now - last) < _ALERT_COOLDOWN_SECONDS:
         return
-    _last_alert_monotonic = now
-    text = (
-        "HERMES CRITIQUE : MT5 injoignable (positions_get() = None). "
-        f"Detail: {detail}. Synchronisation SUSPENDUE — aucune position n'a ete "
-        "marquee fermee (fail-closed). Verifier le terminal MT5 immediatement."
-    )
+    _alert_cooldowns[cooldown_key] = now
     try:
         threading.Thread(target=_send_telegram_alert, args=(text,), daemon=True).start()
     except Exception:
         pass
+
+
+def _notify_mt5_unreadable(detail: str) -> None:
+    """Alerte MT5 muet (P0-2)."""
+    send_critical_alert(
+        "HERMES CRITIQUE : MT5 injoignable (positions_get() = None). "
+        f"Detail: {detail}. Synchronisation SUSPENDUE — aucune position n'a ete "
+        "marquee fermee (fail-closed). Verifier le terminal MT5 immediatement.",
+        cooldown_key="MT5_UNREADABLE",
+    )
 
 
 def _mt5_unreadable_summary(now_dt: datetime, detail: str) -> dict:

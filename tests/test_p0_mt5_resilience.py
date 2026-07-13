@@ -106,7 +106,7 @@ class TestMt5MuetNeFermeRien(unittest.TestCase):
     def test_alerte_throttlee_par_cooldown(self) -> None:
         """Le cycle tourne toutes les ~5 s ; une deconnexion dure des minutes.
         Sans cooldown, ce sont des centaines de messages Telegram."""
-        sync._last_alert_monotonic = None
+        sync._alert_cooldowns.clear()
         with patch.object(sync, "_send_telegram_alert") as sender, \
              patch.object(sync.threading, "Thread") as thread:
             thread.side_effect = lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args))
@@ -114,7 +114,20 @@ class TestMt5MuetNeFermeRien(unittest.TestCase):
             sync._notify_mt5_unreadable("err-2")
             sync._notify_mt5_unreadable("err-3")
         self.assertEqual(sender.call_count, 1)
-        sync._last_alert_monotonic = None
+        sync._alert_cooldowns.clear()
+
+    def test_cooldown_est_par_cle__une_autre_alerte_nest_pas_etouffee(self) -> None:
+        """Le cooldown ne doit pas faire taire une alerte DIFFERENTE (ex: la panne du
+        moteur de confluence, P0-C) parce qu'un MT5 muet vient d'alerter."""
+        sync._alert_cooldowns.clear()
+        with patch.object(sync, "_send_telegram_alert") as sender, \
+             patch.object(sync.threading, "Thread") as thread:
+            thread.side_effect = lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args))
+            sync.send_critical_alert("panne A", cooldown_key="MT5_UNREADABLE")
+            sync.send_critical_alert("panne A bis", cooldown_key="MT5_UNREADABLE")  # etouffee
+            sync.send_critical_alert("panne B", cooldown_key="CONFLUENCE_ENGINE_FAILED")  # passe
+        self.assertEqual(sender.call_count, 2)
+        sync._alert_cooldowns.clear()
 
 
 class TestConnexionMt5PlusFigeeAuBoot(unittest.TestCase):

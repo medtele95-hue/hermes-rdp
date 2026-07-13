@@ -1076,6 +1076,19 @@ class HermesBackend:
                 or str(_conf_strategy or "").upper() in _of_native_strats
             )
             _conf: dict = {}
+            # P0-C (2026-07-14) : le moteur de confluence est FAIL-CLOSED.
+            #
+            # Avant, l'exception etait avalee par un `except Exception: pass` et `_conf`
+            # restait {}. Or TOUT le FINAL CONFLUENCE GATE est conditionne par
+            # `bool(_conf)` (voir _conf_blocks_route plus bas) : une exception dans le
+            # moteur DESARMAIT donc integralement le gate de confluence, en silence,
+            # sans un seul log. Un setup de grade D / score 0 routait alors sans le
+            # moindre controle de confluence. C'etait l'exception avalee la plus
+            # dangereuse du depot.
+            #
+            # Desormais : si le moteur tombe, on BLOQUE. Un cycle perdu vaut mieux
+            # qu'un ordre envoye sans controle.
+            _conf_engine_failed = False
             if _conf_strategy and _conf_strategy not in ("NONE", ""):
                 try:
                     _conf_weights = {
@@ -1089,8 +1102,24 @@ class HermesBackend:
                         strategy_aware=_conf_strat_aware, weights=_conf_weights,
                     )
                     self.latest_setup_hunter = {**hunter.best_candidate, **_conf}
-                except Exception:
-                    pass
+                except Exception as _conf_exc:
+                    _conf_engine_failed = True
+                    log.critical(
+                        "[CONFLUENCE_ENGINE_FAILED] symbol=%s strategy=%s error=%s — "
+                        "FAIL-CLOSED : aucun ordre ne partira sur ce cycle. Le gate de "
+                        "confluence ne peut pas etre desarme par une panne.",
+                        requested_symbol, _conf_strategy, str(_conf_exc)[:200],
+                    )
+                    try:
+                        from app.services.mt5_position_sync import send_critical_alert
+                        send_critical_alert(
+                            "HERMES CRITIQUE : le moteur de confluence a leve une exception "
+                            f"({requested_symbol}/{_conf_strategy}) : {str(_conf_exc)[:120]}. "
+                            "Trading BLOQUE sur ce symbole (fail-closed).",
+                            cooldown_key="CONFLUENCE_ENGINE_FAILED",
+                        )
+                    except Exception:
+                        pass
             # §v1.6: Geometric confluence layer (SHADOW by default; ACTIVE via config)
             _geo_result: dict = {}
             _geo_bonus: float = 0.0
@@ -1367,7 +1396,19 @@ class HermesBackend:
                     _conf_threshold = 62.0
             else:
                 _conf_threshold = 55.0
-            _conf_blocks_route = (
+            # P0-C : une panne du moteur bloque le routage, sans condition. Aucun mode
+            # (research_allow, old_btc bypass) ne peut lever une panne — on ne sait tout
+            # simplement pas si le setup est bon.
+            if _conf_engine_failed:
+                force_active_handoff = False
+                decision["decision"] = "WAIT_ANALYSIS_ONLY"
+                decision["route_to_demo"] = False
+                if isinstance(hunter.best_candidate, dict):
+                    hunter.best_candidate["final_verdict"] = "BLOCK"
+                    hunter.best_candidate["final_verdict_reason"] = "CONFLUENCE_ENGINE_FAILED"
+                    hunter.best_candidate["demo_eligible"] = False
+
+            _conf_blocks_route = _conf_engine_failed or (
                 bool(_conf)
                 and (_final_conf_grade == "D" or _final_conf_score < _conf_threshold)
                 and not _research_allow

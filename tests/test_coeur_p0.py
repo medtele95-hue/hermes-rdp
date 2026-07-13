@@ -259,5 +259,57 @@ class TestP0B_RouteToDemoEstEffectif(unittest.TestCase):
         self.assertTrue(self._backend()._should_route_to_demo(self._decision()))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# P0-C — le moteur de confluence est fail-closed
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestP0C_ConfluenceFailClosed(unittest.TestCase):
+    """T3 — une exception dans evaluate_confluence BLOQUE.
+
+    Avant : `except Exception: pass` laissait `_conf = {}`, et tout le FINAL
+    CONFLUENCE GATE etait conditionne par `bool(_conf)`. Une panne du moteur
+    desarmait donc le gate entier, en silence. Un setup grade D / score 0 routait
+    sans le moindre controle."""
+
+    def test_le_code_ne_contient_plus_le_except_pass_silencieux(self) -> None:
+        """Verrou de non-regression sur la forme : le `except Exception: pass` autour
+        de evaluate_confluence ne doit jamais revenir."""
+        import inspect
+
+        from app.main import HermesBackend
+
+        source = inspect.getsource(HermesBackend.run_cycle)
+        bloc = source[source.index("_conf = evaluate_confluence"):]
+        bloc = bloc[: bloc.index("_geo_bonus") if "_geo_bonus" in bloc else 2000]
+        self.assertIn("_conf_engine_failed = True", bloc)
+        self.assertIn("CONFLUENCE_ENGINE_FAILED", bloc)
+        self.assertNotIn("except Exception:\n                    pass", bloc)
+
+    def test_la_panne_bloque_le_routage_et_ne_desarme_plus_le_gate(self) -> None:
+        """Preuve fonctionnelle : `_conf_blocks_route` inclut desormais la panne, et
+        la decision porte route_to_demo=False — que P0-B rend effectif."""
+        import inspect
+
+        from app.main import HermesBackend
+
+        source = inspect.getsource(HermesBackend.run_cycle)
+        self.assertIn("_conf_blocks_route = _conf_engine_failed or (", source)
+        panne = source[source.index("if _conf_engine_failed:"):]
+        panne = panne[: panne.index("_conf_blocks_route")]
+        self.assertIn('decision["route_to_demo"] = False', panne)
+        self.assertIn('decision["decision"] = "WAIT_ANALYSIS_ONLY"', panne)
+
+    def test_la_panne_est_annoncee_en_CRITICAL_et_alertee(self) -> None:
+        """Une panne silencieuse est pire qu'une panne bruyante : elle ne peut pas
+        etre corrigee. On loggue CRITICAL et on alerte."""
+        import inspect
+
+        from app.main import HermesBackend
+
+        source = inspect.getsource(HermesBackend.run_cycle)
+        self.assertIn("log.critical(", source)
+        self.assertIn("send_critical_alert(", source)
+
+
 if __name__ == "__main__":
     unittest.main()
