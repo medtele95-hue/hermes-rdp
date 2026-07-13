@@ -127,6 +127,17 @@ class TestMultiTimeframeMomentum:
     def test_final_gate_logs_traceable_components(self):
         import unittest
         from app.mt5.geometric_engine_v2 import final_trade_gate
+        from app.utils import throttle
+
+        # [FINAL_GATE] passe par log_event_throttled (geometric_engine_v2.py:633), dont
+        # l'etat `_event_state` est au niveau MODULE (throttle.py:10) et supprime une
+        # re-emission identique dans les 60 s. Un autre test de ce fichier peut donc
+        # avoir deja consomme la meme cle : l'emission est etouffee et le `next(...)`
+        # ci-dessous ne trouve rien. C'etait la cause reelle de l'echec intermittent
+        # de ce test (et non une rotation de log, comme suppose un temps).
+        # On isole le throttle pour ce test — aucun changement de comportement produit.
+        throttle._event_state.clear()
+
         with unittest.TestCase().assertLogs("hermes", level="INFO") as captured:
             final_trade_gate(
                 {"score": 70}, {"score": 70},
