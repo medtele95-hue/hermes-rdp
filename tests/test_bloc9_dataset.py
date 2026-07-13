@@ -214,5 +214,107 @@ class TestOutcomeTracker(unittest.TestCase):
         self.assertEqual(dataset.tracker.open_count(), 0)
 
 
+def _deal(entry: int, reason: int = 3, price: float = 3300.0, profit: float = 0.0,
+          commission: float = 0.0, swap: float = 0.0, time: float = 1_770_000_000.0) -> SimpleNamespace:
+    """Deal MT5 : entry 0 = DEAL_ENTRY_IN, 1 = DEAL_ENTRY_OUT.
+    reason 3 = EXPERT (l'EA a ferme), 4 = SL, 5 = TP."""
+    return SimpleNamespace(entry=entry, reason=reason, price=price, time=time,
+                           profit=profit, commission=commission, swap=swap)
+
+
+class TestOutcomeTrackerWriterFix(unittest.TestCase):
+    """2026-07-13 — les deux trous du writer qui ont laisse 61 trades sur 96
+    sans resultat : amnesie au redemarrage, et label seulement sur touche TP/SL."""
+
+    def _dataset(self, name: str) -> DecisionDataset:
+        path = Path("tests") / "__tmp_bloc9_dataset" / f"{name}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        for stale in (path, path.parent / "outcome_tracker_state.json"):
+            if stale.exists():
+                stale.unlink()
+        return DecisionDataset(path)
+
+    def test_real_trade_survives_a_restart(self) -> None:
+        dataset = self._dataset("persist")
+        dataset.record_decision(_rich_event())  # reel, ticket 42
+        self.assertEqual(dataset.tracker.open_count(), 1)
+
+        reborn = DecisionDataset(dataset.path)  # <- redemarrage du backend
+        self.assertEqual(reborn.tracker.open_count(), 1)
+        restored = reborn.tracker._open["T42"]
+        self.assertEqual(str(restored["ticket"]), "42")
+        self.assertFalse(restored["virtual"])
+
+    def test_trade_closed_while_backend_was_down_is_resolved_after_restart(self) -> None:
+        dataset = self._dataset("downtime")
+        dataset.record_decision(_rich_event())
+
+        reborn = DecisionDataset(dataset.path)  # redemarrage
+        deals = [_deal(entry=0, price=3300.0), _deal(entry=1, reason=3, price=3307.0, profit=6.0, commission=-0.5)]
+        outcomes = reborn.tracker.update({}, deals_fn=lambda _t: deals)  # sans meme un prix
+
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0]["outcome"], "CLOSED_EXPERT")
+        self.assertEqual(outcomes[0]["pnl_reconciled"], 5.5)
+        self.assertEqual(reborn.tracker.open_count(), 0)
+
+    def test_expert_close_is_labelled_without_touching_tp_or_sl(self) -> None:
+        """Le coeur du bug : l'EA ferme (trailing/exit_v2/rescue) a un prix qui
+        ne touche NI le TP NI le SL. L'ancien writer n'ecrivait rien."""
+        dataset = self._dataset("expert_close")
+        dataset.record_decision(_rich_event())  # entry 3300, sl 3294, tp 3312.4
+        deals = [_deal(entry=0, price=3300.0), _deal(entry=1, reason=3, price=3303.0, profit=2.5)]
+
+        outcomes = dataset.tracker.update({"GOLD#": 3303.0}, deals_fn=lambda _t: deals)
+
+        self.assertEqual(len(outcomes), 1)
+        outcome = outcomes[0]
+        self.assertEqual(outcome["outcome"], "CLOSED_EXPERT")
+        self.assertEqual(outcome["close_reason"], "EXPERT")
+        self.assertEqual(outcome["close_price"], 3303.0)
+        self.assertEqual(outcome["pnl_reconciled"], 2.5)
+        self.assertEqual(outcome["pnl_source"], "MT5_HISTORY_DEALS")
+        self.assertTrue(outcome["win"])
+        self.assertFalse(outcome["backfilled"])  # ligne live, pas backfillee
+
+    def test_deal_reason_decides_the_label_not_the_price(self) -> None:
+        for reason, expected in ((5, "TP_HIT"), (4, "SL_HIT"), (0, "CLOSED_CLIENT")):
+            with self.subTest(reason=reason):
+                dataset = self._dataset(f"reason_{reason}")
+                dataset.record_decision(_rich_event())
+                deals = [_deal(entry=0), _deal(entry=1, reason=reason, price=3301.0)]
+                outcomes = dataset.tracker.update({"GOLD#": 3301.0}, deals_fn=lambda _t: deals)
+                self.assertEqual(outcomes[0]["outcome"], expected)
+
+    def test_open_position_is_never_closed_on_a_price_touch(self) -> None:
+        """Regression : le trailing deplace le SL, le prix retouche l'ANCIEN
+        niveau — la position vit toujours. La fermer ici inventerait un SL_HIT."""
+        dataset = self._dataset("still_open")
+        dataset.record_decision(_rich_event())
+        deals = [_deal(entry=0, price=3300.0)]  # aucun deal OUT -> position ouverte
+
+        outcomes = dataset.tracker.update({"GOLD#": 3290.0}, deals_fn=lambda _t: deals)  # sous le SL
+
+        self.assertEqual(outcomes, [])
+        self.assertEqual(dataset.tracker.open_count(), 1)
+
+    def test_virtual_refusals_are_not_persisted(self) -> None:
+        """Les refus simules restent volatiles : des milliers d'entrees, aucune
+        n'est un trade reel. Seuls les trades reels sont irremplacables."""
+        dataset = self._dataset("virtual_volatile")
+        dataset.record_decision(_rich_event(order_success=False, ticket=None, reason="NEWS_BLACKOUT"))
+        dataset.record_decision(_rich_event())  # un reel
+
+        reborn = DecisionDataset(dataset.path)
+        self.assertEqual(reborn.tracker.open_count(), 1)  # le reel seulement
+        self.assertIn("T42", reborn.tracker._open)
+
+    def test_corrupt_state_file_never_blocks_boot(self) -> None:
+        dataset = self._dataset("corrupt")
+        dataset.tracker.state_path.write_text("{ this is not json", encoding="utf-8")
+        reborn = DecisionDataset(dataset.path)  # ne doit pas lever
+        self.assertEqual(reborn.tracker.open_count(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

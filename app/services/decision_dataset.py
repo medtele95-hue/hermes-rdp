@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from app.logger import log
+from app.utils.broker_time import from_mt5_deal_time
 
 SCHEMA_VERSION = 2
 # COEUR_V2 (2026-07-08, mission/COEUR_V2.md) : version du coeur mathematique/
@@ -40,6 +43,101 @@ CORE_VERSION = 2
 DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "decision_dataset.jsonl"
 
 _KILL_ZONES_UTC = ((7, 9), (12, 14), (1, 3))
+
+# ── outcome tracker persistence + MT5-deal close detection ──────────────────
+# (2026-07-13) Deux trous du writer, corriges ensemble ; ZERO impact sur le
+# chemin de decision (aucun seuil, aucun gate touche) :
+#
+# 1. AMNESIE AU REDEMARRAGE — `_open` vivait uniquement en RAM. Tout trade
+#    encore ouvert quand le backend redemarrait perdait son suivi et n'etait
+#    JAMAIS labellise. L'etat des trades REELS est desormais persiste sur
+#    disque (STATE_FILENAME) et recharge au boot.
+#    Les positions VIRTUELLES (refus simules) restent volatiles a dessein :
+#    elles se comptent en milliers (une par DEMO_SKIP), reecrire ce volume a
+#    chaque tick couterait plus cher que ce qu'il rapporte, et ce ne sont pas
+#    des trades — seuls les trades reels sont irremplacables.
+#
+# 2. LABEL SEULEMENT SUR TOUCHE TP/SL — un trade ferme par le trailing, un
+#    exit_v2, un preclose news ou un rescue ne touche jamais exactement TP ou
+#    SL : aucune ligne outcome n'etait ecrite. Constate sur le dataset : 46
+#    des 60 trades backfilles avaient ete fermes par l'EA (DEAL_REASON_EXPERT),
+#    pas par TP/SL. La cloture est desormais lue dans les DEALS MT5, qui sont
+#    la source de verite (ils portent la raison exacte de la fermeture), le
+#    prix de cloture reel et le P&L. Plus aucun seuil "close ~= TP" : c'est
+#    MT5 qui dit pourquoi il a ferme.
+STATE_FILENAME = "outcome_tracker_state.json"
+BROKER_UTC_OFFSET_HOURS = 3.0  # XM ; identique au defaut de app/config.py
+
+# DEAL_ENTRY_IN = 0 ; OUT = 1, INOUT = 2, OUT_BY = 3
+_DEAL_ENTRY_OUT = {1, 2, 3}
+_DEAL_REASON_NAMES = {
+    0: "CLIENT", 1: "MOBILE", 2: "WEB", 3: "EXPERT", 4: "SL", 5: "TP",
+    6: "STOP_OUT", 7: "ROLLOVER", 8: "VMARGIN", 9: "SPLIT",
+}
+
+
+def close_info_from_deals(ticket: object, deals_fn) -> dict | None:
+    """Etat d'une position REELLE d'apres ses deals MT5.
+
+    -> {"state": "CLOSED", ...} : fermee, avec raison/prix/pnl authentiques.
+    -> {"state": "OPEN"}        : les deals prouvent qu'elle est encore ouverte.
+    -> None                     : indetermine (pas de deals_fn, aucun deal, ou
+                                  deals sans champ `entry` exploitable) — l'appelant
+                                  retombe alors sur la detection historique par
+                                  touche de prix, jamais sur une invention.
+
+    La distinction OPEN / None est essentielle : si les deals prouvent que la
+    position est encore ouverte, on ne DOIT PAS la fermer sur une touche de
+    prix (le trailing a pu deplacer le SL — le prix touche l'ancien niveau
+    alors que la position vit toujours).
+    """
+    if deals_fn is None or ticket is None:
+        return None
+    try:
+        deals = list(deals_fn(ticket) or [])
+    except Exception:
+        return None
+    if not deals:
+        return None
+
+    entries = [_to_int(getattr(deal, "entry", None)) for deal in deals]
+    if all(value is None for value in entries):
+        return None  # forme de deal inconnue -> indetermine, pas de conclusion
+    outs = [deal for deal, entry in zip(deals, entries) if entry in _DEAL_ENTRY_OUT]
+    if not outs:
+        return {"state": "OPEN"}
+
+    last = max(outs, key=lambda deal: _to_float(getattr(deal, "time", None)) or 0.0)
+    profit = sum(_to_float(getattr(deal, "profit", None)) or 0.0 for deal in deals)
+    commission = sum(_to_float(getattr(deal, "commission", None)) or 0.0 for deal in deals)
+    swap = sum(_to_float(getattr(deal, "swap", None)) or 0.0 for deal in deals)
+
+    reason_code = _to_int(getattr(last, "reason", None))
+    reason_name = _DEAL_REASON_NAMES.get(reason_code, "UNKNOWN") if reason_code is not None else "UNKNOWN"
+    if reason_name == "TP":
+        label = "TP_HIT"
+    elif reason_name == "SL":
+        label = "SL_HIT"
+    else:
+        label = f"CLOSED_{reason_name}"
+
+    closed_at = None
+    deal_time = _to_float(getattr(last, "time", None))
+    if deal_time:
+        try:
+            closed_at = from_mt5_deal_time(deal_time, BROKER_UTC_OFFSET_HOURS).isoformat()
+        except Exception:
+            closed_at = None
+
+    return {
+        "state": "CLOSED",
+        "outcome": label,
+        "close_reason": reason_name,
+        "close_price": _to_float(getattr(last, "price", None)),
+        "closed_at": closed_at,
+        "pnl_reconciled": round(profit + commission + swap, 2),
+        "deals_count": len(deals),
+    }
 
 
 # ── momentum alignment (pure shadow feature) ────────────────────────────────
@@ -248,10 +346,66 @@ class OutcomeTracker:
     Fail-silent everywhere.
     """
 
-    def __init__(self, dataset: "DecisionDataset") -> None:
+    def __init__(self, dataset: "DecisionDataset", state_path: Path | None = None) -> None:
         self.dataset = dataset
         self._open: dict[str, dict] = {}
         self._counter = 0
+        self.state_path = Path(state_path) if state_path else dataset.path.parent / STATE_FILENAME
+        self._load_state()
+
+    # ── persistance (trades REELS uniquement — cf. note en tete de module) ──
+
+    def _load_state(self) -> None:
+        """Recharge les trades reels encore ouverts. Fail-silent : un etat
+        illisible ne doit jamais empecher le bot de demarrer."""
+        try:
+            if not self.state_path.exists():
+                return
+            payload = json.loads(self.state_path.read_text(encoding="utf-8"))
+            items = payload.get("open") if isinstance(payload, dict) else None
+            restored = 0
+            for item in items or []:
+                if not isinstance(item, dict) or item.get("virtual") or not item.get("ticket"):
+                    continue
+                key = str(item.get("key") or f"T{item['ticket']}")
+                self._open[key] = item
+                restored += 1
+            self._counter = int(payload.get("counter") or 0) if isinstance(payload, dict) else 0
+            if restored:
+                log.info("[DECISION_DATASET] outcome_tracker restaure : %d trade(s) reel(s) ouvert(s)", restored)
+        except Exception as exc:
+            try:
+                log.warning("[DECISION_DATASET] state_load_failed error=%s", str(exc)[:200])
+            except Exception:
+                pass
+
+    def _save_state(self) -> None:
+        """Ecriture atomique (tmp + os.replace) : un crash en plein write ne
+        peut pas laisser un etat tronque derriere lui."""
+        try:
+            real = [item for item in self._open.values() if not item.get("virtual") and item.get("ticket")]
+            payload = {
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "counter": self._counter,
+                "open": real,
+            }
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=str(self.state_path.parent), suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, default=str)
+                os.replace(tmp, self.state_path)
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+                raise
+        except Exception as exc:
+            try:
+                log.debug("[DECISION_DATASET] state_save_failed error=%s", str(exc)[:200])
+            except Exception:
+                pass
 
     def register(self, row: dict) -> None:
         try:
@@ -280,22 +434,88 @@ class OutcomeTracker:
                 "setup_id": row.get("setup_id"),
                 "reason": row.get("reason"),
             }
+            if executed:
+                self._save_state()
         except Exception:
             pass
 
+    def _outcome_from_deals(self, item: dict, info: dict) -> dict:
+        """Ligne outcome batie sur les DEALS MT5 (verite broker) : raison de
+        cloture reelle, prix de cloture reel, P&L = profit+commission+swap."""
+        base = {
+            key: item.get(key)
+            for key in ("key", "virtual", "ticket", "symbol", "direction", "entry", "sl", "tp", "mfe", "mae", "opened_at", "setup_id", "reason")
+        }
+        close_price = info.get("close_price")
+        entry = _to_float(item.get("entry"))
+        sl = _to_float(item.get("sl"))
+        r_multiple = None
+        if entry is not None and sl is not None and close_price is not None:
+            risk = abs(entry - sl)
+            if risk > 0:
+                sign = 1.0 if str(item.get("direction") or "").upper() == "BUY" else -1.0
+                r_multiple = round(sign * (close_price - entry) / risk, 3)
+        pnl = info.get("pnl_reconciled")
+        return {
+            **base,
+            "backfilled": False,
+            "closed_at": info.get("closed_at") or datetime.now(timezone.utc).isoformat(),
+            "outcome": info.get("outcome"),
+            "close_reason": info.get("close_reason"),
+            "close_price": close_price,
+            "pnl_reconciled": pnl,
+            "pnl_source": "MT5_HISTORY_DEALS" if pnl is not None else "UNRESOLVED",
+            "r_multiple": r_multiple,
+            "win": (pnl > 0) if pnl is not None else None,
+            "deals_count": info.get("deals_count"),
+        }
+
     def update(self, prices: dict[str, float], deals_fn=None, now_utc: datetime | None = None) -> list[dict]:
-        """prices: {symbol: last_price}. Returns closed outcome rows."""
+        """prices: {symbol: last_price}. Returns closed outcome rows.
+
+        Trades REELS  : la cloture est lue dans les deals MT5 — TOUTE fermeture
+                        est labellisee (trailing, exit_v2, preclose, rescue...),
+                        plus seulement une touche exacte de TP/SL.
+        Refus VIRTUELS: inchange — simulation TP/SL sur les ticks (ils n'ont
+                        aucune position MT5 a interroger).
+        """
         closed: list[dict] = []
+        dirty = False
         try:
             for key in list(self._open):
                 item = self._open[key]
+                is_real = not item.get("virtual")
+
+                known_open = False
+                if is_real:
+                    info = close_info_from_deals(item.get("ticket"), deals_fn)
+                    if info and info.get("state") == "CLOSED":
+                        outcome = self._outcome_from_deals(item, info)
+                        self.dataset.record_outcome(outcome)
+                        closed.append(outcome)
+                        self._open.pop(key, None)
+                        dirty = True
+                        continue
+                    known_open = bool(info and info.get("state") == "OPEN")
+
                 price = _to_float(prices.get(str(item.get("symbol") or "")))
                 if price is None:
                     continue
                 sign = 1.0 if item["direction"] == "BUY" else -1.0
                 excursion = sign * (price - item["entry"])
+                previous = (item["mfe"], item["mae"])
                 item["mfe"] = max(item["mfe"], excursion)
                 item["mae"] = min(item["mae"], excursion)
+                if is_real and (item["mfe"], item["mae"]) != previous:
+                    dirty = True
+
+                # Les deals prouvent que la position vit encore : ne JAMAIS la
+                # fermer sur une touche de prix. Le trailing a pu deplacer le
+                # SL — le prix retouche l'ancien niveau alors que la position
+                # est toujours ouverte. Seuls les deals ferment un trade reel.
+                if known_open:
+                    continue
+
                 hit_tp = price >= item["tp"] if item["direction"] == "BUY" else price <= item["tp"]
                 hit_sl = price <= item["sl"] if item["direction"] == "BUY" else price >= item["sl"]
                 if not (hit_tp or hit_sl):
@@ -317,8 +537,12 @@ class OutcomeTracker:
                 self.dataset.record_outcome(outcome)
                 closed.append(outcome)
                 self._open.pop(key, None)
+                if is_real:
+                    dirty = True
         except Exception:
             pass
+        if dirty:
+            self._save_state()
         return closed
 
     def open_count(self) -> int:
@@ -350,5 +574,14 @@ def _to_float(value: object) -> float | None:
             return None
         out = float(value)
         return out if math.isfinite(out) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: object) -> int | None:
+    try:
+        if value is None or isinstance(value, bool):
+            return None
+        return int(value)
     except (TypeError, ValueError):
         return None
