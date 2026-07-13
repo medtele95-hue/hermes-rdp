@@ -119,6 +119,79 @@ _TOP_DOWN_STRICT_BLOCK_REASONS = {
     "TOP_DOWN_READER_BLOCK",
 }
 
+# ── P0-A (2026-07-14) — UN OVERRIDE NE PEUT JAMAIS EFFACER UN BLOCAGE DUR ────
+#
+# Constat de RAPPORT_AUDIT_COEUR_HERMES.md, prouve dans les donnees et non deduit
+# du code : sur les 98 trades du dataset v1, AUCUN n'est passe par le chemin
+# strict, et 23 ordres ont ete executes alors que le systeme avait explicitement
+# decide `fallback_decision=BLOCK` (motif TOP_DOWN_READER_BLOCK). Ces 23 trades
+# ont perdu -31,75 USD quand les 75 autres cumulaient -0,24 USD : les trades que
+# le systeme avait RAISON de bloquer representaient la quasi-totalite de la perte.
+# Le jugement etait bon. C'est l'override qui l'a desarme.
+#
+# Cause : les modes discovery/exploration/fallback/old_btc remettaient
+# `reason = None` SANS regarder CE QUI etait bloque. Un seuil de confluence trop
+# bas et un spread hors limite etaient traites de la meme facon.
+#
+# Regle desormais : DEFAUT-DUR. Seuls les motifs listes ci-dessous — des seuils
+# de QUALITE DE SETUP, ce que les modes discovery ont ete concus pour assouplir —
+# peuvent etre effaces par un mode. Tout le reste (risque, exposition, structure,
+# compte, marche, SL/TP, RR, spread, cooldown, kill-switch, safety guard, et le
+# top-down) est un HARD BLOCK : aucun mode ne peut le lever.
+#
+# Cette liste est FERMEE et par defaut-dur : un motif de blocage nouvellement
+# ajoute au routeur sera HARD tant qu'il n'aura pas ete explicitement declare
+# assouplissable ici. C'est volontaire — on veut se tromper du cote strict.
+SOFT_OVERRIDABLE_BLOCK_REASONS = frozenset({
+    # seuils de confluence adaptative
+    "ADAPTIVE_CONFLUENCE_TOO_LOW",
+    "BELOW_SYMBOL_THRESHOLD",
+    "GOLD_M1_WAIT_REQUIRES_70",
+    # confirmations de setup (SMC / MTFA / M15 / M1 / grade)
+    "MTFA_FAIL",
+    "SMC_FAIL",
+    "SMC_STRONG_FAIL",
+    "MTFA_STRONG_FAIL",
+    "M15_CONFIRMATION_FALSE",
+    "M1_CONFIRMATION_FALSE",
+    "SETUP_GRADE_OR_STRICT_CONFIRMATION_REQUIRED",
+    # motifs propres aux revues micro-discovery (deja des seuils assouplis)
+    "MICRO_DISCOVERY_CONFLUENCE_TOO_LOW",
+    "MICRO_DISCOVERY_SMC_TOO_LOW",
+    "MICRO_DISCOVERY_MTFA_TOO_LOW",
+    # ── top-down : DONNEE ABSENTE, pas verdict de refus ─────────────────────
+    # Distinction essentielle, lisible dans _top_down_missing_reason (:2433) :
+    # quand le lecteur top-down dit AVOID, cette fonction retourne None — l'AVOID
+    # est traite a part et produit TOP_DOWN_READER_BLOCK (:1971).
+    # Donc :
+    #   TOP_DOWN_READER_BLOCK  = verdict explicite "ne trade pas"  -> DUR (absent
+    #                            d'ici). C'est LUI qui a laisse passer les 23 ordres
+    #                            perdants du dataset v1.
+    #   MISSING / FAIL / WAIT  = le top-down n'a pas de verdict (donnee manquante ou
+    #                            non confirmee) -> SOFT : c'est precisement ce que le
+    #                            fallback adaptatif existe pour remplacer.
+    "TOP_DOWN_READER_MISSING",
+    "TOP_DOWN_READER_FAIL",
+    "TOP_DOWN_WAIT_FOR_CONFIRMATION",
+    # ── fenetres horaires ───────────────────────────────────────────────────
+    # Categorie deja nommee et gouvernee par son propre mecanisme explicite
+    # (_DEMO_TEST_BAD_HOUR_BLOCKERS + ALLOW_TIME_BLOCK_OVERRIDE). Ce n'est pas du
+    # risque : c'est une politique de fenetre de trading, dont le contournement est
+    # une fonctionnalite assumee et testee. L'audit ne l'a pas mise en cause.
+    # (En production ALLOW_TIME_BLOCK_OVERRIDE=false, donc ces flags sont inertes.)
+    *_DEMO_TEST_BAD_HOUR_BLOCKERS,
+})
+
+
+def _is_hard_block(reason: object) -> bool:
+    """P0-A : ce motif de blocage est-il intouchable par les modes d'override ?
+
+    Defaut-dur : tout motif non declare explicitement assouplissable est dur.
+    `None` (aucun blocage) n'est evidemment pas un blocage dur."""
+    if not reason:
+        return False
+    return str(reason) not in SOFT_OVERRIDABLE_BLOCK_REASONS
+
 
 def _demo_ignore_time_blocks(settings: Settings) -> bool:
     if not getattr(settings, "allow_time_block_override", False):
@@ -1165,7 +1238,23 @@ class DemoKellyRouter:
         exploration = self._exploration_review(decision, reason, capped_lot, gates, time_gate, safety, now_dt)
         fallback = self._demo_topdown_fallback_review(reason, exploration, gates, capped_lot)
         micro = self._demo_micro_discovery_review(reason, exploration, fallback, gates, capped_lot)
-        if fallback["decision"] == "ALLOW":
+        # P0-A : le motif issu de _first_block_reason est-il DUR ? Si oui, AUCUN des
+        # chemins ci-dessous ne peut l'effacer ni le remplacer. On le fige ici, une
+        # fois, AVANT toute la cascade d'overrides.
+        #
+        # Le remplacement (branches `reason = micro/fallback["block_reason"]`) est
+        # verrouille lui aussi, et ce n'est pas de la prudence excessive : un motif
+        # DUR remplace par un motif micro-discovery SOFT redeviendrait effacable au
+        # bloc suivant. On aurait cru boucher un trou en en creusant un autre.
+        _p0a_hard_block = _is_hard_block(reason)
+        if _p0a_hard_block and (fallback["decision"] == "ALLOW" or micro["decision"] == "ALLOW"):
+            log.info(
+                "[HARD_BLOCK_KEPT] reason=%s symbol=%s strategy=%s override_tente=%s — "
+                "un mode discovery a voulu lever un blocage dur : refuse",
+                reason, symbol, strategy,
+                "ADAPTIVE_FALLBACK" if fallback["decision"] == "ALLOW" else "MICRO_DISCOVERY",
+            )
+        if fallback["decision"] == "ALLOW" and not _p0a_hard_block:
             reason = None
             gates["topdown_fallback_allowed"] = True
             exploration = {
@@ -1175,7 +1264,7 @@ class DemoKellyRouter:
                 "block_reasons": [],
                 "warnings": list(dict.fromkeys((exploration.get("warnings") or []) + fallback["warnings"])),
             }
-        elif micro["decision"] == "ALLOW":
+        elif micro["decision"] == "ALLOW" and not _p0a_hard_block:
             reason = None
             gates["topdown_fallback_allowed"] = True
             gates["micro_discovery_allowed"] = True
@@ -1186,15 +1275,15 @@ class DemoKellyRouter:
                 "block_reasons": [],
                 "warnings": list(dict.fromkeys((exploration.get("warnings") or []) + micro["warnings"])),
             }
-        elif micro["enabled"] and micro.get("block_reason") and not _is_gold_order_flow_gates(gates) and (
+        elif not _p0a_hard_block and micro["enabled"] and micro.get("block_reason") and not _is_gold_order_flow_gates(gates) and (
             reason is None or reason in _TOP_DOWN_STRICT_BLOCK_REASONS or reason in {"SMC_STRONG_FAIL", "MTFA_STRONG_FAIL"}
         ):
             reason = micro["block_reason"]
-        elif fallback["enabled"] and fallback.get("block_reason") and (
+        elif not _p0a_hard_block and fallback["enabled"] and fallback.get("block_reason") and (
             reason is None or reason in _TOP_DOWN_STRICT_BLOCK_REASONS
         ):
             reason = fallback["block_reason"]
-        elif micro["enabled"] and micro.get("block_reason") and not _is_gold_order_flow_gates(gates) and reason in {"SMC_STRONG_FAIL", "MTFA_STRONG_FAIL"}:
+        elif not _p0a_hard_block and micro["enabled"] and micro.get("block_reason") and not _is_gold_order_flow_gates(gates) and reason in {"SMC_STRONG_FAIL", "MTFA_STRONG_FAIL"}:
             reason = micro["block_reason"]
         strict_block_reason = reason
         exploration_override_reason = exploration.get("override_reason")
@@ -1208,6 +1297,7 @@ class DemoKellyRouter:
         if (
             (reason or exploration_override_reason)
             and exploration["decision"] == "ALLOW"
+            and not _p0a_hard_block  # P0-A : l'exploration non plus ne leve pas un blocage dur
             and not (micro["enabled"] and micro.get("block_reason"))
             and not (fallback["enabled"] and fallback.get("block_reason"))
         ):
@@ -1232,7 +1322,21 @@ class DemoKellyRouter:
         _old_btc_forced_mode = str(decision.get("old_btc_mode") or "")
         if _old_btc_forced_mode:
             mode = _old_btc_forced_mode
-            reason = None  # SafetyGuard PASS already validated; clear SMC/MTFA/confluence blocks
+            # P0-A : old_btc_mode faisait `reason = None` INCONDITIONNEL. Son
+            # commentaire annoncait "clear SMC/MTFA/confluence blocks" — en realite
+            # il effacait AUSSI MAX_SPREAD, MAX_OPEN_TRADES_*, MAX_TRADES_PER_DAY,
+            # SYMBOL_TRADE_COOLDOWN, DEMO_MAX_RISK_PER_TRADE_EXCEEDED, MISSING_SL_TP,
+            # RR_BELOW_1_5, SAFETY_GUARD_BLOCK, MARKET_CLOSED... soit ~30 gates.
+            # Il ne peut desormais lever QUE les motifs soft, comme son commentaire
+            # l'a toujours pretendu.
+            if _p0a_hard_block:
+                log.warning(
+                    "[HARD_BLOCK_KEPT] reason=%s mode=%s strategy=%s — old_btc_mode "
+                    "ne peut pas lever un blocage dur",
+                    reason, mode, strategy,
+                )
+            else:
+                reason = None
             log.info(
                 "[DEMO_ROUTER_REACHED] mode=%s strategy=%s smc_mtfa_strict_bypass=true topdown_bypass=true",
                 mode, strategy,
