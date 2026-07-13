@@ -666,6 +666,17 @@ class HermesBackend:
         cycle_start_utc = datetime.now(timezone.utc)
         log.info("[CYCLE] started")
         self._cycle_active = True
+
+        # P0-3 (2026-07-13) : sonde la connexion MT5 a CHAQUE cycle et tente une
+        # reconnexion si elle est tombee. `self.mt5.connected` n'etait jusqu'ici
+        # ecrit qu'une seule fois, au boot (app/mt5/connection.py:59) : tous les
+        # gardes qui le testent (ligne 707 ci-dessous, et le garde
+        # MT5_NOT_CONNECTED de run_simo_index_cycle) etaient donc du code mort,
+        # et un terminal tombe en cours de session laissait le bot tourner a
+        # l'aveugle. Cet appel les ranime : desormais `connected` reflete l'etat
+        # reel, cycle par cycle.
+        self.mt5.ensure_connected()
+
         analyzed = 0
         skipped = 0
         paper_opened = 0

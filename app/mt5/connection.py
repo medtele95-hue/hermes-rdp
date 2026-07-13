@@ -61,6 +61,78 @@ class MT5Connection:
         log.info("Account detected")
         return True
 
+    # ── P0-3 (2026-07-13) — surveillance de la connexion en cours de session ──
+    # Avant ce correctif, `self.connected` n'etait ecrit QU'UNE FOIS, ici meme,
+    # a la ligne 59, au boot. Rien ne le remettait jamais a False. Consequence :
+    # tous les gardes qui le testent (app/main.py:707, :1785 -> MT5_NOT_CONNECTED)
+    # etaient du CODE MORT. Si le terminal tombait en cours de session, le bot
+    # continuait a appeler MT5 — qui renvoyait None partout — en silence, en se
+    # croyant connecte.
+    #
+    # Preuve que le cas se produit : WATCHDOG_ALERTS.log, 11 alertes
+    # `MT5_INIT_FAIL :: (-6, 'Terminal: Authorization failed')` le 2026-07-11.
+    #
+    # health_check() est appele a CHAQUE cycle (app/main.py) : il sonde le
+    # terminal et remet `connected` a jour. Les gardes redeviennent vivants.
+
+    def health_check(self) -> bool:
+        """Sonde MT5 et met `self.connected` a jour. Trois conditions, toutes
+        necessaires : le terminal repond, il se declare connecte au broker, et
+        le compte est lisible. Un terminal qui repond mais a perdu le broker
+        (`terminal_info().connected == False`) N'EST PAS connecte — c'est
+        precisement l'etat ou positions_get() renvoie None."""
+        try:
+            terminal = mt5.terminal_info()
+            if terminal is None:
+                self.connected = False
+                return False
+            if not bool(getattr(terminal, "connected", True)):
+                self.connected = False
+                return False
+            if mt5.account_info() is None:
+                self.connected = False
+                return False
+        except Exception as exc:
+            log.warning("[MT5_HEALTH_CHECK] probe_raised error=%s", str(exc)[:160])
+            self.connected = False
+            return False
+        self.connected = True
+        return True
+
+    def ensure_connected(self) -> bool:
+        """health_check(), puis UNE tentative de reconnexion s'il echoue.
+        Retourne l'etat reel de la connexion apres tentative.
+
+        Fail-closed par construction : si la reconnexion echoue, `connected`
+        reste False et les gardes appelants coupent le trading. Mieux vaut un
+        cycle perdu qu'un cycle joue a l'aveugle sur un MT5 muet."""
+        was_connected = self.connected
+        if self.health_check():
+            return True
+
+        log.critical(
+            "[MT5_CONNECTION_LOST] le terminal ne repond plus (last_error=%s) — "
+            "trading suspendu, tentative de reconnexion",
+            self._last_error_text(),
+        )
+        if self.connect():
+            log.warning("[MT5_RECONNECTED] connexion MT5 retablie (etat precedent connected=%s)", was_connected)
+            return True
+        log.critical(
+            "[MT5_RECONNECT_FAILED] reconnexion MT5 impossible (last_error=%s) — "
+            "le bot reste en mode degrade, aucun ordre ne sera envoye",
+            self._last_error_text(),
+        )
+        self.connected = False
+        return False
+
+    @staticmethod
+    def _last_error_text() -> str:
+        try:
+            return str(mt5.last_error())
+        except Exception:
+            return "UNKNOWN"
+
     def terminal_info(self) -> Optional[Any]:
         return mt5.terminal_info()
 

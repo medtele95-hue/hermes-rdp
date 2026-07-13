@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import json
+import ssl
+import threading
+import time
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -17,6 +22,121 @@ ALLOWED_DEMO_POSITION_SYMBOLS = {"GOLD#", "GOLD", "BTCUSD#", "BTCUSD", "EURUSD"}
 POSITION_SYNC_EVENTS_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_pilot_events.jsonl"
 _MISSING_TRADE_ROW_WARNED: set[str] = set()
 _MISSING_TRADE_DIR_WARNED: set[str] = set()
+
+# ── P0-2 (2026-07-13) — MT5 MUET != "AUCUNE POSITION" ───────────────────────
+# `mt5.positions_get()` renvoie None en cas d'erreur ou de deconnexion, et une
+# liste vide quand il n'y a reellement aucune position. L'ancien code faisait
+# `list(mt5.positions_get() or [])` : les deux cas devenaient un []. Un MT5
+# injoignable etait donc lu comme "le compte est plat", ce qui faisait ensuite
+# marquer CLOSED, une par une, toutes les positions REELLEMENT OUVERTES chez le
+# broker (via _close_missing_lovable_trades -> POSITION_SYNC/CLOSED, avec
+# closed_seen persiste sur disque). Le bot cessait de les gerer : plus d'Exit V2,
+# plus de trailing, plus de plancher — la position continuait de courir seule.
+#
+# Ce n'est pas theorique : WATCHDOG_ALERTS.log porte 11 alertes
+# `MT5_INIT_FAIL :: (-6, 'Terminal: Authorization failed')` le 2026-07-11.
+# Aucune consequence ce jour-la uniquement parce que c'etait un samedi, marche
+# ferme, aucune position ouverte. C'etait de la chance, pas de la conception.
+#
+# Regle desormais : MT5 muet => FAIL-CLOSED. On ne synchronise rien, on ne
+# ferme RIEN, on loggue en CRITICAL et on alerte. Une position n'est marquee
+# fermee que si MT5 a REPONDU et ne la contient pas.
+MT5_UNREADABLE_REASON = "MT5_POSITIONS_UNREADABLE"
+_ALERT_COOLDOWN_SECONDS = 900.0
+_last_alert_monotonic: float | None = None
+_WATCHDOG_ENV = Path(__file__).resolve().parents[2] / "watchdog" / ".env"
+
+
+def _send_telegram_alert(text: str) -> None:
+    """Envoi best-effort, JAMAIS bloquant pour l'appelant (lance dans un thread
+    daemon par _notify_mt5_unreadable). Reutilise la config et le contexte TLS
+    du watchdog (truststore : le bundle certifi ne valide pas api.telegram.org
+    sur cet hote, cf. watchdog/hermes_watchdog.py:185-191)."""
+    try:
+        # Une suite de tests ne doit JAMAIS notifier un humain. Sans ce garde,
+        # tout test qui laisse positions_get() renvoyer None (MT5 non initialise
+        # dans le process pytest) enverrait un vrai message Telegram.
+        import os
+
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+        if not _WATCHDOG_ENV.exists():
+            return
+        cfg: dict[str, str] = {}
+        for line in _WATCHDOG_ENV.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep:
+                cfg[key.strip()] = value.strip()
+        token, chat_id = cfg.get("TELEGRAM_BOT_TOKEN"), cfg.get("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            return
+        import truststore
+
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+        request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+        context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        with urllib.request.urlopen(request, timeout=10, context=context):
+            return
+    except Exception as exc:  # fail-silent par contrat : une alerte ratee ne casse rien
+        try:
+            log.warning("[POSITION_SYNC] telegram_alert_failed error=%s", str(exc)[:120])
+        except Exception:
+            pass
+
+
+def _notify_mt5_unreadable(detail: str) -> None:
+    """Alerte MT5 muet. Deux garde-fous voulus :
+    - THREAD daemon : zero seconde de blocage dans la boucle de trading. C'est
+      exactement l'inverse de dashboard_api/audit.py:99, dont l'appel Telegram
+      synchrone (timeout 10 s) dans l'event loop est un suspect serieux du gel
+      du dashboard apres ~11 h.
+    - COOLDOWN 15 min : une deconnexion dure des minutes et le cycle tourne
+      toutes les ~5 s ; sans cooldown ce sont des centaines de messages."""
+    global _last_alert_monotonic
+    now = time.monotonic()
+    if _last_alert_monotonic is not None and (now - _last_alert_monotonic) < _ALERT_COOLDOWN_SECONDS:
+        return
+    _last_alert_monotonic = now
+    text = (
+        "HERMES CRITIQUE : MT5 injoignable (positions_get() = None). "
+        f"Detail: {detail}. Synchronisation SUSPENDUE — aucune position n'a ete "
+        "marquee fermee (fail-closed). Verifier le terminal MT5 immediatement."
+    )
+    try:
+        threading.Thread(target=_send_telegram_alert, args=(text,), daemon=True).start()
+    except Exception:
+        pass
+
+
+def _mt5_unreadable_summary(now_dt: datetime, detail: str) -> dict:
+    """Resume de cycle quand MT5 est muet.
+
+    Les compteurs sont volontairement a None, JAMAIS a 0 : "je ne sais pas"
+    n'est pas "il n'y a rien". Mettre 0 ici reintroduirait exactement le
+    mensonge que ce correctif supprime, simplement deplace dans le dashboard."""
+    return {
+        "mt5_unreadable": True,
+        "sync_skipped_reason": MT5_UNREADABLE_REASON,
+        "mt5_last_error": detail,
+        "mt5_open_positions_count": None,
+        "mt5_positions_raw_count": None,
+        "mt5_positions_seen": [],
+        "mt5_positions_ignored_with_reason": [],
+        "hermes_mt5_open_positions_count": None,
+        "open_demo_trades_count": None,
+        "demo_closed_pnl_today": None,
+        "demo_floating_pnl": None,
+        "demo_total_pnl_today": None,
+        "pnl_source": MT5_UNREADABLE_REASON,
+        "latest_position_sync_time": now_dt.isoformat(),
+        _sb_key("open_trades_synced_count"): 0,
+        _sb_key("open_trades_closed_count"): 0,
+        "closed_tickets": [],
+        "already_closed_count": 0,
+        "already_closed_tickets": [],
+        "latest_position_sync": None,
+        "latest_position_close": None,
+    }
 
 
 def _lovable_enabled(settings: Settings) -> bool:
@@ -57,7 +177,28 @@ def sync_open_mt5_positions_to_lovable(
     fallback_events_path: Path | None = None,
 ) -> dict:
     now_dt = now or datetime.now(timezone.utc)
-    positions = list(mt5.positions_get() or [])
+
+    # P0-2 : MT5 muet (None) != compte plat ([]). Voir la note en tete de module.
+    try:
+        raw_positions = mt5.positions_get()
+    except Exception as exc:
+        raw_positions = None
+        log.warning("[POSITION_SYNC] positions_get_raised error=%s", str(exc)[:160])
+    if raw_positions is None:
+        try:
+            detail = str(mt5.last_error())
+        except Exception:
+            detail = "UNKNOWN"
+        log.critical(
+            "[POSITION_SYNC_MT5_UNREADABLE] positions_get()=None last_error=%s — "
+            "FAIL-CLOSED : aucune synchronisation, AUCUNE position marquee fermee. "
+            "MT5 muet ne veut PAS dire compte plat.",
+            detail,
+        )
+        _notify_mt5_unreadable(detail)
+        return _mt5_unreadable_summary(now_dt, detail)
+
+    positions = list(raw_positions)
     seen: list[dict] = []
     ignored: list[dict] = []
     hermes_rows: list[dict] = []

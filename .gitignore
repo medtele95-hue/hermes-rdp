@@ -24,6 +24,14 @@ app/data/exit_v2_state.json
 app/data/active_symbols.json
 # etat runtime du tracker d'outcomes (reecrit a chaque tick) — jamais committe
 app/data/outcome_tracker_state.json
+
+# P0-1 (2026-07-13) — SECRETS : ces deux fichiers portent HERMES_INGEST_SECRET
+# en clair. Ils etaient SUIVIS par git et ont ete POUSSES sur origin (GitHub)
+# depuis le commit b32bf50a du 2026-06-20. Ils sont desormais dessuivis.
+# .env.example / watchdog/.env.example restent suivis : ce sont des gabarits
+# a valeurs placeholder, sans aucun secret.
+.env
+.env.readonly.backup
 logs/active_profile.txt
 logs/stopped_by_user.flag
 
