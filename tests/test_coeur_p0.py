@@ -208,5 +208,56 @@ class TestP0A_ClassificationDesMotifs(unittest.TestCase):
         self.assertEqual(SOFT_OVERRIDABLE_BLOCK_REASONS & interdits, frozenset())
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# P0-B — route_to_demo devient effectif
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestP0B_RouteToDemoEstEffectif(unittest.TestCase):
+    """T2 — `route_to_demo=False` empeche REELLEMENT le routage.
+
+    Avant : _should_route_to_demo ne lisait que (strategy, signal). Les refus du
+    balanced_selector, de l'entry gate BTC, d'une lecture MT5 ratee et du gate de
+    confluence posaient `route_to_demo=False`... dans le vide."""
+
+    @staticmethod
+    def _backend():
+        from app.main import HermesBackend
+        return HermesBackend.__new__(HermesBackend)  # pas d'__init__ : methode pure
+
+    def _decision(self, **overrides) -> dict:
+        payload = {"strategy": "BTC_SCALPING_AGENT", "signal": "BUY"}
+        payload.update(overrides)
+        return payload
+
+    def test_une_decision_saine_route_toujours(self) -> None:
+        """Controle negatif : sans lui, renvoyer False partout ferait passer le reste."""
+        self.assertTrue(self._backend()._should_route_to_demo(self._decision()))
+
+    def test_route_to_demo_false_bloque_le_routage(self) -> None:
+        self.assertFalse(
+            self._backend()._should_route_to_demo(self._decision(route_to_demo=False))
+        )
+
+    def test_wait_analysis_only_bloque_le_routage(self) -> None:
+        self.assertFalse(
+            self._backend()._should_route_to_demo(self._decision(decision="WAIT_ANALYSIS_ONLY"))
+        )
+
+    def test_le_rejet_du_balanced_selector_est_desormais_applique(self) -> None:
+        """Le scenario exact de main.py:1504-1514 : le selector rejette, pose
+        route_to_demo=False, mais laisse strategy/signal intacts."""
+        rejete = self._decision(
+            route_to_demo=False,
+            decision="WAIT_ANALYSIS_ONLY",
+            strategy="BTC_SCALPING_AGENT",  # inchangee par le rejet
+            signal="BUY",                   # inchangee par le rejet
+        )
+        self.assertFalse(self._backend()._should_route_to_demo(rejete))
+
+    def test_route_to_demo_true_ou_absent_ne_bloque_pas(self) -> None:
+        self.assertTrue(self._backend()._should_route_to_demo(self._decision(route_to_demo=True)))
+        self.assertTrue(self._backend()._should_route_to_demo(self._decision()))
+
+
 if __name__ == "__main__":
     unittest.main()

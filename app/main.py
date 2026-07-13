@@ -2076,6 +2076,35 @@ class HermesBackend:
         return max(0.0, round((now - latest).total_seconds() / 3600.0, 4))
 
     def _should_route_to_demo(self, decision: dict) -> bool:
+        """P0-B (2026-07-14) — `route_to_demo` etait un champ DECORATIF.
+
+        Cette fonction ne regardait que (strategy, signal). Elle ignorait
+        `decision["route_to_demo"]` et `decision["decision"]`. Or TOUTE la chaine de
+        garde amont exprime son refus en ecrivant precisement ces deux champs :
+        - rejet du balanced_selector      (main.py:1504-1514)
+        - OLD_BTC_ENTRY_GATE = BLOCK      (main.py:1309-1312)
+        - MT5_POSITION_READ_FAILED        (main.py:1313-1318)
+        - FINAL CONFLUENCE GATE           (main.py:1401-1408)
+        Ces refus posaient `route_to_demo = False` et `decision = WAIT_ANALYSIS_ONLY`,
+        puis la branche de repli du routage rappelait cette fonction — qui, ne lisant
+        ni l'un ni l'autre, renvoyait True et envoyait la decision au DemoRouter.
+        Un `[ROUTER_HANDOFF] decision=BLOCK` etait loggue... et l'ordre partait.
+        Grep `route_to_demo` dans demo_router.py : 0 occurrence — aucun filet en aval.
+
+        Les deux champs sont desormais lus. Un refus amont refuse pour de bon."""
+        if decision.get("route_to_demo") is False:
+            log.info(
+                "[ROUTE_TO_DEMO_REFUSED] strategy=%s reason=ROUTE_TO_DEMO_FALSE — "
+                "un garde amont a refuse cette decision",
+                decision.get("strategy"),
+            )
+            return False
+        if str(decision.get("decision") or "").upper() == "WAIT_ANALYSIS_ONLY":
+            log.info(
+                "[ROUTE_TO_DEMO_REFUSED] strategy=%s reason=WAIT_ANALYSIS_ONLY",
+                decision.get("strategy"),
+            )
+            return False
         strategy = str(decision.get("strategy") or "").upper()
         direction = str(decision.get("signal") or decision.get("direction") or "").upper()
         return strategy in ACTIVE_EXECUTION_STRATEGIES and direction in {"BUY", "SELL"}
