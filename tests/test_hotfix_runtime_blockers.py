@@ -193,17 +193,33 @@ class TestDemoRouterLoadEvents(unittest.TestCase):
             events = router._load_events()
             self.assertEqual(len(events), 10)
 
-    def test_load_events_large_file_rotates_and_returns_empty(self) -> None:
+    def test_load_events_large_file_ne_rote_plus_et_ne_renvoie_plus_vide(self) -> None:
+        """P0-F (2026-07-14) — ce test s'appelait
+        `test_load_events_large_file_rotates_and_returns_empty` et VERROUILLAIT le bug :
+        il exigeait du chemin de LECTURE qu'il rote le fichier et renvoie [].
+
+        Or _stats() derive de _load_events() les compteurs journaliers du routeur. Le
+        cycle ou cette rotation se produisait, le bot croyait demarrer une journee
+        vierge (0 trade, 0 perte) et les caps journaliers sautaient d'un coup.
+        Le seuil de LECTURE (10 Mo) etant inferieur a celui d'ECRITURE (20 Mo), c'est
+        toujours la rotation en lecture qui partait la premiere — et sans verrou, alors
+        que le thread heartbeat appelle _load_events toutes les 5 s.
+
+        Preuve empirique : une dizaine de .bak de 10-11 Mo tous dates du 2026-06-16,
+        entre 01:33 et 07:27.
+
+        La rotation appartient desormais au SEUL chemin d'ecriture (20 Mo, sous
+        _events_lock). Un lecteur ne mute pas ce qu'il lit."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
             self._make_events_file(path, 1000)
-            # Set max_bytes to something small so file is "too large"
-            router = self._router(path, demo_router_events_max_bytes=10)
+            router = self._router(path, demo_router_events_max_bytes=10)  # "trop gros"
+
             events = router._load_events()
-            self.assertEqual(events, [])
-            # Original file should be renamed to .bak
-            baks = list(Path(tmp).glob("*.bak"))
-            self.assertEqual(len(baks), 1)
+
+            self.assertGreater(len(events), 0, "la lecture ne doit plus renvoyer [] en silence")
+            self.assertTrue(path.exists(), "la lecture ne doit plus renommer le fichier")
+            self.assertEqual(list(Path(tmp).glob("*.bak")), [])
 
     def test_load_events_respects_max_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

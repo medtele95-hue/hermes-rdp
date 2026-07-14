@@ -4216,25 +4216,44 @@ class DemoKellyRouter:
         return None
 
     def _load_events(self) -> list[dict]:
+        """P0-F (2026-07-14) — LE CHEMIN DE LECTURE NE ROTE PLUS, JAMAIS.
+
+        Deux rotations coexistaient sur demo_pilot_events.jsonl, et la mauvaise
+        gagnait :
+          - ECRITURE : _rotate_events_if_needed(), seuil 20 Mo, sous _events_lock. OK.
+          - LECTURE  : ICI, seuil 10 Mo, renommait le fichier ET renvoyait [],
+                       SANS AUCUN VERROU.
+        10 Mo < 20 Mo : la rotation en lecture se declenchait donc toujours la
+        premiere.
+
+        Consequence : _stats() derive de _load_events() les compteurs journaliers
+        (trades du jour, cooldown, mode relaxed). Le cycle ou la rotation se
+        produisait, _load_events renvoyait [] et le bot croyait demarrer une journee
+        vierge : 0 trade, 0 perte. Les caps journaliers sautaient d'un coup.
+
+        Preuve empirique : app/data/ contient une dizaine de .bak de 10-11 Mo tous
+        dates du 2026-06-16 (01:33, 01:35, 01:42, 01:45, 02:45, 04:08, 04:53, 05:17,
+        07:24, 07:27) — la rotation en lecture s'est declenchee au moins 10 fois
+        cette seule nuit-la. Et dans le dataset, gate_statuses.daily_demo_trades_total
+        ne depasse JAMAIS 4, alors que le bot a reellement execute 26 trades en une
+        journee.
+
+        Aggravant : _load_events() est aussi appele par le thread heartbeat toutes
+        les 5 s (main.py) pour alimenter le dashboard. La rotation pouvait donc etre
+        declenchee par le THREAD DU DASHBOARD et effacer les compteurs de securite
+        utilises par le THREAD DE TRADING.
+
+        Desormais : lecture pure. Un lecteur ne mute pas ce qu'il lit. La rotation
+        appartient au seul chemin d'ecriture, qui la fait sous verrou.
+
+        Note : les deux compteurs de PERTE ne dependent plus du tout de ce fichier
+        depuis P0-D (ils lisent les deals MT5). Meme si ce chemin echouait encore,
+        les stops de perte tiendraient. Ceci est la seconde barriere."""
         if not self.events_path.exists():
             return []
-        max_bytes = int(getattr(self.settings, "demo_router_events_max_bytes", 10_485_760))
         max_lines = int(getattr(self.settings, "demo_router_events_max_lines", 5_000))
         try:
             file_size = self.events_path.stat().st_size
-            if file_size > max_bytes:
-                bak_path = self.events_path.with_suffix(
-                    f".{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.bak"
-                )
-                try:
-                    self.events_path.rename(bak_path)
-                    log.info(
-                        "[DEMO_ROUTER_EVENTS_ROTATED] path=%s size_bytes=%s backup=%s",
-                        self.events_path, file_size, bak_path,
-                    )
-                except Exception as rot_exc:
-                    log.warning("[DEMO_ROUTER_EVENTS_SKIP] reason=MEMORY_SAFE_FALLBACK error=%s", rot_exc)
-                return []
             log_event_throttled(
                 "DEMO_ROUTER_EVENTS_TAIL",
                 "[DEMO_ROUTER_EVENTS_TAIL] path=%s size_bytes=%s max_lines=%s"
@@ -4243,7 +4262,9 @@ class DemoKellyRouter:
             )
             lines = _tail_lines(self.events_path, max_lines)
         except Exception as exc:
-            log.warning("[DEMO_ROUTER_EVENTS_SKIP] reason=MEMORY_SAFE_FALLBACK error=%s", exc)
+            # On loggue en WARNING et on renvoie [] : c'est une degradation, pas un
+            # silence. Les compteurs de RISQUE, eux, ne passent plus par ici (P0-D).
+            log.warning("[DEMO_ROUTER_EVENTS_READ_FAILED] error=%s", str(exc)[:160])
             return []
         events = []
         for line in lines:

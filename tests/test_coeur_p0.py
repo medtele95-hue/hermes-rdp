@@ -510,5 +510,83 @@ class TestP0E_CapsFailClosed(unittest.TestCase):
         self.assertIn("MAGIC_FORCED", source)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# P0-F — la rotation ne remet plus aucun compteur de securite a zero
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestP0F_PlusDAmnesieParRotation(unittest.TestCase):
+    """Deux rotations coexistaient, et la mauvaise gagnait :
+      - ECRITURE : 20 Mo, sous _events_lock. OK.
+      - LECTURE  : 10 Mo, renommait le fichier ET renvoyait [], SANS VERROU.
+    10 < 20 : la rotation en lecture partait toujours la premiere. Le cycle ou elle
+    se produisait, le bot croyait demarrer une journee vierge.
+
+    Preuve empirique : une dizaine de .bak de 10-11 Mo tous dates du 2026-06-16,
+    entre 01:33 et 07:27 — au moins 10 rotations en lecture cette seule nuit-la."""
+
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        self.events = Path(self.tmp.name) / "events.jsonl"
+        self.router = DemoKellyRouter(settings(), self.events)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _write_big_file(self, megabytes: float) -> None:
+        import json as _json
+        row = _json.dumps({"event_type": "DEMO_ORDER", "symbol": "BTCUSD#",
+                           "created_at": NOW.isoformat(), "order_success": True,
+                           "ticket": "1", "magic_number": 909002, "pad": "x" * 400}) + "\n"
+        cible = int(megabytes * 1024 * 1024)
+        with self.events.open("w", encoding="utf-8") as fh:
+            written = 0
+            while written < cible:
+                fh.write(row)
+                written += len(row)
+
+    def test_la_LECTURE_ne_rote_plus_le_fichier(self) -> None:
+        """Un lecteur ne mute pas ce qu'il lit."""
+        self._write_big_file(10.5)  # au-dessus de l'ancien seuil de lecture (10 Mo)
+        avant = self.events.stat().st_size
+
+        events = self.router._load_events()
+
+        self.assertTrue(self.events.exists(), "le chemin de LECTURE a renomme le fichier")
+        self.assertEqual(self.events.stat().st_size, avant)
+        self.assertEqual(list(self.events.parent.glob("*.bak")), [])
+
+    def test_la_LECTURE_ne_renvoie_plus_une_liste_vide_en_silence(self) -> None:
+        """C'est CE `return []` qui remettait les compteurs journaliers a zero."""
+        self._write_big_file(10.5)
+        events = self.router._load_events()
+        self.assertGreater(len(events), 0, "un fichier volumineux ne doit plus donner 0 evenement")
+
+    def test_les_compteurs_de_PERTE_ne_dependent_plus_du_tout_de_ce_fichier(self) -> None:
+        """Seconde barriere (P0-D) : meme si la lecture du journal echouait, les deux
+        stops de perte tiendraient, puisqu'ils lisent les deals MT5."""
+        from app.mt5.demo_router import risk_counters_from_mt5_deals
+
+        losing = [_deal(-5.0, 1), _deal(-5.0, 2), _deal(-5.0, 3)]
+        with patch.object(DemoKellyRouter, "_load_events", return_value=[]):  # journal vide/rote
+            c = risk_counters_from_mt5_deals(
+                magic=909002, account={"equity": 10000.0}, now_utc=NOW,
+                history_fn=lambda s, e: losing,
+            )
+        self.assertEqual(c["consecutive_losses"], 3)
+        self.assertGreater(c["daily_loss_pct"], 0.0)
+
+    def test_le_chemin_d_ECRITURE_rote_toujours(self) -> None:
+        """Controle negatif : on n'a pas supprime la rotation, on l'a rendue au seul
+        ecrivain (20 Mo, sous verrou). Sans elle, le fichier grossirait sans fin."""
+        import inspect
+        source = inspect.getsource(DemoKellyRouter._rotate_events_if_needed)
+        self.assertIn("20 * 1024 * 1024", source)
+        self.assertIn("rename", source)
+
+        lecture = inspect.getsource(DemoKellyRouter._load_events)
+        self.assertNotIn("rename", lecture)
+        self.assertNotIn("demo_router_events_max_bytes", lecture)
+
+
 if __name__ == "__main__":
     unittest.main()
