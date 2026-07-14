@@ -3259,7 +3259,17 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assertTrue(sell_items[0]["data"]["max_money_tp"]["applied"])
 
     def test_max_money_tp_keeps_original_tp_when_already_below_two_usd(self) -> None:
-        decision = self.eur_strategy_decision(entry=1.1, sl=1.099, tp=1.101, reward_risk=2.0)
+        # FIX 2 (2026-07-14) : ce test posait entry=1.1 / sl=1.099 / tp=1.101 — soit un
+        # RR GEOMETRIQUE de 1.0 — tout en DECLARANT reward_risk=2.0. Le jeu de donnees
+        # etait incoherent avec lui-meme, et personne ne l'avait vu : l'exploration
+        # lisait le RR declare (2.0, OK), le choke-point lisait le RR geometrique
+        # (1.0, OK avec l'ancien plancher de 1.0). Les deux planchers ne regardaient
+        # pas les memes valeurs — c'est exactement le trou que FIX 2 ferme.
+        #
+        # Le SL est resserre a 1.0995 : risk 0.0005, reward 0.001 => RR geometrique
+        # 2.0, coherent avec le RR declare. Le TP-argent reste sous 2 USD
+        # (0.001 / 0.00001 * 1.0 * 0.01 = 1.00 USD), ce que ce test verifie.
+        decision = self.eur_strategy_decision(entry=1.1, sl=1.0995, tp=1.101, reward_risk=2.0)
         items, send = self.process_with_max_tp(
             decision,
             "EURUSD",
@@ -3269,7 +3279,7 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         )
         request = send.call_args.args[0]
         self.assertEqual(request["tp"], 1.101)
-        self.assertEqual(request["sl"], 1.099)
+        self.assertEqual(request["sl"], 1.0995)
         self.assertFalse(items[0]["data"]["max_money_tp"]["applied"])
         self.assertLessEqual(items[0]["data"]["max_money_tp"]["estimated_tp_money"], 2.0)
 

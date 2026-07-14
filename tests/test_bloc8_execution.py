@@ -98,11 +98,17 @@ class TestExecutionAtTick(unittest.TestCase):
         self.assertEqual(items[0]["data"]["reason"], "ORDER_ABORT_PRICE_MOVED")
         self.assertGreater(items[0]["data"]["drift_points"], 300)
 
-    def test_abort_when_rr_at_tick_below_1(self) -> None:
+    def test_abort_when_rr_degraded_at_fill(self) -> None:
         # drift 160 pts (< 300) but the tick eats the reward: rr ~0.15
+        #
+        # FIX 2 (2026-07-14) : le motif s'appelait RR_FLOOR_BELOW_1_0 et le plancher
+        # etait 1.0, alors que le gate du routeur exigeait 1.5 sur les valeurs de la
+        # DECISION. Le trou 1.0-1.5 contenait 67 % des ordres executes de v1 (le RR au
+        # signal vaut exactement 1.500 sur 107 des 108). Le plancher final est
+        # desormais aligne sur le minimum de la strategie (1.5).
         items, send = self._process(SimpleNamespace(bid=1.10150, ask=1.10160))
         send.assert_not_called()
-        self.assertEqual(items[0]["data"]["reason"], "RR_FLOOR_BELOW_1_0")
+        self.assertEqual(items[0]["data"]["reason"], "RR_DEGRADED_AT_FILL")
 
     def test_abort_when_no_tick_available(self) -> None:
         items, send = self._process(SimpleNamespace(bid=None, ask=None))

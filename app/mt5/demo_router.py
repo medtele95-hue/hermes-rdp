@@ -367,6 +367,23 @@ def _max_money_tp_symbol_allowed(settings: Settings, symbol: object) -> bool:
     return normalized in allowed
 
 
+def _final_rr_floor(settings: Settings, strategy: object) -> float:
+    """FIX 2 (2026-07-14) — plancher RR applique au choke-point, sur les valeurs
+    FINALES (prix au tick d'envoi + SL/TP normalises).
+
+    Il valait 1.0 en dur, alors que le gate du routeur exigeait 1.5 sur les valeurs
+    de la DECISION. Le trou 1.0-1.5 contenait 67 % des ordres executes de v1 — et
+    -81 USD de pertes. Il est desormais aligne sur le minimum de la strategie.
+
+    Le plancher ne DESCEND jamais sous 1.5 : une strategie qui declarerait un
+    minimum plus permissif ne peut pas affaiblir le choke-point (renforcer = OK,
+    assouplir = interdit)."""
+    base = 1.5
+    if str(strategy or "").upper() == "ORDER_FLOW_EXECUTION_AGENT":
+        base = float(getattr(settings, "order_flow_min_rr", 1.5) or 1.5)
+    return max(1.5, base)
+
+
 def _final_rr(direction: object, entry: object, sl: object, tp: object) -> float | None:
     """Reward/risk from the FINAL request values; None when not computable."""
     try:
@@ -3411,32 +3428,64 @@ class DemoKellyRouter:
             request["sl"] = event["sl"] = precheck["normalized_sl"]
         if precheck.get("normalized_tp") is not None:
             request["tp"] = event["tp"] = precheck["normalized_tp"]
-        # RR floor at the FINAL choke-point, after every TP modification
-        # (money-TP cap, old-btc TP, stop normalization). A capped TP must
-        # never turn a validated setup into a sub-1.0 RR penny grab.
+        # ── FIX 2 (2026-07-14) — LES DEUX PLANCHERS RR SONT UNIFIES ──────────────
+        #
+        # Le systeme avait DEUX planchers RR qui ne regardaient pas les memes valeurs :
+        #   - le gate du routeur exigeait rr >= 1.5, sur les valeurs de la DECISION ;
+        #   - ici, au choke-point, on n'exigeait que rr >= 1.0, sur les valeurs FINALES
+        #     (prix au tick d'envoi + SL/TP normalises).
+        # Entre les deux vivait un trou de 1.0 a 1.5.
+        #
+        # Ce n'etait pas un cas limite. Mesure sur le dataset v1 :
+        #   - le RR au signal vaut EXACTEMENT 1.500 sur 107 des 108 ordres executes
+        #     (le TP est calcule pour donner pile 1.5) ;
+        #   - la moindre derive adverse entre le signal et l'envoi le fait donc passer
+        #     sous 1.5 ;
+        #   - 72 des 108 ordres (67 %) atterrissent dans le trou 1.0-1.5 ;
+        #   - ces 72 ont perdu -81,27 USD, quand les 36 qui gardent RR >= 1.5 ont
+        #     gagne +39,80 USD.
+        # Le ticket 383260970 : RR 1.500 au signal -> 1.434 au fill.
+        #
+        # Desormais : le plancher final est le MINIMUM DE LA STRATEGIE (1.5 par
+        # defaut, order_flow_min_rr pour ORDER_FLOW), evalue sur les valeurs FINALES
+        # avant envoi. Un RR qui se degrade entre le signal et la normalisation est un
+        # blocage DUR : RR_DEGRADED_AT_FILL, loggue avec LES DEUX valeurs.
+        #
+        # C'est un RENFORCEMENT du choke-point (le plancher monte, il ne descend
+        # jamais) — conforme a "renforcer = OK, assouplir = interdit".
+        _rr_floor = _final_rr_floor(self.settings, str(event.get("strategy") or ""))
+        _rr_at_signal = _to_float(event.get("rr") or event.get("reward_risk"))
         final_rr = _final_rr(event.get("direction"), request.get("price"), request.get("sl"), request.get("tp"))
         event["final_rr_at_send"] = final_rr
-        if final_rr is not None and final_rr < 1.0 - 1e-9:
+        event["rr_floor_applied"] = _rr_floor
+        event["rr_at_signal"] = _rr_at_signal
+        if final_rr is not None and final_rr < _rr_floor - 1e-9:
             log.warning(
-                "[OF_SLTP] verdict=RR_FLOOR_BLOCK symbol=%s direction=%s entry=%s sl=%s tp=%s rr=%.3f",
-                _order_symbol, event.get("direction"), request.get("price"), request.get("sl"), request.get("tp"), final_rr,
-            )
-            log.warning(
-                "[ORDER_ABORT_PRICE_MOVED] symbol=%s reason=RR_AT_TICK_BELOW_1_0 rr=%.3f",
-                _order_symbol, final_rr,
+                "[RR_DEGRADED_AT_FILL] symbol=%s direction=%s strategy=%s "
+                "rr_signal=%s -> rr_final=%.3f (plancher=%.2f) entry=%s sl=%s tp=%s — "
+                "ORDRE BLOQUE : le RR s'est degrade entre le signal et l'envoi",
+                _order_symbol, event.get("direction"), event.get("strategy"),
+                f"{_rr_at_signal:.3f}" if _rr_at_signal is not None else "?",
+                final_rr, _rr_floor,
+                request.get("price"), request.get("sl"), request.get("tp"),
             )
             return {
                 "event_type": "DEMO_SKIP",
                 "status": "BLOCK",
-                "reason": "RR_FLOOR_BELOW_1_0",
-                "failed_gate": "RR_FLOOR_BELOW_1_0",
+                "reason": "RR_DEGRADED_AT_FILL",
+                "failed_gate": "RR_DEGRADED_AT_FILL",
                 "order_precheck": precheck,
                 "raw_payload": _demo_order_raw_payload(event),
                 "order_request": request,
                 "order_result": None,
                 "order_retcode": None,
                 "order_success": False,
-                "order_failure_reason": f"RR_FLOOR_BELOW_1_0_rr={final_rr:.3f}",
+                "rr_at_signal": _rr_at_signal,
+                "final_rr_at_send": final_rr,
+                "rr_floor_applied": _rr_floor,
+                "order_failure_reason": (
+                    f"RR_DEGRADED_AT_FILL signal={_rr_at_signal} final={final_rr:.3f} floor={_rr_floor:.2f}"
+                ),
             }
         order_check = _safe_order_check(request)
         event["order_check"] = order_check
@@ -3612,24 +3661,31 @@ class DemoKellyRouter:
                 "order_failure_reason": "MISSING_ENTRY_SL_TP",
             }
 
+        # FIX 2 : meme plancher sur le chemin PENDING. Laisser un plancher plus
+        # permissif ici rouvrirait exactement le trou que l'on vient de fermer.
+        _rr_floor = _final_rr_floor(self.settings, str(event.get("strategy") or ""))
         final_rr = _final_rr(direction, entry, sl, tp)
         event["final_rr_at_send"] = final_rr
-        if final_rr is not None and final_rr < 1.0 - 1e-9:
+        event["rr_floor_applied"] = _rr_floor
+        if final_rr is not None and final_rr < _rr_floor - 1e-9:
             log.warning(
-                "[OF_SLTP] verdict=RR_FLOOR_BLOCK symbol=%s direction=%s entry=%s sl=%s tp=%s rr=%.3f path=PENDING",
-                broker_symbol, direction, entry, sl, tp, final_rr,
+                "[RR_DEGRADED_AT_FILL] symbol=%s direction=%s entry=%s sl=%s tp=%s "
+                "rr_final=%.3f (plancher=%.2f) path=PENDING",
+                broker_symbol, direction, entry, sl, tp, final_rr, _rr_floor,
             )
             return {
                 "event_type": "DEMO_SKIP",
                 "status": "BLOCK",
-                "reason": "RR_FLOOR_BELOW_1_0",
-                "failed_gate": "RR_FLOOR_BELOW_1_0",
+                "reason": "RR_DEGRADED_AT_FILL",
+                "failed_gate": "RR_DEGRADED_AT_FILL",
                 "raw_payload": _demo_order_raw_payload(event),
                 "order_request": None,
                 "order_result": None,
                 "order_retcode": None,
                 "order_success": False,
-                "order_failure_reason": f"RR_FLOOR_BELOW_1_0_rr={final_rr:.3f}",
+                "final_rr_at_send": final_rr,
+                "rr_floor_applied": _rr_floor,
+                "order_failure_reason": f"RR_DEGRADED_AT_FILL final={final_rr:.3f} floor={_rr_floor:.2f}",
             }
 
         expiry_dt = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=expiry_minutes)
