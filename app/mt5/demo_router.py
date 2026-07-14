@@ -1991,7 +1991,22 @@ class DemoKellyRouter:
                     return range_reason
                 return None
             if strategy == "ORDER_FLOW_EXECUTION_AGENT":
-                return None
+                # FIX 1 / P2-B (2026-07-14) : ici, un `return None` sec. La fonction
+                # _order_flow_exec_agent_block_reason existait mais n'avait AUCUN
+                # appelant — code mort. Ses regles (order_flow_execution_enabled,
+                # score >= order_flow_min_score, RR >= order_flow_min_rr, time gate,
+                # cap MAX_OPEN par symbole) n'etaient donc JAMAIS appliquees a la
+                # strategie la plus active du systeme.
+                #
+                # Elle est desormais branchee.
+                #
+                # Honnetete du constat : sur les 107 ordres ORDER_FLOW du dataset v1,
+                # ce gate seul n'aurait bloque AUCUN trade (score toujours >= 75, RR
+                # toujours exactement 1.5 au signal). Sa valeur est preventive — il
+                # rend effectifs des seuils qui ne l'etaient pas. C'est la suppression
+                # du court-circuit top-down (ci-dessous dans _first_block_reason) qui
+                # bloque les 28 AVOID.
+                return self._order_flow_exec_agent_block_reason(gates)
             gold_reason = self._gold_liquidity_block_reason(gates)
             if gold_reason:
                 return gold_reason
@@ -2271,11 +2286,28 @@ class DemoKellyRouter:
             return str(safety.get("safety_guard_reason") or "SAFETY_GUARD_BLOCK")
         if _is_btc_scalping_gates(gates):
             return None
-        if (_is_gold_order_flow_gates(gates) or _is_order_flow_exec_gates(gates)) and not bool(getattr(self.settings, "strict_gold_order_flow_topdown", False)):
-            adaptive = gates.get("adaptive_confluence") if isinstance(gates.get("adaptive_confluence"), dict) else {}
-            if adaptive.get("adaptive_confluence_enabled") and adaptive.get("status") == "BLOCK":
-                return str(adaptive.get("block_reason") or adaptive.get("confluence_threshold_reason") or "ADAPTIVE_CONFLUENCE_TOO_LOW")
-            return None
+        # ── FIX 1 / P2-B (2026-07-14) — LE COURT-CIRCUIT TOP-DOWN EST SUPPRIME ────
+        #
+        # Ici se trouvait :
+        #     if (order_flow gates) and not strict_gold_order_flow_topdown:
+        #         ...
+        #         return None            <-- sortait AVANT le controle top-down
+        #
+        # Consequence, mesuree sur le dataset v1 : `strict_block_reason = None` sur
+        # les 107 ordres ORDER_FLOW_EXECUTION_AGENT executes — le lecteur top-down
+        # n'etait JAMAIS consulte pour cette strategie. Or il disait AVOID sur 28
+        # d'entre eux. Le ticket 383260970 (GOLD SELL, -41 USD flottant) est passe
+        # exactement par la.
+        #
+        # Le top-down s'applique desormais a ORDER_FLOW comme a tout le monde. Un
+        # AVOID produit TOP_DOWN_READER_BLOCK, qui est un blocage DUR au sens de
+        # P0-A : aucun mode discovery ne peut plus l'effacer.
+        #
+        # STRICT_GOLD_ORDER_FLOW_TOPDOWN (=false dans .env) ne pilote plus ce
+        # court-circuit. Son effet residuel — et desormais son SEUL effet — est de
+        # relacher les echecs FORTS de SMC/MTFA pour les strategies order-flow
+        # (_strong_confluence_fail_reason). C'est un assouplissement de QUALITE de
+        # setup, pas un contournement du verdict top-down.
         top_down_missing_reason = self._top_down_missing_reason(gates)
         if top_down_missing_reason:
             return top_down_missing_reason
@@ -2316,8 +2348,8 @@ class DemoKellyRouter:
             return reason
         if _is_btc_scalping_gates(gates):
             return None
-        if (_is_gold_order_flow_gates(gates) or _is_order_flow_exec_gates(gates)) and not bool(getattr(self.settings, "strict_gold_order_flow_topdown", False)):
-            return None
+        # FIX 1 : meme court-circuit supprime ici. Le top-down s'applique a
+        # ORDER_FLOW comme a tout le monde, y compris au gate final.
         top_down_missing_reason = self._top_down_missing_reason(gates)
         if top_down_missing_reason:
             return top_down_missing_reason
