@@ -769,5 +769,56 @@ class TestT9_VoyantsDeSecuriteBranches(unittest.TestCase):
         self.assertEqual(motif.findall(code), [], "un voyant de securite est de nouveau code en dur")
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# COLLECTE V2 — separer l'archive v1 du coeur repare
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestCollecteV2(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "dataset.jsonl"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_core_version_ne_PEUT_PAS_marquer_la_frontiere(self) -> None:
+        """La mission demandait de "rendre core_version=2 explicite". Or il l'est
+        DEJA depuis COEUR_V2 (2026-07-08) : 10 733 lignes du dataset v1 le portent.
+        Il ne peut donc pas separer v1 de v2 — d'ou un champ distinct."""
+        from app.services.decision_dataset import CORE_VERSION, COLLECTION_VERSION
+        self.assertEqual(CORE_VERSION, 2)
+        self.assertEqual(COLLECTION_VERSION, 2)
+        self.assertIsNot(CORE_VERSION, None)
+
+    def test_chaque_ligne_ecrite_porte_le_marqueur_v2(self) -> None:
+        import json as _json
+
+        from app.services.decision_dataset import DecisionDataset
+
+        ds = DecisionDataset(self.path)
+        ds.record_decision({
+            "event_type": "DEMO_SKIP", "symbol": "GOLD#", "direction": "BUY",
+            "entry": 3300.0, "sl": 3294.0, "tp": 3312.0, "reason": "TEST",
+        })
+        ds.record_outcome({"ticket": "1", "virtual": True, "outcome": "TP_HIT"})
+
+        rows = [_json.loads(l) for l in self.path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row["collection_version"], 2, f"{row['row_type']} sans marqueur v2")
+
+    def test_la_bascule_est_annoncee_une_seule_fois(self) -> None:
+        from app.services import decision_dataset as dd
+
+        dd._collection_v2_first_line_logged = False
+        with patch.object(dd.log, "warning") as warn:
+            ds = dd.DecisionDataset(self.path)
+            ds.record_outcome({"ticket": "1", "virtual": True})
+            ds.record_outcome({"ticket": "2", "virtual": True})
+
+        bascules = [c for c in warn.call_args_list if "COLLECTE_V2" in str(c)]
+        self.assertEqual(len(bascules), 1, "la bascule doit etre annoncee exactement une fois")
+
+
 if __name__ == "__main__":
     unittest.main()

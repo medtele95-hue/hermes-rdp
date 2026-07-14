@@ -40,6 +40,30 @@ SCHEMA_VERSION = 2
 # strategy_aware par defaut). Frontiere nette pour toute analyse future du
 # dataset. Lignes sans ce champ = core_version 1 implicite.
 CORE_VERSION = 2
+
+# ── COLLECTE V2 (2026-07-14, mission/MISSION_COEUR_P0.md) ───────────────────
+#
+# La mission demandait de "rendre core_version=2 explicite" pour marquer la
+# bascule v1 -> v2. Or core_version EST deja explicitement a 2 depuis COEUR_V2
+# (2026-07-08) : 10 733 des lignes du dataset v1 le portent. Il ne peut donc PAS
+# separer l'archive v1 de la collecte v2.
+#
+# Il faut un champ distinct. COLLECTION_VERSION marque le COEUR DE DECISION qui a
+# produit la ligne :
+#   v1 (absent) : le coeur d'avant MISSION_COEUR_P0. 100 % des trades passaient par
+#                 un override, 23 ordres partaient malgre un BLOCK explicite, les
+#                 deux stops de perte etaient morts, la confluence se desarmait sur
+#                 exception, un MT5 muet levait les caps. Les 98 trades de cette
+#                 periode sont une ARCHIVE : leur distribution ne reflete pas les
+#                 regles du systeme.
+#   v2 (= 2)    : coeur reparé (P0-A a P0-G). La distribution des decisions change
+#                 radicalement — les deux datasets ne doivent JAMAIS etre melanges
+#                 pour une calibration.
+#
+# Le dataset v1 n'est pas touche : on n'y ajoute rien, on n'y retire rien.
+COLLECTION_VERSION = 2
+_collection_v2_first_line_logged = False
+
 DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "decision_dataset.jsonl"
 
 _KILL_ZONES_UTC = ((7, 9), (12, 14), (1, 3))
@@ -353,11 +377,34 @@ class DecisionDataset:
             return False
 
     def _append(self, row: dict) -> None:
+        # COLLECTE V2 : toute ligne ecrite par ce writer porte le marqueur du coeur
+        # qui l'a produite. Les lignes de l'archive v1 ne l'ont pas.
+        row.setdefault("collection_version", COLLECTION_VERSION)
+        self._log_v2_switchover(row)
         payload = json.dumps(row, default=str, sort_keys=True)
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(payload + "\n")
+
+    @staticmethod
+    def _log_v2_switchover(row: dict) -> None:
+        """Annonce, une seule fois, l'instant exact de la bascule v1 -> v2."""
+        global _collection_v2_first_line_logged
+        if _collection_v2_first_line_logged:
+            return
+        _collection_v2_first_line_logged = True
+        try:
+            log.warning(
+                "[COLLECTE_V2] BASCULE — premiere ligne du coeur repare ecrite a %s "
+                "(row_type=%s). Les 98 trades anterieurs sont une ARCHIVE v1 : leur "
+                "distribution ne reflete pas les regles du systeme (100 %% passaient "
+                "par un override). NE JAMAIS melanger v1 et v2 pour une calibration.",
+                row.get("recorded_at") or datetime.now(timezone.utc).isoformat(),
+                row.get("row_type"),
+            )
+        except Exception:
+            pass
 
 
 class OutcomeTracker:
