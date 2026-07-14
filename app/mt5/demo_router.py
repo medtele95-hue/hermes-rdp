@@ -698,6 +698,42 @@ class DemoKellyRouter:
         self.decision_dataset.record_decision(event, extras={"frames": frames, **(self.market_eyes_snapshot or {})})
         return [self._ingest_event(event)]
 
+    def update_outcome_tracker(self, now: datetime | None = None) -> list[dict]:
+        """P0-G — labellisation du dataset, INDEPENDANTE de la config des sorties.
+
+        Cet appel vivait a l'interieur de process_quick_exits, apres ses trois
+        retours anticipes (quick_exit_enabled, mt5_connected, flags demo). Poser
+        QUICK_EXIT_ENABLED=false aurait donc supprime TOUT labelling du dataset, pour
+        toujours, sans un seul log — le dataset d'apprentissage se serait vide de ses
+        resultats en silence. Il ne tenait que par accident de configuration.
+
+        Appele desormais a chaque cycle depuis main.py, quoi qu'il arrive."""
+        try:
+            tracked_symbols = {
+                str(item.get("symbol") or "")
+                for item in self.decision_dataset.tracker._open.values()
+            }
+            prices: dict[str, float] = {}
+            for symbol in tracked_symbols:
+                if not symbol:
+                    continue
+                tick = mt5.symbol_info_tick(symbol)
+                bid = _to_float(getattr(tick, "bid", None))
+                ask = _to_float(getattr(tick, "ask", None))
+                if bid is not None and ask is not None:
+                    prices[symbol] = (bid + ask) / 2.0
+            # On appelle meme sans prix : une position REELLE se ferme sur les DEALS,
+            # pas sur un tick. Exiger un prix aurait laisse un trade non labellise
+            # quand le tick est indisponible.
+            return self.decision_dataset.tracker.update(
+                prices,
+                deals_fn=lambda ticket: mt5.history_deals_get(position=int(ticket)),
+                now_utc=now,
+            )
+        except Exception as exc:  # fail-silent par contrat : jamais dans le trading
+            log.warning("[OUTCOME_TRACKER] update_failed error=%s", str(exc)[:160])
+            return []
+
     def process_quick_exits(
         self,
         account: dict | None = None,
@@ -745,30 +781,12 @@ class DemoKellyRouter:
         items: list[dict] = []
         _quick_exit_closed: set[int] = set()
 
-        # BLOC 9 â€” outcome tracker: MFE/MAE + virtual/real outcomes from the
-        # current ticks; pnl reconciled from MT5 deals (fail-silent).
-        try:
-            _tracked_symbols = {
-                str(item.get("symbol") or "")
-                for item in self.decision_dataset.tracker._open.values()
-            }
-            _tracker_prices: dict[str, float] = {}
-            for _tsym in _tracked_symbols:
-                if not _tsym:
-                    continue
-                _t_tick = mt5.symbol_info_tick(_tsym)
-                _t_bid = _to_float(getattr(_t_tick, "bid", None))
-                _t_ask = _to_float(getattr(_t_tick, "ask", None))
-                if _t_bid is not None and _t_ask is not None:
-                    _tracker_prices[_tsym] = (_t_bid + _t_ask) / 2.0
-            if _tracker_prices:
-                self.decision_dataset.tracker.update(
-                    _tracker_prices,
-                    deals_fn=lambda ticket: mt5.history_deals_get(position=int(ticket)),
-                    now_utc=now,
-                )
-        except Exception:
-            pass
+        # P0-G : l'outcome tracker vivait ICI, apres les retours anticipes de
+        # process_quick_exits (quick_exit_enabled, mt5_connected, flags demo).
+        # Poser QUICK_EXIT_ENABLED=false aurait donc supprime TOUT labelling du
+        # dataset, pour toujours, sans un seul log. Il ne tenait que par accident de
+        # configuration. Il est desormais appele independamment depuis main.py.
+
         # PROTECTED CALENDAR maintenance (positions side, explicit UTC).
         # The network refresh lives in main (boot + daily) â€” never here.
         _cal_now = now or datetime.now(timezone.utc)

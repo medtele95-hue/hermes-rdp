@@ -166,8 +166,13 @@ class TestOutcomeTracker(unittest.TestCase):
     def _dataset(self, name: str) -> DecisionDataset:
         path = Path("tests") / "__tmp_bloc9_dataset" / f"{name}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            path.unlink()
+        # P0-G : le fichier d'etat du tracker est PARTAGE par tout le dossier. Sans
+        # cette purge, un trade reel ouvert par un autre test est restaure ici et
+        # fausse open_count(). L'isolation manquait deja ; les sauvegardes plus
+        # frequentes de P0-G-2 l'ont rendue visible.
+        for stale in (path, path.parent / "outcome_tracker_state.json"):
+            if stale.exists():
+                stale.unlink()
         return DecisionDataset(path)
 
     def test_virtual_outcome_for_refused_decision(self) -> None:
@@ -195,18 +200,42 @@ class TestOutcomeTracker(unittest.TestCase):
         self.assertLessEqual(outcomes[0]["mae"], -5.0)
 
     def test_real_ticket_pnl_reconciled_from_deals(self) -> None:
+        """P0-G-1 (2026-07-14) — ce test fournissait des deals SANS champ `entry` et
+        attendait que le trade se ferme sur une TOUCHE DE PRIX. C'etait precisement
+        le trou : quand les deals ne disent rien d'exploitable (MT5 muet, forme
+        inconnue), l'ancien code retombait sur la touche TP/SL, ecrivait une ligne
+        outcome FAUSSE et retirait le ticket du suivi — le vrai label n'aurait alors
+        JAMAIS ete ecrit.
+
+        Une position REELLE ne se ferme desormais QUE sur des deals exploitables. Le
+        test fournit donc des deals complets (entry IN + entry OUT), et le P&L reste
+        reconcilie depuis eux."""
         dataset = self._dataset("real")
         dataset.record_decision(_rich_event())  # order_success=True, ticket 42
 
         def deals_fn(ticket):
             self.assertEqual(int(ticket), 42)
-            return [SimpleNamespace(profit=-5.0, commission=-0.1, swap=0.0)]
+            return [
+                SimpleNamespace(entry=0, reason=3, price=3300.0, time=1.0, profit=0.0, commission=0.0, swap=0.0),
+                SimpleNamespace(entry=1, reason=4, price=3294.0, time=2.0, profit=-5.0, commission=-0.1, swap=0.0),
+            ]
 
         outcomes = dataset.tracker.update({"GOLD#": 3294.0}, deals_fn=deals_fn)
         self.assertEqual(len(outcomes), 1)
         self.assertFalse(outcomes[0]["virtual"])
         self.assertEqual(outcomes[0]["pnl_reconciled"], -5.1)
         self.assertEqual(outcomes[0]["pnl_source"], "MT5_HISTORY_DEALS")
+
+    def test_real_ticket_deals_muets_ne_ferment_RIEN(self) -> None:
+        """Le pendant du test ci-dessus : des deals inexploitables ne doivent produire
+        AUCUNE ligne, et surtout ne pas perdre le ticket."""
+        dataset = self._dataset("real_muet")
+        dataset.record_decision(_rich_event())
+
+        outcomes = dataset.tracker.update({"GOLD#": 3294.0}, deals_fn=lambda _t: None)
+
+        self.assertEqual(outcomes, [])
+        self.assertEqual(dataset.tracker.open_count(), 1)
 
     def test_wait_decisions_not_tracked(self) -> None:
         dataset = self._dataset("wait")

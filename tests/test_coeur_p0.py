@@ -1,4 +1,4 @@
-"""MISSION_COEUR_P0 (2026-07-14) — reparation du coeur.
+﻿"""MISSION_COEUR_P0 (2026-07-14) â€” reparation du coeur.
 
 Tests de preuve des corrections P0-A a P0-G. Chaque classe correspond a une
 correction et prouve le comportement REEL, pas la presence d'une constante.
@@ -15,6 +15,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.config import Settings
@@ -91,12 +92,12 @@ def btc_decision(**overrides) -> dict:
     return payload
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-A — un override ne peut JAMAIS effacer un blocage dur
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-A â€” un override ne peut JAMAIS effacer un blocage dur
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestP0A_HardBlocksSurviventAuxOverrides(unittest.TestCase):
-    """T1 — `fallback_decision=BLOCK` ⇒ aucun ordre ne part, quel que soit le mode."""
+    """T1 â€” `fallback_decision=BLOCK` â‡’ aucun ordre ne part, quel que soit le mode."""
 
     def setUp(self) -> None:
         self.tmp = TemporaryDirectory()
@@ -160,7 +161,7 @@ class TestP0A_HardBlocksSurviventAuxOverrides(unittest.TestCase):
                 self.assertEqual(result.reason, hard, f"{hard} a ete efface par un override")
 
     def test_old_btc_mode_ne_leve_plus_un_blocage_dur(self) -> None:
-        """old_btc_mode faisait `reason = None` INCONDITIONNEL — il effacait ~30 gates
+        """old_btc_mode faisait `reason = None` INCONDITIONNEL â€” il effacait ~30 gates
         alors que son commentaire n'annoncait que SMC/MTFA/confluence."""
         result = self._evaluate(
             "MAX_SPREAD",
@@ -168,7 +169,7 @@ class TestP0A_HardBlocksSurviventAuxOverrides(unittest.TestCase):
         )
         self.assertEqual(result.reason, "MAX_SPREAD")
 
-    # ── CONTROLE NEGATIF : sans lui, ce fix "passerait" en bloquant tout ──
+    # â”€â”€ CONTROLE NEGATIF : sans lui, ce fix "passerait" en bloquant tout â”€â”€
 
     def test_un_motif_SOFT_reste_bien_assouplissable(self) -> None:
         """Garde-fou anti-surcorrection. Si ce test echoue, le bot ne trade plus du
@@ -208,12 +209,12 @@ class TestP0A_ClassificationDesMotifs(unittest.TestCase):
         self.assertEqual(SOFT_OVERRIDABLE_BLOCK_REASONS & interdits, frozenset())
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-B — route_to_demo devient effectif
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-B â€” route_to_demo devient effectif
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestP0B_RouteToDemoEstEffectif(unittest.TestCase):
-    """T2 — `route_to_demo=False` empeche REELLEMENT le routage.
+    """T2 â€” `route_to_demo=False` empeche REELLEMENT le routage.
 
     Avant : _should_route_to_demo ne lisait que (strategy, signal). Les refus du
     balanced_selector, de l'entry gate BTC, d'une lecture MT5 ratee et du gate de
@@ -259,12 +260,12 @@ class TestP0B_RouteToDemoEstEffectif(unittest.TestCase):
         self.assertTrue(self._backend()._should_route_to_demo(self._decision()))
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-C — le moteur de confluence est fail-closed
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-C â€” le moteur de confluence est fail-closed
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestP0C_ConfluenceFailClosed(unittest.TestCase):
-    """T3 — une exception dans evaluate_confluence BLOQUE.
+    """T3 â€” une exception dans evaluate_confluence BLOQUE.
 
     Avant : `except Exception: pass` laissait `_conf = {}`, et tout le FINAL
     CONFLUENCE GATE etait conditionne par `bool(_conf)`. Une panne du moteur
@@ -287,7 +288,7 @@ class TestP0C_ConfluenceFailClosed(unittest.TestCase):
 
     def test_la_panne_bloque_le_routage_et_ne_desarme_plus_le_gate(self) -> None:
         """Preuve fonctionnelle : `_conf_blocks_route` inclut desormais la panne, et
-        la decision porte route_to_demo=False — que P0-B rend effectif."""
+        la decision porte route_to_demo=False â€” que P0-B rend effectif."""
         import inspect
 
         from app.main import HermesBackend
@@ -311,9 +312,9 @@ class TestP0C_ConfluenceFailClosed(unittest.TestCase):
         self.assertIn("send_critical_alert(", source)
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-D — les deux stops de perte sont ressuscites
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-D â€” les deux stops de perte sont ressuscites
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _deal(net: float, t: float, magic: int = 909002, entry: int = 1):
     """Deal MT5 de SORTIE (entry=1 = DEAL_ENTRY_OUT)."""
@@ -322,7 +323,7 @@ def _deal(net: float, t: float, magic: int = 909002, entry: int = 1):
 
 
 class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
-    """T4 — chaque stop est VU se declencher sur des deals franchissant le seuil.
+    """T4 â€” chaque stop est VU se declencher sur des deals franchissant le seuil.
 
     Avant : daily_loss_pct et consecutive_losses derivaient d'evenements
     `DEMO_CLOSE` qu'AUCUN code du depot n'ecrit. Verifie sur 26 journaux :
@@ -339,7 +340,7 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
             history_fn=lambda s, e: deals,
         )
 
-    # ── le compteur de perte quotidienne ──
+    # â”€â”€ le compteur de perte quotidienne â”€â”€
 
     def test_la_perte_du_jour_est_REELLEMENT_comptee(self) -> None:
         c = self._counters([_deal(-50.0, 1), _deal(-30.0, 2), _deal(+10.0, 3)], equity=10000.0)
@@ -365,7 +366,7 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
         self.assertEqual(c["daily_loss_pct"], 0.0)
         self.assertLess(c["daily_loss_pct"], 1.0)
 
-    # ── le compteur de pertes consecutives ──
+    # â”€â”€ le compteur de pertes consecutives â”€â”€
 
     def test_LE_STOP_PERTES_CONSECUTIVES_SE_DECLENCHE(self) -> None:
         c = self._counters([_deal(-5, 1), _deal(-5, 2), _deal(-5, 3)])
@@ -381,7 +382,7 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
         c = self._counters([_deal(-5, 1), _deal(-5, 2), _deal(+1, 3)])
         self.assertEqual(c["consecutive_losses"], 0)
 
-    # ── filtres ──
+    # â”€â”€ filtres â”€â”€
 
     def test_seuls_les_deals_HERMES_de_SORTIE_comptent(self) -> None:
         c = self._counters([
@@ -392,7 +393,7 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
         self.assertEqual(c["daily_pnl"], -10.0)
         self.assertEqual(c["consecutive_losses"], 1)
 
-    # ── fail-closed ──
+    # â”€â”€ fail-closed â”€â”€
 
     def test_historique_illisible__FAIL_CLOSED_et_non_zero(self) -> None:
         """Un historique MT5 illisible ne doit surtout pas se lire "aucune perte" :
@@ -428,17 +429,17 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
         self.assertIn("history_deals_get", source)
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-E — fail-closed propage aux caps d'exposition et au choke-point
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-E â€” fail-closed propage aux caps d'exposition et au choke-point
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestP0E_CapsFailClosed(unittest.TestCase):
-    """T5 — `positions_get() -> None` ne leve JAMAIS un cap.
+    """T5 â€” `positions_get() -> None` ne leve JAMAIS un cap.
 
     Avant : `mt5.positions_get() or []` transformait un MT5 muet en "aucune
     position". Tous les caps d'exposition en derivent : ils tombaient a zero EN
     MEME TEMPS et se levaient tous ensemble. Le choke-point lui-meme assumait le
-    fail-open, au motif (faux) que "les gates amont portent deja ce cap" — alors
+    fail-open, au motif (faux) que "les gates amont portent deja ce cap" â€” alors
     qu'ils sont aveugles au meme instant."""
 
     def setUp(self) -> None:
@@ -492,7 +493,7 @@ class TestP0E_CapsFailClosed(unittest.TestCase):
     def test_les_invariants_du_choke_point_sont_INTACTS(self) -> None:
         """P0-E ne devait toucher QUE la gestion du None de positions_get. L'allowlist,
         le cap de lot, le magic force et l'ordre nu restent exactement ce qu'ils
-        etaient — ce sont les protections qui MARCHENT."""
+        etaient â€” ce sont les protections qui MARCHENT."""
         from app.mt5.demo_router import (
             LOT_HARD_CAP,
             MAGIC_HARD,
@@ -510,9 +511,9 @@ class TestP0E_CapsFailClosed(unittest.TestCase):
         self.assertIn("MAGIC_FORCED", source)
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# P0-F — la rotation ne remet plus aucun compteur de securite a zero
-# ══════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-F â€” la rotation ne remet plus aucun compteur de securite a zero
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestP0F_PlusDAmnesieParRotation(unittest.TestCase):
     """Deux rotations coexistaient, et la mauvaise gagnait :
@@ -522,7 +523,7 @@ class TestP0F_PlusDAmnesieParRotation(unittest.TestCase):
     se produisait, le bot croyait demarrer une journee vierge.
 
     Preuve empirique : une dizaine de .bak de 10-11 Mo tous dates du 2026-06-16,
-    entre 01:33 et 07:27 — au moins 10 rotations en lecture cette seule nuit-la."""
+    entre 01:33 et 07:27 â€” au moins 10 rotations en lecture cette seule nuit-la."""
 
     def setUp(self) -> None:
         self.tmp = TemporaryDirectory()
@@ -586,6 +587,142 @@ class TestP0F_PlusDAmnesieParRotation(unittest.TestCase):
         lecture = inspect.getsource(DemoKellyRouter._load_events)
         self.assertNotIn("rename", lecture)
         self.assertNotIn("demo_router_events_max_bytes", lecture)
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# P0-G â€” les 3 trous du tracker d'outcomes
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class TestP0G_TrackerDOutcomes(unittest.TestCase):
+    """Les trois trous etaient dans un correctif que J'AI livre ce matin (746e7bdb).
+    L'audit les a pris en defaut. Ils sont traites au meme niveau d'exigence."""
+
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "dataset.jsonl"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _dataset(self):
+        from app.services.decision_dataset import DecisionDataset
+        return DecisionDataset(self.path)
+
+    def _register_real(self, ds):
+        ds.record_decision({
+            "event_type": "DEMO_ORDER", "order_success": True, "ticket": 42,
+            "symbol": "GOLD#", "broker_symbol": "GOLD#", "direction": "BUY",
+            "entry": 3300.0, "sl": 3294.0, "tp": 3312.0,
+        })
+
+    def _outcomes(self):
+        import json as _json
+        rows = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            row = _json.loads(line)
+            if row.get("row_type") == "outcome":
+                rows.append(row)
+        return rows
+
+    # â”€â”€ trou 1 : MT5 muet â‡’ fail-closed â”€â”€
+
+    def test_MT5_MUET_nEcrit_AUCUN_outcome_et_ne_perd_pas_le_ticket(self) -> None:
+        """Le trou : close_info_from_deals -> None laissait known_open=False, et le
+        code retombait dans la fermeture par TOUCHE DE PRIX. Une ligne outcome FAUSSE
+        etait ecrite et le ticket sortait du suivi â€” le vrai label n'aurait alors
+        JAMAIS ete ecrit. Mon propre commentaire disait "seuls les deals ferment un
+        trade reel" ; le code le contredisait exactement quand MT5 etait muet."""
+        ds = self._dataset()
+        self._register_real(ds)
+
+        # MT5 muet + le prix touche le SL : l'ancien code aurait ecrit un SL_HIT.
+        ds.tracker.update({"GOLD#": 3294.0}, deals_fn=lambda _t: None)
+
+        self.assertEqual(self._outcomes(), [], "un MT5 muet a produit une ligne outcome")
+        self.assertEqual(ds.tracker.open_count(), 1, "le ticket a ete perdu")
+
+    def test_le_trade_est_labellise_au_cycle_suivant_quand_MT5_repond(self) -> None:
+        """Controle negatif : le fail-closed retarde, il ne supprime pas."""
+        ds = self._dataset()
+        self._register_real(ds)
+        ds.tracker.update({"GOLD#": 3294.0}, deals_fn=lambda _t: None)   # MT5 muet
+        self.assertEqual(ds.tracker.open_count(), 1)
+
+        deals = [
+            SimpleNamespace(entry=0, reason=3, price=3300.0, time=1.0, profit=0.0, commission=0.0, swap=0.0),
+            SimpleNamespace(entry=1, reason=4, price=3294.0, time=2.0, profit=-6.0, commission=0.0, swap=0.0),
+        ]
+        ds.tracker.update({"GOLD#": 3294.0}, deals_fn=lambda _t: deals)  # MT5 repond
+
+        rows = self._outcomes()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "SL_HIT")
+        self.assertEqual(ds.tracker.open_count(), 0)
+
+    # â”€â”€ trou 2 : doublon au redemarrage â”€â”€
+
+    def test_record_outcome_est_IDEMPOTENT_par_ticket(self) -> None:
+        """Un P&L double-compte corrompt silencieusement TOUS les agregats
+        (weekly_snapshot, daily_report, update_hermes_state lisent pnl_reconciled)."""
+        ds = self._dataset()
+        outcome = {"ticket": "42", "virtual": False, "pnl_reconciled": -6.0, "outcome": "SL_HIT"}
+
+        self.assertTrue(ds.record_outcome(dict(outcome)))
+        self.assertFalse(ds.record_outcome(dict(outcome)), "le doublon aurait du etre refuse")
+
+        self.assertEqual(len(self._outcomes()), 1)
+
+    def test_pas_de_doublon_apres_un_REDEMARRAGE(self) -> None:
+        """LE scenario : crash entre l'append et la sauvegarde d'etat. Le ticket etait
+        restaure au boot, referme au cycle suivant, et une SECONDE ligne partait."""
+        ds = self._dataset()
+        self._register_real(ds)
+        deals = [
+            SimpleNamespace(entry=0, reason=3, price=3300.0, time=1.0, profit=0.0, commission=0.0, swap=0.0),
+            SimpleNamespace(entry=1, reason=4, price=3294.0, time=2.0, profit=-6.0, commission=0.0, swap=0.0),
+        ]
+        ds.tracker.update({}, deals_fn=lambda _t: deals)
+        self.assertEqual(len(self._outcomes()), 1)
+
+        # redemarrage : nouveau DecisionDataset sur le meme etat
+        reborn = self._dataset()
+        reborn.tracker.update({}, deals_fn=lambda _t: deals)
+
+        self.assertEqual(len(self._outcomes()), 1, "un doublon a survecu au redemarrage")
+
+    def test_letat_est_persiste_AVANT_lappend(self) -> None:
+        """L'ordre compte : le mode de defaillance residuel s'inverse volontairement â€”
+        une ligne MANQUANTE (detectable, backfillable) plutot qu'un DOUBLON (qui
+        corrompt les agregats en silence)."""
+        import inspect
+
+        from app.services.decision_dataset import OutcomeTracker
+        source = inspect.getsource(OutcomeTracker.update)
+        bloc = source[source.index("if info and info.get(\"state\") == \"CLOSED\""):]
+        bloc = bloc[: bloc.index("continue")]
+        self.assertLess(
+            bloc.index("_save_state()"), bloc.index("record_outcome("),
+            "_save_state doit preceder l'append",
+        )
+
+    # â”€â”€ trou 3 : labelling independant de QUICK_EXIT_ENABLED â”€â”€
+
+    def test_le_labelling_ne_depend_plus_de_QUICK_EXIT_ENABLED(self) -> None:
+        """L'appel vivait dans process_quick_exits, apres ses retours anticipes.
+        QUICK_EXIT_ENABLED=false aurait supprime TOUT labelling, pour toujours, sans
+        un seul log. Il ne tenait que par accident de configuration."""
+        import inspect
+
+        from app.main import HermesBackend
+        from app.mt5.demo_router import DemoKellyRouter
+
+        self.assertTrue(hasattr(DemoKellyRouter, "update_outcome_tracker"))
+
+        quick = inspect.getsource(DemoKellyRouter.process_quick_exits)
+        self.assertNotIn("tracker.update(", quick, "le tracker vit encore dans process_quick_exits")
+
+        cycle = inspect.getsource(HermesBackend.run_cycle)
+        self.assertIn("update_outcome_tracker(", cycle)
 
 
 if __name__ == "__main__":

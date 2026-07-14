@@ -730,6 +730,11 @@ class HermesBackend:
                 self.demo_router.market_eyes_snapshot = None
                 log.warning("[MARKET_EYES] collect_failed error=%s", _eyes_exc)
             self.latest_position_sync = self.sync_open_mt5_positions_to_lovable()
+            # P0-G : la labellisation du dataset ne depend plus de la config des
+            # sorties. Elle vivait a l'interieur de process_quick_exits, apres ses
+            # retours anticipes : QUICK_EXIT_ENABLED=false aurait supprime tout
+            # labelling, pour toujours, sans un seul log.
+            self.demo_router.update_outcome_tracker(now=cycle_start_utc)
             self.write_ingest_items(self.demo_router.process_quick_exits(
                 account,
                 self.mt5.connected,

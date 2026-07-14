@@ -305,6 +305,10 @@ class DecisionDataset:
     def __init__(self, path: Path | None = None) -> None:
         self.path = Path(path) if path else DATASET_PATH
         self._lock = threading.Lock()
+        # P0-G-2 : cle de deduplication des lignes outcome REELLES. Persistee par
+        # OutcomeTracker._save_state, restauree au boot : elle survit donc a un
+        # redemarrage, ce qui est exactement le moment ou le doublon apparaissait.
+        self.real_outcome_tickets: set[str] = set()
         self.tracker = OutcomeTracker(self)
 
     def record_decision(self, event: dict, extras: dict | None = None) -> dict | None:
@@ -322,11 +326,31 @@ class DecisionDataset:
                 pass
             return None
 
-    def record_outcome(self, outcome: dict) -> None:
+    def record_outcome(self, outcome: dict) -> bool:
+        """P0-G-2 : IDEMPOTENT par ticket pour les trades REELS.
+
+        Avant, c'etait un simple `_append` : aucune cle de deduplication, aucune
+        garde. Un meme ticket pouvait recevoir deux lignes outcome — et un P&L
+        double-compte corrompt silencieusement TOUS les agregats (weekly_snapshot,
+        daily_report, update_hermes_state lisent `pnl_reconciled`).
+
+        Retourne True si la ligne a ete ecrite, False si c'etait un doublon."""
         try:
+            ticket = str(outcome.get("ticket") or "")
+            is_real = outcome.get("virtual") is not True and bool(ticket)
+            if is_real and ticket in self.real_outcome_tickets:
+                log.warning(
+                    "[DECISION_DATASET] outcome_duplicate_ignored ticket=%s — "
+                    "une ligne outcome existe deja pour ce ticket",
+                    ticket,
+                )
+                return False
             self._append({"row_type": "outcome", "schema_version": SCHEMA_VERSION, "core_version": CORE_VERSION, **outcome})
+            if is_real:
+                self.real_outcome_tickets.add(ticket)
+            return True
         except Exception:
-            pass
+            return False
 
     def _append(self, row: dict) -> None:
         payload = json.dumps(row, default=str, sort_keys=True)
@@ -371,6 +395,10 @@ class OutcomeTracker:
                 self._open[key] = item
                 restored += 1
             self._counter = int(payload.get("counter") or 0) if isinstance(payload, dict) else 0
+            # P0-G-2 : la cle de deduplication survit au redemarrage — c'est
+            # precisement le moment ou le doublon apparaissait.
+            for ticket in payload.get("outcome_written") or []:
+                self.dataset.real_outcome_tickets.add(str(ticket))
             if restored:
                 log.info("[DECISION_DATASET] outcome_tracker restaure : %d trade(s) reel(s) ouvert(s)", restored)
         except Exception as exc:
@@ -388,6 +416,9 @@ class OutcomeTracker:
                 "saved_at": datetime.now(timezone.utc).isoformat(),
                 "counter": self._counter,
                 "open": real,
+                # P0-G-2 : cle de dedup persistee (bornee : on ne garde que les
+                # tickets recents, le fichier ne doit pas grossir sans fin).
+                "outcome_written": sorted(self.dataset.real_outcome_tickets)[-500:],
             }
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=str(self.state_path.parent), suffix=".tmp")
@@ -486,17 +517,53 @@ class OutcomeTracker:
                 item = self._open[key]
                 is_real = not item.get("virtual")
 
-                known_open = False
                 if is_real:
                     info = close_info_from_deals(item.get("ticket"), deals_fn)
                     if info and info.get("state") == "CLOSED":
                         outcome = self._outcome_from_deals(item, info)
-                        self.dataset.record_outcome(outcome)
-                        closed.append(outcome)
+                        # P0-G-2 : on retire le ticket du suivi et on PERSISTE
+                        # AVANT d'ecrire la ligne. Auparavant, l'ordre etait
+                        # append -> pop -> _save_state en fin de boucle : un crash
+                        # entre l'append et la sauvegarde laissait le ticket dans
+                        # l'etat, il etait restaure au boot, refermé au cycle
+                        # suivant... et une SECONDE ligne outcome etait ecrite pour
+                        # le meme ticket (P&L double-compte).
+                        #
+                        # Le mode de defaillance residuel s'inverse, et c'est
+                        # volontaire : un crash entre la sauvegarde et l'append donne
+                        # une ligne MANQUANTE (detectable, backfillable) au lieu d'un
+                        # DOUBLON (qui corrompt silencieusement tous les agregats).
                         self._open.pop(key, None)
-                        dirty = True
+                        self._save_state()   # le ticket n'est plus suivi : au boot,
+                                             # il ne sera pas referme => pas de doublon
+                        if self.dataset.record_outcome(outcome):
+                            closed.append(outcome)
+                        self._save_state()   # persiste la cle de dedup
+                        dirty = False
                         continue
-                    known_open = bool(info and info.get("state") == "OPEN")
+                    if info and info.get("state") == "OPEN":
+                        pass  # position vivante : on continue le suivi MFE/MAE
+                    else:
+                        # P0-G-1 : les deals ne disent RIEN (MT5 muet, deals_fn
+                        # absent, forme inconnue). FAIL-CLOSED : on n'ecrit rien et
+                        # on NE RETIRE PAS le ticket. On retentera au prochain cycle.
+                        #
+                        # Avant, on retombait ici dans la fermeture par touche de
+                        # prix : une ligne outcome FAUSSE etait ecrite
+                        # (pnl_source=UNRESOLVED) et le ticket sortait du suivi — le
+                        # vrai label n'aurait alors JAMAIS ete ecrit. Mon propre
+                        # commentaire disait "seuls les deals ferment un trade reel" ;
+                        # le code le contredisait exactement quand MT5 etait muet.
+                        price = _to_float(prices.get(str(item.get("symbol") or "")))
+                        if price is not None:
+                            sign = 1.0 if item["direction"] == "BUY" else -1.0
+                            excursion = sign * (price - item["entry"])
+                            previous = (item["mfe"], item["mae"])
+                            item["mfe"] = max(item["mfe"], excursion)
+                            item["mae"] = min(item["mae"], excursion)
+                            if (item["mfe"], item["mae"]) != previous:
+                                dirty = True
+                        continue
 
                 price = _to_float(prices.get(str(item.get("symbol") or "")))
                 if price is None:
@@ -509,11 +576,10 @@ class OutcomeTracker:
                 if is_real and (item["mfe"], item["mae"]) != previous:
                     dirty = True
 
-                # Les deals prouvent que la position vit encore : ne JAMAIS la
-                # fermer sur une touche de prix. Le trailing a pu deplacer le
-                # SL — le prix retouche l'ancien niveau alors que la position
-                # est toujours ouverte. Seuls les deals ferment un trade reel.
-                if known_open:
+                # Une position REELLE ne se ferme QUE sur les deals (traite ci-dessus).
+                # Ici on n'a plus que des refus VIRTUELS, qui n'ont aucune position MT5
+                # a interroger : leur simulation TP/SL sur les ticks est legitime.
+                if is_real:
                     continue
 
                 hit_tp = price >= item["tp"] if item["direction"] == "BUY" else price <= item["tp"]
