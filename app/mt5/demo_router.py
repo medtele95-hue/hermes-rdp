@@ -39,6 +39,7 @@ from app.services.quick_exit_manager import QuickExitConfig, hermes_dynamic_exit
 from app.services.top_down_market_reader import TopDownMarketReader
 from app.services.time_engine import TimeEngine, USER_DISABLED_TIME_BLOCK_LOG_REASONS, USER_DISABLED_TIME_BLOCK_REASONS
 from app.strategies.registry import ACTIVE_EXECUTION_STRATEGIES
+from app.utils.broker_time import broker_day_window, broker_now_utc, to_mt5_query_bounds
 from app.utils.risk_math import reward_risk
 from app.utils.throttle import log_event_throttled
 
@@ -191,6 +192,129 @@ def _is_hard_block(reason: object) -> bool:
     if not reason:
         return False
     return str(reason) not in SOFT_OVERRIDABLE_BLOCK_REASONS
+
+
+# ── P0-D (2026-07-14) — RESSUSCITER LES DEUX STOPS DE PERTE ──────────────────
+#
+# `_stats()` derivait `daily_loss_pct` et `consecutive_losses` d'evenements
+# `event_type == "DEMO_CLOSE"`. Or AUCUN code du depot n'ecrit jamais un
+# DEMO_CLOSE : les fermetures produisent EXIT_V2_CLOSE, POSITION_SYNC,
+# RESCUE_CLOSE. Verifie sur 26 journaux : DEMO_CLOSE = 0.
+# Verifie dans le dataset : gate_statuses.daily_demo_loss_pct = 0.0 et
+# gate_statuses.consecutive_losses = 0 sur 8465 decisions sur 8465.
+#
+# Les deux gates (DEMO_DAILY_LOSS_STOP, DEMO_CONSECUTIVE_LOSS_STOP) ne pouvaient
+# donc JAMAIS se declencher. L'utilisateur croyait disposer d'un stop a 1 % de
+# perte quotidienne et d'un arret apres 3 pertes consecutives : il n'avait ni
+# l'un ni l'autre.
+#
+# Aggravant : `balance = 10000.0` etait CODEE EN DUR (la balance reelle est
+# ~9 090 USD), donc meme si le calcul avait fonctionne le pourcentage aurait ete
+# faux.
+#
+# Correctif : meme source de verite que le kill-switch — les DEALS MT5, sur la
+# fenetre broker-day, bornes converties par to_mt5_query_bounds (MT5 horodate en
+# heure murale broker, UTC+3 chez XM : passer des bornes UTC-vraies interroge
+# 3 h trop tot). Rien en memoire : on relit l'historique a chaque evaluation, donc
+# ces compteurs survivent a un redemarrage ET a une rotation de journal — les deux
+# choses qui les mettaient a zero.
+#
+# FAIL-CLOSED : historique illisible => on BLOQUE (RISK_COUNTERS_UNREADABLE),
+# on ne trade pas a l'aveugle. C'est la meme doctrine que le kill-switch.
+RISK_COUNTERS_UNREADABLE = "RISK_COUNTERS_UNREADABLE"
+
+
+def risk_counters_from_mt5_deals(
+    magic: int,
+    account: dict | None,
+    now_utc: datetime | None = None,
+    broker_utc_offset_hours: float = 3.0,
+    history_fn=None,
+) -> dict:
+    """daily_loss_pct + consecutive_losses, depuis les deals MT5.
+
+    daily_loss_pct     : perte du jour broker, en % de l'EQUITY REELLE.
+    consecutive_losses : serie de pertes en cours (deals de sortie, du plus recent
+                         au plus ancien, jusqu'a la premiere non-perte).
+    """
+    now_utc = now_utc or broker_now_utc()
+    start_utc, end_utc = broker_day_window(now_utc, broker_utc_offset_hours)
+
+    if history_fn is None:
+        def history_fn(s_utc, e_utc):  # pragma: no cover - chemin live MT5
+            q_start, q_end = to_mt5_query_bounds(s_utc, e_utc, broker_utc_offset_hours)
+            return mt5.history_deals_get(q_start, q_end)
+
+    try:
+        deals = history_fn(start_utc, end_utc)
+        if deals is None:
+            raise RuntimeError("history_deals_get a renvoye None")
+        deals = list(deals)
+    except Exception as exc:
+        log.warning(
+            "[RISK_COUNTERS] historique MT5 illisible (%s) -> FAIL-CLOSED : "
+            "les stops de perte bloquent plutot que de compter a l'aveugle",
+            str(exc)[:160],
+        )
+        return {
+            "unavailable": True,
+            "daily_loss_pct": None,
+            "consecutive_losses": None,
+            "daily_pnl": None,
+            "equity": None,
+            "source": "UNAVAILABLE",
+        }
+
+    # deals de SORTIE du magic HERMES uniquement (entry == DEAL_ENTRY_OUT)
+    closed = []
+    for deal in deals:
+        try:
+            if int(getattr(deal, "magic", -1) or -1) != int(magic):
+                continue
+            if int(getattr(deal, "entry", -1) or 0) != 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        net = (_to_float(getattr(deal, "profit", 0)) or 0.0)
+        net += _to_float(getattr(deal, "commission", 0)) or 0.0
+        net += _to_float(getattr(deal, "swap", 0)) or 0.0
+        closed.append((_to_float(getattr(deal, "time", 0)) or 0.0, net))
+
+    daily_pnl = round(sum(net for _, net in closed), 6)
+
+    # serie de pertes en cours : du plus recent au plus ancien
+    consecutive_losses = 0
+    for _, net in sorted(closed, key=lambda item: item[0], reverse=True):
+        if net < 0:
+            consecutive_losses += 1
+        else:
+            break
+
+    source = account if isinstance(account, dict) else {}
+    equity = _to_float(source.get("equity")) or _to_float(source.get("balance"))
+    if not equity or equity <= 0:
+        # Pas d'equity => on ne peut pas calculer un POURCENTAGE de perte. On ne
+        # renvoie surtout pas 0.0 : ce serait re-affirmer "aucune perte" — le
+        # mensonge exact que ce correctif supprime.
+        log.warning("[RISK_COUNTERS] equity indisponible -> daily_loss_pct FAIL-CLOSED")
+        return {
+            "unavailable": True,
+            "daily_loss_pct": None,
+            "consecutive_losses": consecutive_losses,
+            "daily_pnl": daily_pnl,
+            "equity": None,
+            "source": "EQUITY_MISSING",
+        }
+
+    daily_loss_pct = round(abs(min(0.0, daily_pnl)) / equity * 100.0, 8)
+    return {
+        "unavailable": False,
+        "daily_loss_pct": daily_loss_pct,
+        "consecutive_losses": consecutive_losses,
+        "daily_pnl": daily_pnl,
+        "equity": equity,
+        "source": "MT5_HISTORY_DEALS",
+    }
 
 
 def _demo_ignore_time_blocks(settings: Settings) -> bool:
@@ -1071,6 +1195,14 @@ class DemoKellyRouter:
         top_down = self._top_down_reading(decision, frames, symbol, direction, sl, tp, spread, max_spread, now_dt)
         wsp = _wsp_payload(decision)
         stats = self._stats(now_dt)
+        # P0-D : les deux stops de perte ne sont plus derives d'evenements DEMO_CLOSE
+        # que rien n'ecrit — ils viennent des DEALS MT5, comme le kill-switch.
+        risk_counters = risk_counters_from_mt5_deals(
+            magic=self.settings.demo_magic_number,
+            account=account,
+            now_utc=now_dt,
+            broker_utc_offset_hours=float(getattr(self.settings, "broker_utc_offset_hours", 3.0)),
+        )
         positions = self._demo_positions()
         open_by_symbol = _positions_by_symbol(positions)
         _mt5_open_for_symbol = open_by_symbol.get(symbol, 0)
@@ -1156,8 +1288,14 @@ class DemoKellyRouter:
             "daily_strong_setup_learning_trades_by_symbol": stats["strong_setup_learning_trades_opened_by_symbol"],
             "current_symbol_strong_setup_learning_daily_count": stats["strong_setup_learning_trades_opened_by_symbol"].get(symbol, 0),
             "smoke_test_confirmed_orders": stats["smoke_test_confirmed_orders"],
-            "daily_demo_loss_pct": stats["daily_loss_pct"],
-            "consecutive_losses": stats["consecutive_losses"],
+            # P0-D : source = deals MT5 (et non plus des DEMO_CLOSE inexistants),
+            # denominateur = equity REELLE (et non plus 10000.0 en dur).
+            "daily_demo_loss_pct": risk_counters["daily_loss_pct"],
+            "consecutive_losses": risk_counters["consecutive_losses"],
+            "risk_counters_unavailable": risk_counters["unavailable"],
+            "risk_counters_source": risk_counters["source"],
+            "risk_counters_daily_pnl": risk_counters["daily_pnl"],
+            "risk_counters_equity": risk_counters["equity"],
             "final_lot": capped_lot,
             "risk_pct": risk_pct,
             "rr": rr,
@@ -2040,6 +2178,12 @@ class DemoKellyRouter:
             return "MAX_TRADES_PER_DAY_TOTAL"
         if gates.get("symbol_trade_cooldown_active"):
             return "SYMBOL_TRADE_COOLDOWN"
+        # P0-D : fail-closed. Un historique MT5 illisible ne doit pas se lire "aucune
+        # perte" — c'est exactement le mensonge que ce correctif supprime.
+        if gates.get("risk_counters_unavailable"):
+            return RISK_COUNTERS_UNREADABLE
+        if _to_float(gates["daily_demo_loss_pct"]) is None or _to_float(gates["consecutive_losses"]) is None:
+            return RISK_COUNTERS_UNREADABLE
         if gates["daily_demo_loss_pct"] >= self.settings.demo_max_daily_loss_pct:
             return "DEMO_DAILY_LOSS_STOP"
         if gates["consecutive_losses"] >= self.settings.demo_stop_after_consecutive_losses:
@@ -2669,9 +2813,14 @@ class DemoKellyRouter:
                 block("DEMO_SMOKE_TEST_24H_EXPIRED")
             if gates.get("smoke_test_confirmed_orders", 0) >= self.settings.demo_smoke_test_max_confirmed_orders:
                 block("DEMO_SMOKE_TEST_CONFIRMED_ORDER_LIMIT")
-        if gates["daily_demo_loss_pct"] >= self.settings.demo_max_daily_loss_pct:
+        # P0-D : meme fail-closed sur le chemin exploration.
+        if gates.get("risk_counters_unavailable") or _to_float(gates["daily_demo_loss_pct"]) is None:
+            block(RISK_COUNTERS_UNREADABLE)
+        elif gates["daily_demo_loss_pct"] >= self.settings.demo_max_daily_loss_pct:
             block("DEMO_DAILY_LOSS_STOP")
-        if gates["consecutive_losses"] >= self.settings.demo_stop_after_consecutive_losses:
+        if _to_float(gates["consecutive_losses"]) is None:
+            block(RISK_COUNTERS_UNREADABLE)
+        elif gates["consecutive_losses"] >= self.settings.demo_stop_after_consecutive_losses:
             block("DEMO_CONSECUTIVE_LOSS_STOP")
         if adaptive.get("adaptive_confluence_enabled") and adaptive.get("status") == "BLOCK":
             block(str(adaptive.get("block_reason") or adaptive.get("confluence_threshold_reason") or "ADAPTIVE_CONFLUENCE_TOO_LOW"))

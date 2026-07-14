@@ -311,5 +311,122 @@ class TestP0C_ConfluenceFailClosed(unittest.TestCase):
         self.assertIn("send_critical_alert(", source)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# P0-D — les deux stops de perte sont ressuscites
+# ══════════════════════════════════════════════════════════════════════════
+
+def _deal(net: float, t: float, magic: int = 909002, entry: int = 1):
+    """Deal MT5 de SORTIE (entry=1 = DEAL_ENTRY_OUT)."""
+    from types import SimpleNamespace
+    return SimpleNamespace(magic=magic, entry=entry, profit=net, commission=0.0, swap=0.0, time=t)
+
+
+class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
+    """T4 — chaque stop est VU se declencher sur des deals franchissant le seuil.
+
+    Avant : daily_loss_pct et consecutive_losses derivaient d'evenements
+    `DEMO_CLOSE` qu'AUCUN code du depot n'ecrit. Verifie sur 26 journaux :
+    DEMO_CLOSE = 0. Verifie dans le dataset : les deux compteurs valaient 0 sur
+    8465 decisions sur 8465. Les deux gates ne pouvaient JAMAIS se declencher.
+    Et la balance etait codee en dur a 10000.0."""
+
+    def _counters(self, deals, equity=10000.0):
+        from app.mt5.demo_router import risk_counters_from_mt5_deals
+        return risk_counters_from_mt5_deals(
+            magic=909002,
+            account={"equity": equity} if equity is not None else {},
+            now_utc=NOW,
+            history_fn=lambda s, e: deals,
+        )
+
+    # ── le compteur de perte quotidienne ──
+
+    def test_la_perte_du_jour_est_REELLEMENT_comptee(self) -> None:
+        c = self._counters([_deal(-50.0, 1), _deal(-30.0, 2), _deal(+10.0, 3)], equity=10000.0)
+        self.assertEqual(c["daily_pnl"], -70.0)
+        self.assertAlmostEqual(c["daily_loss_pct"], 0.7)  # 70 / 10000
+        self.assertEqual(c["source"], "MT5_HISTORY_DEALS")
+
+    def test_le_denominateur_est_lEQUITY_REELLE_pas_10000_en_dur(self) -> None:
+        """La balance reelle est ~9090 USD, pas 10000. Le pourcentage etait faux."""
+        c = self._counters([_deal(-90.9, 1)], equity=9090.0)
+        self.assertAlmostEqual(c["daily_loss_pct"], 1.0)  # 90.9 / 9090 = 1 %
+        self.assertEqual(c["equity"], 9090.0)
+
+    def test_LE_STOP_DAILY_LOSS_SE_DECLENCHE(self) -> None:
+        """Le test que la mission exige : voir le gate se declencher pour de vrai."""
+        c = self._counters([_deal(-150.0, 1)], equity=10000.0)  # -1,5 %
+        seuil = 1.0
+        self.assertGreaterEqual(c["daily_loss_pct"], seuil)
+
+    def test_un_jour_gagnant_ne_declenche_rien(self) -> None:
+        """Controle negatif : un gate qui bloque toujours n'est pas un gate."""
+        c = self._counters([_deal(+120.0, 1), _deal(-20.0, 2)], equity=10000.0)
+        self.assertEqual(c["daily_loss_pct"], 0.0)
+        self.assertLess(c["daily_loss_pct"], 1.0)
+
+    # ── le compteur de pertes consecutives ──
+
+    def test_LE_STOP_PERTES_CONSECUTIVES_SE_DECLENCHE(self) -> None:
+        c = self._counters([_deal(-5, 1), _deal(-5, 2), _deal(-5, 3)])
+        self.assertEqual(c["consecutive_losses"], 3)
+        self.assertGreaterEqual(c["consecutive_losses"], 3)  # seuil .env
+
+    def test_la_serie_repart_de_zero_apres_un_gain(self) -> None:
+        """Du plus RECENT au plus ancien : deux pertes apres un gain = serie de 2."""
+        c = self._counters([_deal(-5, 1), _deal(-5, 2), _deal(+9, 3), _deal(-5, 4), _deal(-5, 5)])
+        self.assertEqual(c["consecutive_losses"], 2)
+
+    def test_un_gain_en_dernier_remet_la_serie_a_zero(self) -> None:
+        c = self._counters([_deal(-5, 1), _deal(-5, 2), _deal(+1, 3)])
+        self.assertEqual(c["consecutive_losses"], 0)
+
+    # ── filtres ──
+
+    def test_seuls_les_deals_HERMES_de_SORTIE_comptent(self) -> None:
+        c = self._counters([
+            _deal(-100.0, 1, magic=111111),   # autre EA
+            _deal(-100.0, 2, entry=0),        # deal d'ENTREE, pas une cloture
+            _deal(-10.0, 3),                  # le seul valable
+        ])
+        self.assertEqual(c["daily_pnl"], -10.0)
+        self.assertEqual(c["consecutive_losses"], 1)
+
+    # ── fail-closed ──
+
+    def test_historique_illisible__FAIL_CLOSED_et_non_zero(self) -> None:
+        """Un historique MT5 illisible ne doit surtout pas se lire "aucune perte" :
+        ce serait re-affirmer le mensonge exact que ce correctif supprime."""
+        from app.mt5.demo_router import risk_counters_from_mt5_deals
+        c = risk_counters_from_mt5_deals(
+            magic=909002, account={"equity": 10000.0}, now_utc=NOW,
+            history_fn=lambda s, e: None,
+        )
+        self.assertTrue(c["unavailable"])
+        self.assertIsNone(c["daily_loss_pct"])
+        self.assertNotEqual(c["daily_loss_pct"], 0.0)
+
+    def test_equity_absente__FAIL_CLOSED(self) -> None:
+        c = self._counters([_deal(-50.0, 1)], equity=None)
+        self.assertTrue(c["unavailable"])
+        self.assertIsNone(c["daily_loss_pct"])
+
+    def test_le_gate_bloque_quand_les_compteurs_sont_illisibles(self) -> None:
+        """RISK_COUNTERS_UNREADABLE doit exister comme motif de blocage, et etre DUR."""
+        from app.mt5.demo_router import RISK_COUNTERS_UNREADABLE
+        self.assertTrue(_is_hard_block(RISK_COUNTERS_UNREADABLE))
+
+    def test_les_compteurs_survivent_a_une_rotation_de_journal(self) -> None:
+        """Le point clef : ils ne lisent plus le journal d'evenements du tout. Une
+        rotation (qui remettait tout a zero) ne peut plus les effacer."""
+        import inspect
+
+        from app.mt5.demo_router import risk_counters_from_mt5_deals
+        source = inspect.getsource(risk_counters_from_mt5_deals)
+        self.assertNotIn("_load_events", source)
+        self.assertNotIn("DEMO_CLOSE", source)
+        self.assertIn("history_deals_get", source)
+
+
 if __name__ == "__main__":
     unittest.main()

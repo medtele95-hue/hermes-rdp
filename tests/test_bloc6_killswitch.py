@@ -196,6 +196,15 @@ class TestRouterIntegration(unittest.TestCase):
             patch("app.mt5.demo_router.mt5.symbol_info_tick", return_value=SimpleNamespace(bid=1.1, ask=1.10001)),
             patch("app.mt5.demo_router.mt5.order_check", return_value=SimpleNamespace(retcode=10009, comment="Done")),
             patch("app.services.daily_killswitch._mt5_history_deals", return_value=losing_deals),
+            # P0-D : le routeur possede desormais SES PROPRES compteurs de risque lus
+            # sur les deals MT5 (perte du jour, pertes consecutives), fail-closed.
+            # On les neutralise ici (historique lisible, aucun deal) pour que ce test
+            # prouve bien ce qu'il annonce : le blocage par le KILL-SWITCH, isole.
+            #
+            # A noter — en production, avec ces memes 6 pertes reelles, c'est le stop
+            # "3 pertes consecutives" qui se declencherait EN PREMIER (seuil 3 < 6).
+            # Le bot s'arrete donc plus tot qu'avant ce correctif. C'est voulu.
+            patch("app.mt5.demo_router.mt5.history_deals_get", return_value=[]),
             patch("app.mt5.demo_router.mt5.order_send") as send,
         ):
             result = router.evaluate(

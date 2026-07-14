@@ -51,6 +51,11 @@ class TestExecutionAtTick(unittest.TestCase):
             patch("app.mt5.demo_router.mt5.symbol_info", return_value=_symbol_info()),
             patch("app.mt5.demo_router.mt5.symbol_info_tick", return_value=tick),
             patch("app.services.daily_killswitch._mt5_history_deals", return_value=[]),
+            # P0-D : les compteurs de risque lisent desormais les deals MT5 et sont
+            # FAIL-CLOSED. Un historique illisible bloque l'ordre — c'est voulu.
+            # On declare donc ici la precondition explicite "historique lisible, aucun
+            # deal aujourd'hui", au lieu de la laisser implicite.
+            patch("app.mt5.demo_router.mt5.history_deals_get", return_value=[]),
             patch("app.mt5.demo_router.mt5.order_send", return_value=fake_result) as send,
         ):
             items = router.process_decision(

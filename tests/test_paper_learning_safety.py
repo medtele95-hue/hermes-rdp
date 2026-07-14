@@ -2257,8 +2257,16 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
             Path(self.tmp.name) / "active_symbols_never_created.json",
         )
         self.active_symbols_patcher.start()
+        # P0-D (2026-07-14) : les compteurs de risque du routeur (perte du jour,
+        # pertes consecutives) lisent desormais les DEALS MT5 et sont FAIL-CLOSED —
+        # un historique illisible bloque l'ordre. Ce harnais declare donc la
+        # precondition par defaut "historique lisible, aucun deal aujourd'hui".
+        # Les tests des deux stops la surchargent avec de vrais deals.
+        self.deals_patcher = patch("app.mt5.demo_router.mt5.history_deals_get", return_value=[])
+        self.deals_patcher.start()
 
     def tearDown(self) -> None:
+        self.deals_patcher.stop()
         self.active_symbols_patcher.stop()
         self.allowlist_patcher.stop()
         self.order_check_patcher.stop()
@@ -6912,11 +6920,22 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assertIn(result.reason, {"KELLY_INVALID_LOT", "PASS"})
 
     def test_daily_loss_stop_blocks_order(self) -> None:
-        self.events_path.write_text(
-            json.dumps({"event_type": "DEMO_CLOSE", "pnl": -100.0, "result": "LOSS", "created_at": self.now.isoformat()}) + "\n",
-            encoding="utf-8",
-        )
-        self.assertEqual(self.evaluate().reason, "DEMO_DAILY_LOSS_STOP")
+        # P0-D — ce test ecrivait un evenement DEMO_CLOSE dans le journal. Or AUCUN
+        # code du depot n'ecrit jamais un DEMO_CLOSE (verifie sur 26 journaux de
+        # production : DEMO_CLOSE = 0). Il passait donc au vert alors que la
+        # protection etait MORTE en production — il fabriquait une donnee que la
+        # realite ne produit pas. C'est l'illustration exacte de "suite verte n'est
+        # pas une preuve".
+        # La perte du jour vient desormais des DEALS MT5, rapportee a l'EQUITY REELLE
+        # (10 000 ici) et non plus a une balance codee en dur.
+        losing = [SimpleNamespace(magic=909002, entry=1, profit=-1000.0, commission=0.0, swap=0.0, time=1)]
+        with patch("app.mt5.demo_router.mt5.history_deals_get", return_value=losing):
+            self.assertEqual(self.evaluate().reason, "DEMO_DAILY_LOSS_STOP")
+
+    def test_daily_loss_stop_fail_closed_when_history_unreadable(self) -> None:
+        """Un historique MT5 illisible ne doit pas se lire "aucune perte"."""
+        with patch("app.mt5.demo_router.mt5.history_deals_get", return_value=None):
+            self.assertEqual(self.evaluate().reason, "RISK_COUNTERS_UNREADABLE")
 
     def test_max_open_trades_blocks_order(self) -> None:
         with patch("app.mt5.demo_router.mt5.positions_get", return_value=[SimpleNamespace(magic=909002, symbol="GOLD#")]):
@@ -7061,12 +7080,27 @@ class DemoKellyRouterSafetyTests(unittest.TestCase):
         self.assertEqual(result.event["current_symbol_open_count"], 0)
 
     def test_consecutive_losses_stop_blocks_order(self) -> None:
-        rows = [
-            json.dumps({"event_type": "DEMO_CLOSE", "result": "LOSS", "pnl": -1.0, "created_at": self.now.isoformat()})
-            for _ in range(3)
+        # P0-D — meme constat que pour le stop de perte quotidienne : ce test
+        # fabriquait des DEMO_CLOSE que la production n'ecrit jamais. La serie de
+        # pertes vient desormais des DEALS MT5 (deals de SORTIE, du plus recent au
+        # plus ancien, jusqu'a la premiere non-perte).
+        losing = [
+            SimpleNamespace(magic=909002, entry=1, profit=-1.0, commission=0.0, swap=0.0, time=float(i))
+            for i in range(1, 4)
         ]
-        self.events_path.write_text("\n".join(rows), encoding="utf-8")
-        self.assertEqual(self.evaluate().reason, "DEMO_CONSECUTIVE_LOSS_STOP")
+        with patch("app.mt5.demo_router.mt5.history_deals_get", return_value=losing):
+            self.assertEqual(self.evaluate().reason, "DEMO_CONSECUTIVE_LOSS_STOP")
+
+    def test_consecutive_losses_serie_cassee_par_un_gain_ne_bloque_pas(self) -> None:
+        """Controle negatif : un gain recent casse la serie. Sans ce test, un compteur
+        qui bloquerait toujours passerait le test ci-dessus."""
+        deals = [
+            SimpleNamespace(magic=909002, entry=1, profit=-1.0, commission=0.0, swap=0.0, time=1.0),
+            SimpleNamespace(magic=909002, entry=1, profit=-1.0, commission=0.0, swap=0.0, time=2.0),
+            SimpleNamespace(magic=909002, entry=1, profit=+5.0, commission=0.0, swap=0.0, time=3.0),
+        ]
+        with patch("app.mt5.demo_router.mt5.history_deals_get", return_value=deals):
+            self.assertNotEqual(self.evaluate().reason, "DEMO_CONSECUTIVE_LOSS_STOP")
 
     def test_btc_bad_hour_weekend_blocked_by_default(self) -> None:
         # With crypto_24_7_enabled=True (default) and no usable tick (empty dict, bid=None),

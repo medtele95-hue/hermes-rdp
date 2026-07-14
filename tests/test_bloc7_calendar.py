@@ -196,6 +196,9 @@ class TestRouterCalendarIntegration(unittest.TestCase):
             patch("app.mt5.demo_router.mt5.symbol_info_tick", return_value=SimpleNamespace(bid=1.1, ask=1.10001)),
             patch("app.mt5.demo_router.mt5.order_check", return_value=SimpleNamespace(retcode=10009, comment="Done")),
             patch("app.services.daily_killswitch._mt5_history_deals", return_value=[]),
+            # P0-D : compteurs de risque = deals MT5, fail-closed. Precondition
+            # explicite : historique lisible, aucun deal aujourd'hui.
+            patch("app.mt5.demo_router.mt5.history_deals_get", return_value=[]),
         ):
             return router.evaluate(
                 self._decision(), {"approved_lot": 0.01}, self._account(), "EURUSD", {},
