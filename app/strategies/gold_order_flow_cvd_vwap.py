@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from app.logger import log
+from app.utils.candles import closed_frame
 
 
 STRATEGY = "GOLD_ORDER_FLOW_CVD_VWAP"
@@ -45,7 +46,7 @@ def evaluate(symbol: str, frames: dict[str, Any] | None, context: dict | None = 
         candles_source = frame_map.get("M5")
         if candles_source is None:
             candles_source = frame_map.get("m5")
-        candles = _normalize_candles(candles_source)
+        candles = closed_frame(_normalize_candles(candles_source))
         ticks = (frames or {}).get("TICKS") or (frames or {}).get("ticks") or (context or {}).get("ticks")
         result = evaluate_gold_order_flow(symbol, candles, ticks=ticks, config=cfg)
     except Exception as exc:
@@ -72,7 +73,13 @@ def evaluate_reader(symbol: str, frames: dict[str, Any] | None, context: dict | 
     candles_source = frame_map.get("M5")
     if candles_source is None:
         candles_source = frame_map.get("m5")
-    candles = _normalize_candles(candles_source)
+    # P0-TER (2026-07-14) : le snapshot est ancre sur la derniere bougie M5
+    # CLOTUREE. `price` d'ici devient l'entree de ORDER_FLOW, et vah/val (profil
+    # de volume) fixent le SL : les ancrer sur la bougie en cours faisait bouger
+    # entry/SL/TP/RR a chaque tick, sur un prix qui pouvait refluer avant la
+    # cloture. Le verdict top-down est desormais calcule sur les memes bougies :
+    # decision et execution partagent enfin la meme vue du marche.
+    candles = closed_frame(_normalize_candles(candles_source))
     if candles is None or candles.empty:
         return _reader_snapshot(symbol, None, "WAIT", "NO_CANDLES", warnings=["ORDER_FLOW_MISSING"])
     ticks = frame_map.get("TICKS") or frame_map.get("ticks") or (context or {}).get("ticks")

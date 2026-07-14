@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from app.logger import log
+from app.utils.candles import closed_frame
 
 STRATEGY = "ORDER_FLOW_EXECUTION_AGENT"
 SOURCE = "app/strategies/order_flow_execution_agent.py"
@@ -104,13 +105,16 @@ def evaluate(
     _mss = _check_mss_m1(_m1_df, direction)
     _mss_close: float | None = None
     _mss_recent_level: float | None = None
-    if _m1_df is not None and not getattr(_m1_df, "empty", True) and len(_m1_df) >= 5:
+    # P0-TER : le log doit montrer les MEMES bougies que le verdict (closed_frame),
+    # sinon il expliquerait une decision avec des chiffres qu'elle n'a pas vus.
+    _m1_closed = closed_frame(_m1_df)
+    if len(_m1_closed) >= 5:
         try:
-            _mss_close = float(_m1_df.iloc[-1]["close"])
+            _mss_close = float(_m1_closed.iloc[-1]["close"])
             if direction == "SELL":
-                _mss_recent_level = float(_m1_df.iloc[-4:-1]["low"].min())
+                _mss_recent_level = float(_m1_closed.iloc[-4:-1]["low"].min())
             else:
-                _mss_recent_level = float(_m1_df.iloc[-4:-1]["high"].max())
+                _mss_recent_level = float(_m1_closed.iloc[-4:-1]["high"].max())
         except (KeyError, TypeError, ValueError):
             pass
     if _mss is False and score < 85:
@@ -523,19 +527,27 @@ def _to_float(value: object) -> float | None:
 def _check_mss_m1(m1_df: object, direction: str) -> bool | None:
     """
     Market Structure Shift on M1 — confirms reversal after a liquidity sweep.
-    SELL: last M1 close < minimum low of the 3 previous candles (Lower Low).
-    BUY : last M1 close > maximum high of the 3 previous candles (Higher High).
+    SELL: last CLOSED M1 close < minimum low of the 3 previous candles (Lower Low).
+    BUY : last CLOSED M1 close > maximum high of the 3 previous candles (Higher High).
     Returns True (confirmed), False (not confirmed), or None (insufficient data).
+
+    P0-TER (2026-07-14) : lit la derniere bougie M1 CLOTUREE. Avant, `.iloc[-1]`
+    designait la bougie EN COURS : un MSS pouvait etre "confirme" par un close
+    qui n'existait pas encore et disparaitre a la cloture — alors que ce controle
+    est un BLOCAGE DUR (`_mss is False and score < 85` -> WAIT). Le fichier
+    excluait deja la bougie en cours pour le SFP (`_check_sfp`) et le biais H1
+    (`_compute_h1_bias`) : c'est cette incoherence interne qui prouvait le bug.
     """
-    if m1_df is None or getattr(m1_df, "empty", True) or len(m1_df) < 5:
+    df = closed_frame(m1_df)
+    if df.empty or len(df) < 5:
         return None
     try:
-        last_close = float(m1_df.iloc[-1]["close"])
+        last_close = float(df.iloc[-1]["close"])
         if direction == "SELL":
-            recent_low = float(m1_df.iloc[-4:-1]["low"].min())
+            recent_low = float(df.iloc[-4:-1]["low"].min())
             return last_close < recent_low
         if direction == "BUY":
-            recent_high = float(m1_df.iloc[-4:-1]["high"].max())
+            recent_high = float(df.iloc[-4:-1]["high"].max())
             return last_close > recent_high
     except (KeyError, TypeError, ValueError):
         return None
@@ -657,11 +669,16 @@ def _detect_fvg_bonus(m5_df: object, direction: str) -> tuple[int, float | None]
     BEARISH FVG: candle[-1].high < candle[-3].low  (gap down — sell-side)
     Returns (bonus, fvg_midpoint): bonus=10 if FVG matches direction, else (0, None).
     """
-    if m5_df is None or getattr(m5_df, "empty", True) or len(m5_df) < 3:
+    # P0-TER (2026-07-14) : le motif FVG est lu sur bougies CLOTUREES. `.iloc[-1]`
+    # designait la bougie en cours : le gap "c" se formait et se refermait pendant
+    # la meme bougie, donnant un bonus de score (+10) sur un motif qui pouvait ne
+    # jamais exister a la cloture.
+    df = closed_frame(m5_df)
+    if df.empty or len(df) < 3:
         return 0, None
     try:
-        a = m5_df.iloc[-3]
-        c = m5_df.iloc[-1]
+        a = df.iloc[-3]
+        c = df.iloc[-1]
         a_high = float(a["high"])
         a_low  = float(a["low"])
         c_low  = float(c["low"])

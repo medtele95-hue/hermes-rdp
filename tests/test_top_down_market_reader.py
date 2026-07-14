@@ -49,9 +49,18 @@ def trend_frame(direction: str = "UP", count: int = 130) -> pd.DataFrame:
     return frame_from_closes(closes)
 
 
+# P0-TER (2026-07-14) : les frames de production portent TOUJOURS une bougie EN
+# COURS en derniere ligne (copy_rates_from_pos(...,0,...)), et le top-down la
+# retire desormais. Les motifs (BOS, sweep, trigger M1) sont donc poses de facon a
+# se TERMINER sur une bougie CLOTUREE, la derniere ligne restant une bougie en
+# cours ordinaire de la tendance. Avant, le motif se terminait sur la derniere
+# ligne : la fixture testait un BOS qui n'avait, en production, pas encore cloture.
+_LIVE_CANDLE_TAIL = 1
+
+
 def bullish_execution_frame(count: int = 130) -> pd.DataFrame:
     df = trend_frame("UP", count)
-    idx = len(df) - 3
+    idx = len(df) - 3 - _LIVE_CANDLE_TAIL
     df.loc[idx - 2, ["high", "low", "open", "close"]] = [118.0, 116.0, 117.0, 117.5]
     df.loc[idx - 1, ["high", "low", "open", "close"]] = [117.8, 116.8, 117.2, 117.4]
     df.loc[idx, ["high", "low", "open", "close"]] = [121.8, 119.4, 119.7, 121.4]
@@ -62,7 +71,7 @@ def bullish_execution_frame(count: int = 130) -> pd.DataFrame:
 
 def bearish_execution_frame(count: int = 130) -> pd.DataFrame:
     df = trend_frame("DOWN", count)
-    idx = len(df) - 3
+    idx = len(df) - 3 - _LIVE_CANDLE_TAIL
     df.loc[idx - 2, ["high", "low", "open", "close"]] = [84.0, 82.0, 83.0, 82.5]
     df.loc[idx - 1, ["high", "low", "open", "close"]] = [83.2, 82.2, 82.8, 82.6]
     df.loc[idx, ["high", "low", "open", "close"]] = [80.6, 78.2, 80.3, 78.6]
@@ -174,7 +183,10 @@ class TopDownMarketReaderTests(unittest.TestCase):
     def test_m1_trigger_stale_over_five_candles_returns_wait(self) -> None:
         frames = aligned_frames("BUY")
         m1 = frames["M1"].copy()
-        for idx in range(len(m1) - 5, len(m1)):
+        # On veut les 5 dernieres bougies CLOTUREES sans trigger. Le frame porte en
+        # plus une bougie EN COURS que le lecteur retire (P0-TER) : on aplatit donc
+        # 5 cloturees + 1 en cours = 6 lignes brutes.
+        for idx in range(len(m1) - 5 - _LIVE_CANDLE_TAIL, len(m1)):
             m1.loc[idx, ["open", "high", "low", "close"]] = [120.0, 120.1, 119.9, 120.0]
         frames["M1"] = m1
         result = self.reader.evaluate("EURUSD", frames, "BUY", 120.0, 119.0, 122.0, 1, 30, self.now)

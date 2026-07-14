@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.utils.candles import closed_frame
+
 _log = logging.getLogger(__name__)
 
 REQUIRED_TIMEFRAMES = ("D1", "H4", "H1", "M15", "M5", "M1")
@@ -402,6 +404,24 @@ class TopDownMarketReader:
         }
 
     def _prepare_frames(self, frames: dict[str, Any] | None, decision_time: datetime | None) -> tuple[dict[str, pd.DataFrame], list[str]]:
+        """Prepare les frames du verdict — LE point de passage unique.
+
+        P0-TER (2026-07-14) : la bougie EN COURS est retiree ici, une fois pour
+        toutes. Tous les calculs en aval (sweep, BOS, FVG, order blocks,
+        m15_confirmation, m1_trigger, trend, current_price) indexent `.iloc[-1]`
+        : cette ligne designe desormais la derniere bougie CLOTUREE, plus la
+        bougie en formation. Corriger ici plutot qu'aux 20 sites .iloc[-1]
+        evite qu'un futur ajout de site ne reintroduise le repaint.
+
+        `decision_time` reste un cutoff "as-of" OPTIONNEL (outil de replay ;
+        None en production). Il n'a JAMAIS filtre la bougie en cours, contrairement
+        a ce que son existence laissait croire — c'etait le code zombie pointe par
+        l'audit. L'ordre des deux operations est volontaire : le cutoff garde la
+        bougie qui etait OUVERTE a cet instant (candle_time = heure d'OUVERTURE
+        <= cutoff), c'est-a-dire exactement la bougie en cours de ce moment-la.
+        Retirer la derniere ligne APRES le cutoff est donc correct dans les deux
+        cas — avec cutoff comme sans — et ne peut jamais retirer deux bougies.
+        """
         prepared: dict[str, pd.DataFrame] = {}
         missing: list[str] = []
         for timeframe in REQUIRED_TIMEFRAMES:
@@ -418,9 +438,12 @@ class TopDownMarketReader:
                         cutoff = cutoff.tz_convert("UTC")
                     df = df[df["candle_time"] <= cutoff]
                 df = df.sort_values("candle_time")
+            df = closed_frame(df)
+            # Le controle de suffisance vient APRES le retrait : sinon un frame
+            # de MIN_CLOSED_CANDLES pile passerait le test puis tomberait a MIN-1.
             if len(df) < MIN_CLOSED_CANDLES:
                 missing.append(f"{timeframe}_MISSING_OR_INSUFFICIENT")
-            prepared[timeframe] = df.tail(max(len(df), MIN_CLOSED_CANDLES))
+            prepared[timeframe] = df
         return prepared, missing
 
     def _analyze_trend(self, df: pd.DataFrame | None) -> dict:
