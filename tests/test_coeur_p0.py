@@ -725,5 +725,49 @@ class TestP0G_TrackerDOutcomes(unittest.TestCase):
         self.assertIn("update_outcome_tracker(", cycle)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# T9 — les voyants de securite du dashboard reflettent la VRAIE config
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestT9_VoyantsDeSecuriteBranches(unittest.TestCase):
+    """`"demo_only": True` et `"allow_live_trading": False` etaient des LITTERAUX a
+    SEPT endroits — y compris dans /local-api/audit-safety, l'endpoint dont le seul
+    role est de PROUVER que le live est bloque.
+
+    Un indicateur de securite qui ne peut pas signaler le danger est pire qu'aucun
+    indicateur : il donne une fausse assurance."""
+
+    def test_les_drapeaux_suivent_la_config(self) -> None:
+        from app.local_api.server import _safety_flags
+
+        with patch("app.local_api.server.get_settings",
+                   return_value=SimpleNamespace(demo_only=True, allow_live_trading=False)):
+            self.assertEqual(_safety_flags(), {"demo_only": True, "allow_live_trading": False})
+
+    def test_LE_test__le_voyant_SAIT_signaler_le_danger(self) -> None:
+        """Le test qui manquait. On active le live dans la config : le dashboard DOIT
+        le dire. Avant, il aurait continue d'afficher `allow_live_trading: False`."""
+        from app.local_api.server import _safety_flags
+
+        with patch("app.local_api.server.get_settings",
+                   return_value=SimpleNamespace(demo_only=False, allow_live_trading=True)):
+            flags = _safety_flags()
+
+        self.assertTrue(flags["allow_live_trading"], "le voyant ne sait pas signaler le live")
+        self.assertFalse(flags["demo_only"])
+
+    def test_plus_aucun_litteral_de_securite_dans_les_endpoints(self) -> None:
+        """Verrou de non-regression : les litteraux ne doivent jamais revenir."""
+        import re
+        from pathlib import Path as _Path
+
+        source = _Path("app/local_api/server.py").read_text(encoding="utf-8")
+        code = "\n".join(
+            line for line in source.splitlines() if not line.strip().startswith("#")
+        )
+        motif = re.compile(r'"(demo_only|allow_live_trading|DEMO_ONLY|ALLOW_LIVE_TRADING)"\s*:\s*(True|False)')
+        self.assertEqual(motif.findall(code), [], "un voyant de securite est de nouveau code en dur")
+
+
 if __name__ == "__main__":
     unittest.main()

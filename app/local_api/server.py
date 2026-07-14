@@ -29,6 +29,31 @@ from app.local_api.utils import to_json_safe
 from app.logger import log
 
 # ---------------------------------------------------------------------------
+# T9 (2026-07-14) — LES VOYANTS DE SECURITE ETAIENT PEINTS, PAS BRANCHES
+#
+# `"demo_only": True` et `"allow_live_trading": False` etaient ecrits en LITTERAUX
+# a SEPT endroits de ce fichier — y compris dans /local-api/audit-safety, l'endpoint
+# dont le seul role est de PROUVER que le live est bloque.
+#
+# Si ALLOW_LIVE_TRADING passait a true dans .env, ces endpoints auraient continue
+# d'affirmer que le live etait bloque. Un indicateur de securite qui ne peut pas
+# signaler le danger est pire qu'aucun indicateur : il donne une fausse assurance.
+#
+# Le patron correct existait deja dans ce meme fichier (/btc-status lit
+# getattr(settings, ...)), et app/services/dashboard_snapshot.py lit lui aussi la
+# vraie config — la couche local_api CONTREDISAIT donc la couche snapshot.
+# ---------------------------------------------------------------------------
+
+def _safety_flags() -> dict:
+    """Les deux drapeaux de securite, lus dans la VRAIE configuration."""
+    settings = get_settings()
+    return {
+        "demo_only": bool(getattr(settings, "demo_only", True)),
+        "allow_live_trading": bool(getattr(settings, "allow_live_trading", False)),
+    }
+
+
+# ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 
@@ -411,8 +436,7 @@ def health() -> JSONResponse:
             "heartbeat_age_seconds": age,
             "stale": stale,
             "mt5_connected": state.get_mt5_connected(),
-            "demo_only": True,
-            "allow_live_trading": False,
+            **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
             "cycle_status": state.get_cycle_status().get("last_status", "STARTING"),
             "session_name": snap.get("session_name"),
             "account_equity": account.get("equity"),
@@ -420,8 +444,7 @@ def health() -> JSONResponse:
             "resolved_symbols": list(state.get_resolved_symbols().keys()),
             "ingest_health": state.get_ingest_health(),
             "safety_proof": {
-                "allow_live_trading": False,
-                "demo_only": True,
+                **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
                 "execution_handler": "app/mt5/demo_router.py ONLY",
             },
         })
@@ -470,8 +493,7 @@ def readiness() -> JSONResponse:
             "profile": profile,
             "data_files_ok": data_files_ok,
             "dashboard_api_ok": dashboard_api_ok,
-            "demo_only": True,
-            "allow_live_trading": False,
+            **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
             "timestamp": _utc_now(),
         })
     except Exception as exc:
@@ -857,8 +879,7 @@ def risk() -> JSONResponse:
                 "total_pnl_today": pos.get("demo_total_pnl_today"),
             },
             "limits": {
-                "demo_only": True,
-                "allow_live_trading": False,
+                **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
                 "demo_max_lot": settings_snap.get("demo_max_lot", 0.01),
                 "demo_max_open_trades": settings_snap.get("demo_max_open_trades", 3),
                 "demo_max_trades_per_day": settings_snap.get("demo_max_trades_per_day", 5),
@@ -1378,18 +1399,20 @@ def audit_safety() -> JSONResponse:
         sg = state.get_latest_safety_guard()
         settings_snap = state.get_settings_snapshot()
 
+        _flags = _safety_flags()
         return _ok({
             "safety_flags": {
-                "ALLOW_LIVE_TRADING": False,
-                "DEMO_ONLY": True,
+                # T9 : c'est L'ENDPOINT D'AUDIT DE SECURITE. Il affirmait "live
+                # bloque" avec des litteraux — il aurait donc continue de le dire
+                # meme si le live avait ete active. Il lit desormais la vraie config.
+                "ALLOW_LIVE_TRADING": _flags["allow_live_trading"],
+                "DEMO_ONLY": _flags["demo_only"],
                 "READ_ONLY_DASHBOARD": True,
                 "execution_handler": "app/mt5/demo_router.py ONLY",
-                "demo_router_untouched": True,
                 "no_execution_endpoints": True,
             },
             "config": {
-                "demo_only": True,
-                "allow_live_trading": False,
+                **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
                 "demo_max_lot": settings_snap.get("demo_max_lot", 0.01),
                 "demo_magic_number": settings_snap.get("demo_magic_number", 909002),
             },
@@ -1465,8 +1488,7 @@ def btc_intelligence() -> JSONResponse:
             "smart_exit_status": smart_exit,
             "fast_exit_status": fast_exit,
             "safety_proof": {
-                "allow_live_trading": False,
-                "demo_only": True,
+                **_safety_flags(),  # T9 : lus dans la vraie config, plus en dur
                 "max_lot": 0.01,
                 "max_btc_positions": 1,
             },
