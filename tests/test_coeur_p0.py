@@ -428,5 +428,87 @@ class TestP0D_StopsDePerteRessuscites(unittest.TestCase):
         self.assertIn("history_deals_get", source)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# P0-E — fail-closed propage aux caps d'exposition et au choke-point
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestP0E_CapsFailClosed(unittest.TestCase):
+    """T5 — `positions_get() -> None` ne leve JAMAIS un cap.
+
+    Avant : `mt5.positions_get() or []` transformait un MT5 muet en "aucune
+    position". Tous les caps d'exposition en derivent : ils tombaient a zero EN
+    MEME TEMPS et se levaient tous ensemble. Le choke-point lui-meme assumait le
+    fail-open, au motif (faux) que "les gates amont portent deja ce cap" — alors
+    qu'ils sont aveugles au meme instant."""
+
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        self.router = DemoKellyRouter(settings(), Path(self.tmp.name) / "events.jsonl")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _evaluate(self, positions):
+        with patch("app.mt5.demo_router.mt5.positions_get", return_value=positions), \
+             patch("app.mt5.demo_router.mt5.history_deals_get", return_value=[]):
+            return self.router.evaluate(
+                btc_decision(), {"approved_lot": 0.01}, account(), "BTCUSD#",
+                {}, {}, specs(), 1.0, 5000.0, True, now=NOW,
+            )
+
+    def test_mt5_muet_BLOQUE_au_lieu_de_lever_les_caps(self) -> None:
+        result = self._evaluate(None)
+        self.assertEqual(result.reason, "MT5_UNAVAILABLE")
+        self.assertNotEqual(result.decision, "PASS")
+
+    def test_compte_REELLEMENT_vide_continue_de_trader(self) -> None:
+        """Controle negatif : [] n'est PAS None. Sans ce test, bloquer sur MT5 muet
+        ET sur compte vide passerait le test precedent tout en tuant le bot."""
+        result = self._evaluate([])
+        self.assertEqual(result.decision, "PASS")
+
+    def test_MT5_UNAVAILABLE_est_un_blocage_DUR(self) -> None:
+        """Aucun mode discovery ne doit pouvoir lever une panne MT5."""
+        self.assertTrue(_is_hard_block("MT5_UNAVAILABLE"))
+
+    def test_le_choke_point_bloque_aussi_sur_MT5_muet(self) -> None:
+        """Defense en profondeur : meme si un gate amont etait contourne, le
+        choke-point refuse d'envoyer un ordre sans savoir ce qui est ouvert."""
+        from app.mt5.demo_router import _execution_invariants_block
+
+        request = {"symbol": "BTCUSD#", "volume": 0.01, "magic": 909002, "sl": 59000.0, "tp": 62000.0}
+        with patch("app.mt5.demo_router.mt5.positions_get", return_value=None):
+            reason = _execution_invariants_block(request, "BTC_SCALPING_AGENT", 1)
+        self.assertEqual(reason, "MT5_UNAVAILABLE")
+
+    def test_le_choke_point_laisse_passer_quand_MT5_repond(self) -> None:
+        from app.mt5.demo_router import _execution_invariants_block
+
+        request = {"symbol": "BTCUSD#", "volume": 0.01, "magic": 909002, "sl": 59000.0, "tp": 62000.0}
+        with patch("app.mt5.demo_router.mt5.positions_get", return_value=[]):
+            reason = _execution_invariants_block(request, "BTC_SCALPING_AGENT", 1)
+        self.assertIsNone(reason)
+
+    def test_les_invariants_du_choke_point_sont_INTACTS(self) -> None:
+        """P0-E ne devait toucher QUE la gestion du None de positions_get. L'allowlist,
+        le cap de lot, le magic force et l'ordre nu restent exactement ce qu'ils
+        etaient — ce sont les protections qui MARCHENT."""
+        from app.mt5.demo_router import (
+            LOT_HARD_CAP,
+            MAGIC_HARD,
+            SYMBOL_ALLOWLIST,
+            _execution_invariants_block,
+        )
+        self.assertEqual(SYMBOL_ALLOWLIST, ("GOLD#", "BTCUSD#"))
+        self.assertEqual(LOT_HARD_CAP, 0.01)
+        self.assertEqual(MAGIC_HARD, 909002)
+
+        source = __import__("inspect").getsource(_execution_invariants_block)
+        self.assertIn("SYMBOL_BLOCKED", source)
+        self.assertIn("NAKED_ORDER_BLOCKED", source)
+        self.assertIn("LOT_INVALID_BLOCKED", source)
+        self.assertIn("MAGIC_FORCED", source)
+
+
 if __name__ == "__main__":
     unittest.main()

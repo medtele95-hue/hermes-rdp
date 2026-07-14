@@ -478,16 +478,53 @@ def _execution_invariants_block(request: dict, strategy: object, max_open_per_sy
         )
         request["magic"] = MAGIC_HARD
     # Invariant 5 — MAX_OPEN_TRADES_PER_SYMBOL au choke-point : aucun nouvel
-    # ordre tant qu'une position HERMES vit sur ce symbole. Fail-open si MT5
-    # est indisponible (les gates amont portent déjà ce cap) pour ne pas
-    # bloquer sur un artefact de connexion.
+    # ordre tant qu'une position HERMES vit sur ce symbole.
+    #
+    # P0-E (2026-07-14) — CE GARDE ETAIT FAIL-OPEN, ET SA JUSTIFICATION ETAIT FAUSSE.
+    #
+    # L'ancien commentaire disait : "Fail-open si MT5 est indisponible (les gates
+    # amont portent deja ce cap)". Or les gates amont comptent via
+    # _current_mt5_position_counts et _demo_positions, qui font TOUS DEUX
+    # `mt5.positions_get() or []`. Quand MT5 est muet, positions_get renvoie None —
+    # et TOUS les compteurs tombent a 0 EN MEME TEMPS. Le raisonnement "les gates
+    # amont couvrent" ne tient donc pas : ils sont aveugles au meme instant.
+    #
+    # Noter aussi que `except (TypeError, ValueError, AttributeError)` n'attrapait
+    # rien dans ce cas : `positions_get()` renvoyant None ne LEVE pas, il passe
+    # simplement par le `if positions:` falsy. Le fail-open etait silencieux.
+    #
+    # Chemin de DOUBLE ORDRE prouve : ordre N envoye -> retcode 10012 TIMEOUT ->
+    # enregistre en ECHEC -> cycle suivant, positions_get renvoie encore None (c'est
+    # la MEME degradation MT5 qui a cause le timeout) -> le cap saute -> un SECOND
+    # ordre part sur le meme symbole. Les deux evenements sont correles positivement,
+    # pas independants.
+    #
+    # Desormais : MT5 muet => on BLOQUE. Un cycle perdu vaut mieux qu'une position
+    # en double. C'est la meme doctrine que P0-2 (mt5_position_sync) : "je ne sais
+    # pas" n'est pas "il n'y a rien".
     open_count = 0
     try:
         positions = mt5.positions_get(symbol=symbol)
-        if positions:
-            open_count = sum(1 for p in positions if int(getattr(p, "magic", 0) or 0) == MAGIC_HARD)
-    except (TypeError, ValueError, AttributeError):
-        open_count = 0
+    except Exception as exc:
+        log.critical(
+            "[MT5_UNAVAILABLE] symbol=%s strategy=%s positions_get a leve (%s) — "
+            "ordre BLOQUE (fail-closed) : impossible de verifier le cap MAX_OPEN",
+            symbol, strat, str(exc)[:120],
+        )
+        return "MT5_UNAVAILABLE"
+    if positions is None:
+        log.critical(
+            "[MT5_UNAVAILABLE] symbol=%s strategy=%s positions_get()=None — "
+            "ordre BLOQUE (fail-closed) : MT5 muet ne veut PAS dire zero position",
+            symbol, strat,
+        )
+        return "MT5_UNAVAILABLE"
+    for position in positions:
+        try:
+            if int(getattr(position, "magic", 0) or 0) == MAGIC_HARD:
+                open_count += 1
+        except (TypeError, ValueError):
+            continue
     if open_count >= max(1, int(max_open_per_symbol or 1)):
         log.warning(
             "[MAX_OPEN_BLOCKED] symbol=%s strategy=%s open_count=%s cap=%s",
@@ -516,6 +553,9 @@ class DemoKellyRouter:
         self._active_policy: AccountPolicy | None = None
         self.news_calendar = NewsCalendar(settings)
         self.decision_dataset = DecisionDataset(self.events_path.parent / "decision_dataset.jsonl")
+        # P0-E : positionne par _demo_positions() quand mt5.positions_get() renvoie
+        # None (MT5 muet). Transforme en blocage dur MT5_UNAVAILABLE par les gates.
+        self._mt5_positions_unavailable = False
         self.market_eyes_snapshot: dict | None = None
         self._exit_v2_state: dict[int, dict] = {}
         self._quick_exit_state: dict[int, dict] = {}
@@ -1294,6 +1334,8 @@ class DemoKellyRouter:
             "consecutive_losses": risk_counters["consecutive_losses"],
             "risk_counters_unavailable": risk_counters["unavailable"],
             "risk_counters_source": risk_counters["source"],
+            # P0-E : MT5 muet => les caps d'exposition sont aveugles => on bloque.
+            "mt5_positions_unavailable": bool(getattr(self, "_mt5_positions_unavailable", False)),
             "risk_counters_daily_pnl": risk_counters["daily_pnl"],
             "risk_counters_equity": risk_counters["equity"],
             "final_lot": capped_lot,
@@ -2134,6 +2176,11 @@ class DemoKellyRouter:
             return "DEMO_PILOT_DISABLED"
         if not gates["pilot_window_active"]:
             return "DEMO_PILOT_WINDOW_CLOSED"
+        # P0-E : MT5 muet => aucun cap d'exposition n'est verifiable => FAIL-CLOSED.
+        # Place tres tot dans la chaine : si on ne sait pas ce qui est ouvert, on ne
+        # decide rien d'autre.
+        if gates.get("mt5_positions_unavailable"):
+            return "MT5_UNAVAILABLE"
         if not gates["symbol_resolved"]:
             return "SYMBOL_NOT_RESOLVED"
         if not gates["symbol_allowed"]:
@@ -4038,8 +4085,23 @@ class DemoKellyRouter:
         return self.pilot_started_at <= now <= self.pilot_started_at + timedelta(hours=self.settings.demo_pilot_hours)
 
     def _demo_positions(self) -> list[Any]:
-        positions = mt5.positions_get() or []
-        return [pos for pos in positions if getattr(pos, "magic", None) == self.settings.demo_magic_number]
+        """P0-E : `mt5.positions_get() or []` transformait un MT5 MUET (None) en
+        "aucune position ouverte". Tous les caps d'exposition amont (MAX_OPEN par
+        symbole, total, par symbole+strategie) en derivent : ils tombaient donc a
+        zero EN MEME TEMPS, et se levaient tous ensemble.
+
+        On ne devine plus. L'indisponibilite est remontee via un drapeau que
+        _first_block_reason transforme en blocage dur MT5_UNAVAILABLE."""
+        raw = mt5.positions_get()
+        if raw is None:
+            self._mt5_positions_unavailable = True
+            log.critical(
+                "[MT5_UNAVAILABLE] positions_get()=None — les caps d'exposition ne "
+                "peuvent pas etre verifies : trading BLOQUE (fail-closed)",
+            )
+            return []
+        self._mt5_positions_unavailable = False
+        return [pos for pos in raw if getattr(pos, "magic", None) == self.settings.demo_magic_number]
 
     def _stats(self, now: datetime, events: list[dict] | None = None) -> dict:
         opened_today = 0
