@@ -683,6 +683,13 @@ class DemoKellyRouter:
                 "account_policy": auth_policy.level,
                 "account_policy_detail": auth_policy.as_payload(),
                 "setup_id": setup_id,
+                # P0-TER : cet evenement est bati a la main (il ne passe pas par
+                # evaluate(), qui joint symbol_specs). Sans lui, le writer n'a pas le
+                # `point` du broker et ne peut pas convertir le spread en unites de
+                # prix : la ligne perdrait `spread_to_atr`. Ce champ n'est PAS un
+                # scalaire : il ne sera pas aplati dans le dataset, il ne sert qu'au
+                # calcul.
+                "symbol_specs": symbol_specs or {},
                 "created_at": (now or datetime.now(timezone.utc)).isoformat(),
             }
             self._record_event(event)
@@ -800,7 +807,13 @@ class DemoKellyRouter:
                 str(item.get("symbol") or "")
                 for item in self.decision_dataset.tracker._open.values()
             }
-            prices: dict[str, float] = {}
+            # P0-TER (2026-07-14) : on transmet BID ET ASK, plus le mid.
+            # Le tracker choisit alors le bon cote du spread pour labelliser une
+            # touche TP/SL (un BUY se solde au bid, un SELL a l'ask). Le mid etait
+            # optimiste des DEUX cotes — il sur-etiquetait les WIN d'un demi-spread
+            # (GOLD 0,15 ; BTC 11,25). Aucun effet sur la decision : le tracker est
+            # un pur enregistreur. Mais c'est ce dataset qui calibrera la v2.
+            prices: dict[str, dict[str, float]] = {}
             for symbol in tracked_symbols:
                 if not symbol:
                     continue
@@ -808,7 +821,7 @@ class DemoKellyRouter:
                 bid = _to_float(getattr(tick, "bid", None))
                 ask = _to_float(getattr(tick, "ask", None))
                 if bid is not None and ask is not None:
-                    prices[symbol] = (bid + ask) / 2.0
+                    prices[symbol] = {"bid": bid, "ask": ask}
             # On appelle meme sans prix : une position REELLE se ferme sur les DEALS,
             # pas sur un tick. Exiger un prix aurait laisse un trade non labellise
             # quand le tick est indisponible.

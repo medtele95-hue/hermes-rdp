@@ -140,9 +140,26 @@ class TestDatasetRows(unittest.TestCase):
         self.assertEqual(row["daily_killswitch.triggered"], False)
         self.assertEqual(row["ees_band"], "SAIN")
         self.assertAlmostEqual(row["net_rr"], 2.4)
-        self.assertAlmostEqual(row["spread_to_atr"], 0.5)
         self.assertIn("momentum_alignment.alignment", row)
         self.assertIn("regime.kill_zone_active", row)
+
+    def test_spread_to_atr_ne_lit_plus_la_cle_ambigue_spread(self) -> None:
+        """P0-TER — CONTRAT CHANGE, ET C'EST VOULU.
+
+        Cette assertion valait `spread_to_atr == 0.5` en lisant `event["spread"]`
+        (2.0) / `event["atr"]` (4.0). Or `event["spread"]` n'a JAMAIS existe en
+        production (0 / 10 605 lignes) et son unite n'etait pas definie : la formule
+        retombait sur `spread_at_send_points`, qui est en POINTS, divise par un ATR
+        en unites de PRIX — un facteur x100 latent sur GOLD/BTC (point = 0.01).
+
+        On ne ressuscite donc pas cette cle. Le spread est desormais lu en POINTS
+        (nom explicite), converti en prix via le `point` du broker, a un seul endroit.
+        Sans `point`, on renvoie None au lieu de deviner. Voir tests/test_p0ter_writer.py.
+        """
+        row = build_decision_row(_rich_event())
+
+        self.assertIsNone(row["spread_to_atr"])   # pas de `point` -> on n'invente pas
+        self.assertEqual(row["atr"], 4.0)         # l'ATR de l'evenement reste prioritaire
 
     def test_append_only_jsonl(self) -> None:
         dataset = self._dataset("append")

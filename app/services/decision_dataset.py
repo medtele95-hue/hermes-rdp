@@ -30,6 +30,8 @@ from pathlib import Path
 
 from app.logger import log
 from app.utils.broker_time import from_mt5_deal_time
+from app.utils.candles import closed_frame
+from app.utils.indicators import atr_last, atr_series_graceful
 
 SCHEMA_VERSION = 2
 # COEUR_V2 (2026-07-08, mission/COEUR_V2.md) : version du coeur mathematique/
@@ -63,6 +65,21 @@ CORE_VERSION = 2
 # Le dataset v1 n'est pas touche : on n'y ajoute rien, on n'y retire rien.
 COLLECTION_VERSION = 2
 _collection_v2_first_line_logged = False
+
+# ── P0-TER (2026-07-14, mission/MISSION_P0TER.md) ───────────────────────────
+#
+# La collecte v2 a demarre AVANT ce fix et a tourne quelques heures sur un systeme
+# qui (a) decidait sur la bougie EN COURS — sweeps/BOS/M15/M1 repeignaient, et le
+# verdict top-down etait deja BLOQUANT — et (b) labellisait les sorties virtuelles
+# au MID, sur-etiquetant les WIN d'un demi-spread.
+#
+# Ces lignes ne sont PAS fausses, mais elles ne mesurent pas le meme systeme. On ne
+# les touche pas (append-only) : on marque celles d'APRES. La borne est donc lisible
+# par une machine, sans arithmetique de timestamp :
+#   - `core_fix_level` ABSENT  -> v2 pre-P0-TER (a exclure ou ponderer en calibration)
+#   - `core_fix_level` = P0TER -> decisions sur bougies CLOTUREES, labels au bon
+#                                 cote du spread, ATR de regime en Wilder.
+CORE_FIX_LEVEL = "P0TER"
 
 DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "decision_dataset.jsonl"
 
@@ -204,8 +221,19 @@ def momentum_alignment(direction: object, m1_rows: list[dict] | None, cvd_slope:
 # ── regime features ─────────────────────────────────────────────────────────
 
 def atr_percentile(frame: object, period: int = 14, window: int = 5000) -> float | None:
-    """Percentile of the current ATR within up to `window` bars of history.
-    Limited by the bars actually available (documented limitation)."""
+    """SMA-based ATR percentile — LA VERSION v1, PLUS ECRITE DEPUIS P0-TER.
+
+    Conservee pour la tracabilite du dataset v1 (mirroir de `indicators.atr_sma`,
+    garde pour la meme raison lors de COEUR_V2) : les 10 486 lignes portant
+    `regime.atr_percentile` ont ete produites par CETTE formule. Ne pas la
+    supprimer reviendrait a rendre ces lignes illisibles.
+
+    `tr.rolling(period).mean()` est une moyenne EQUIPONDEREE — pas le lissage
+    exponentiel de Wilder utilise par les 14 sites ATR du coeur. Le percentile
+    de regime classait donc une serie d'une AUTRE NATURE que l'ATR decisionnel
+    (ecart typique 5-15 % en niveau, et surtout en forme de distribution).
+    Voir `atr_percentile_wilder`, qui la remplace.
+    """
     try:
         if frame is None or getattr(frame, "empty", True) or len(frame) < period + 5:
             return None
@@ -224,6 +252,45 @@ def atr_percentile(frame: object, period: int = 14, window: int = 5000) -> float
         current = float(atr_series.iloc[-1])
         rank = float((atr_series <= current).mean())
         return round(rank * 100.0, 1)
+    except Exception:
+        return None
+
+
+def atr_percentile_wilder(frame: object, period: int = 14, window: int = 5000) -> float | None:
+    """Percentile de l'ATR courant dans son historique — en ATR de WILDER.
+
+    P0-TER (2026-07-14) : remplace `atr_percentile` (SMA). Le percentile mesure
+    desormais la meme grandeur que celle qui DECIDE (tout le coeur est en Wilder
+    depuis COEUR_V2), au lieu de melanger deux definitions de l'ATR dans le meme
+    dataset. La bougie EN COURS est retiree : un percentile de regime calcule sur
+    une bougie qui bouge encore n'est pas reproductible.
+
+    Fenetre limitee aux barres reellement disponibles (limite documentee, inchangee).
+    """
+    try:
+        df = closed_frame(frame)
+        if df.empty or len(df) < period + 5:
+            return None
+        df = df.tail(window)
+        atr_series = atr_series_graceful(df, period).dropna()
+        if atr_series.empty:
+            return None
+        current = float(atr_series.iloc[-1])
+        rank = float((atr_series <= current).mean())
+        return round(rank * 100.0, 1)
+    except Exception:
+        return None
+
+
+def atr_price(frame: object, period: int = 14) -> float | None:
+    """ATR de Wilder en UNITES DE PRIX, sur bougies cloturees. Alimente `row["atr"]`,
+    qui etait None sur 10 605 / 10 605 lignes v1 (l'evenement ne l'a jamais porte) —
+    c'est cette absence, et non un piege d'unite, qui tuait `spread_to_atr`."""
+    try:
+        df = closed_frame(frame)
+        if df.empty or len(df) < period + 1:
+            return None
+        return atr_last(df, period)
     except Exception:
         return None
 
@@ -254,6 +321,7 @@ def build_decision_row(event: dict, extras: dict | None = None) -> dict:
         "row_type": "decision",
         "schema_version": SCHEMA_VERSION,
         "core_version": CORE_VERSION,
+        "core_fix_level": CORE_FIX_LEVEL,
         "recorded_at": now.isoformat(),
     }
     for key, value in (event or {}).items():
@@ -272,16 +340,50 @@ def build_decision_row(event: dict, extras: dict | None = None) -> dict:
     frames = extras.get("frames") if isinstance(extras.get("frames"), dict) else {}
     # regime
     h4 = frames.get("H4") if frames else None
+    regime_frame = h4 if h4 is not None else (frames.get("M5") if frames else None)
     row["regime.h4_bias"] = event.get("h4_bias") or event.get("smc_h4_direction")
-    row["regime.atr_percentile"] = atr_percentile(h4 if h4 is not None else frames.get("M5") if frames else None)
+    # P0-TER : `regime.atr_percentile` (SMA) N'EST PLUS ECRIT. Il est remplace par
+    # `regime.atr_percentile_wilder`, coherent avec l'ATR qui DECIDE. Les deux ne
+    # sont volontairement JAMAIS ecrits ensemble : melanger deux definitions de
+    # l'ATR dans une meme colonne rendrait le dataset inexploitable. Frontiere :
+    # ligne avec `atr_percentile` = v1 (SMA), ligne avec `atr_percentile_wilder` =
+    # post-P0-TER.
+    row["regime.atr_percentile_wilder"] = atr_percentile_wilder(regime_frame)
     row["regime.kill_zone_active"] = kill_zone_active(now)
     row["session"] = event.get("session_name") or (event.get("time_gate") or {}).get("session_name") if isinstance(event.get("time_gate"), dict) else event.get("session_name")
 
-    # derived features
-    atr_value = _to_float(event.get("atr") or event.get("atr_value"))
-    spread = _to_float(event.get("spread") or event.get("spread_at_send_points"))
+    # ── derived features ────────────────────────────────────────────────────
+    # P0-TER — FIN DES COLONNES FANTOMES ET DU PIEGE D'UNITE.
+    #
+    # v1 : `atr` etait None sur 10 605/10 605 lignes (l'evenement ne l'a jamais
+    # porte), donc `spread_to_atr` etait None sur 9 953/9 953 : DEUX colonnes
+    # mortes. Et la formule `spread / atr` melangeait potentiellement des POINTS
+    # (spread_at_send_points) avec des unites de PRIX (atr) — un facteur x100 latent
+    # sur GOLD/BTC (point = 0.01) le jour ou elle aurait ete alimentee.
+    #
+    # Desormais : l'ATR est calcule ici (Wilder, M5 CLOTUREES) au lieu d'etre attendu
+    # d'un evenement qui ne l'envoie pas ; le spread porte son unite DANS SON NOM ;
+    # et la conversion points -> prix se fait a UN SEUL endroit, explicitement, via le
+    # `point` du broker. L'ambiguite ne peut plus exister.
+    m5 = frames.get("M5") if frames else None
+    atr_value = _to_float(event.get("atr") or event.get("atr_value")) or atr_price(m5)
+    specs = event.get("symbol_specs") if isinstance(event.get("symbol_specs"), dict) else {}
+    point = _to_float(specs.get("point"))
+
+    spread_points = _to_float(event.get("spread_at_send_points"))
+    spread_source = "AT_SEND" if spread_points is not None else None
+    if spread_points is None:
+        spread_points = _last_closed_spread_points(m5)
+        spread_source = "M5_CANDLE" if spread_points is not None else None
+
+    spread_price = (spread_points * point) if (spread_points is not None and point) else None
+
     row["atr"] = atr_value
-    row["spread_to_atr"] = (spread / atr_value) if (spread is not None and atr_value and atr_value > 0) else None
+    row["spread_points"] = spread_points
+    row["spread_source"] = spread_source
+    row["spread_to_atr"] = (
+        (spread_price / atr_value) if (spread_price is not None and atr_value and atr_value > 0) else None
+    )
     entry = _to_float(event.get("entry"))
     sl = _to_float(event.get("sl"))
     tp = _to_float(event.get("tp"))
@@ -537,6 +639,10 @@ class OutcomeTracker:
         return {
             **base,
             "backfilled": False,
+            # Une position REELLE est labellisee par les DEALS MT5 : prix de cloture
+            # et P&L sont ceux du broker, pas une simulation. Aucun cote du spread a
+            # choisir — c'est la verite. Distinct de "bid_ask"/"mid" des VIRTUELS.
+            "label_method": "mt5_deals",
             "closed_at": info.get("closed_at") or datetime.now(timezone.utc).isoformat(),
             "outcome": info.get("outcome"),
             "close_reason": info.get("close_reason"),
@@ -601,7 +707,7 @@ class OutcomeTracker:
                         # vrai label n'aurait alors JAMAIS ete ecrit. Mon propre
                         # commentaire disait "seuls les deals ferment un trade reel" ;
                         # le code le contredisait exactement quand MT5 etait muet.
-                        price = _to_float(prices.get(str(item.get("symbol") or "")))
+                        price, _ = _exit_side_price(prices.get(str(item.get("symbol") or "")), item["direction"])
                         if price is not None:
                             sign = 1.0 if item["direction"] == "BUY" else -1.0
                             excursion = sign * (price - item["entry"])
@@ -612,7 +718,7 @@ class OutcomeTracker:
                                 dirty = True
                         continue
 
-                price = _to_float(prices.get(str(item.get("symbol") or "")))
+                price, label_method = _exit_side_price(prices.get(str(item.get("symbol") or "")), item["direction"])
                 if price is None:
                     continue
                 sign = 1.0 if item["direction"] == "BUY" else -1.0
@@ -638,6 +744,11 @@ class OutcomeTracker:
                     "closed_at": (now_utc or datetime.now(timezone.utc)).isoformat(),
                     "outcome": "TP_HIT" if hit_tp else "SL_HIT",
                     "close_price": price,
+                    # P0-TER : de quel cote du spread ce label a-t-il ete decide ?
+                    # "bid_ask" = juste (BUY au bid, SELL a l'ask). "mid" = l'ancien
+                    # biais optimiste d'un demi-spread. Les lignes v1 ne portent pas
+                    # ce champ : son ABSENCE vaut "mid" — c'est la borne temporelle.
+                    "label_method": label_method,
                 }
                 if not item["virtual"] and deals_fn is not None:
                     outcome["pnl_reconciled"] = _reconcile_pnl(item["ticket"], deals_fn)
@@ -679,6 +790,43 @@ def _reconcile_pnl(ticket: object, deals_fn) -> float | None:
 
 def _is_scalar(value: object) -> bool:
     return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _last_closed_spread_points(frame: object) -> float | None:
+    """Spread (en POINTS) de la derniere bougie CLOTUREE — le repli quand la
+    decision n'a pas ete envoyee (une decision REFUSEE n'a pas de
+    `spread_at_send_points`). Les rates MT5 portent le spread en points."""
+    try:
+        df = closed_frame(frame)
+        if df.empty or "spread" not in df.columns:
+            return None
+        return _to_float(df.iloc[-1]["spread"])
+    except Exception:
+        return None
+
+
+def _exit_side_price(quote: object, direction: str) -> tuple[float | None, str]:
+    """Prix auquel la position se SOLDE, et la methode de labellisation retenue.
+
+    P0-TER — LE BIAIS QUI CORROMPT LA CALIBRATION. Un BUY se solde au BID (on
+    revend), un SELL a l'ASK (on rachete). Evaluer une touche TP/SL au MID est
+    optimiste des DEUX cotes a la fois : le TP parait touche un demi-spread trop
+    tot, et le SL evite un demi-spread trop tard. Demi-spread reel : GOLD 0,15 ;
+    BTC 11,25. Le dataset SUR-ETIQUETTE donc les WIN et SOUS-ETIQUETTE les LOSS —
+    et c'est precisement ce dataset qui servira a calibrer la v2.
+
+    Accepte un dict {"bid","ask"} (nouveau) ou un float (ancien = mid), pour que
+    les appelants historiques restent valides et se declarent honnetement `mid`.
+    """
+    if isinstance(quote, dict):
+        bid = _to_float(quote.get("bid"))
+        ask = _to_float(quote.get("ask"))
+        if bid is not None and ask is not None:
+            return (bid if direction == "BUY" else ask), "bid_ask"
+        # cotation partielle : on ne devine pas le cote manquant
+        single = bid if bid is not None else ask
+        return single, "mid"
+    return _to_float(quote), "mid"
 
 
 def _to_float(value: object) -> float | None:
