@@ -119,6 +119,16 @@ class TestRouterGoldAuthority(unittest.TestCase):
         events.parent.mkdir(parents=True, exist_ok=True)
         if events.exists():
             events.unlink()
+        # FIX 3 (2026-07-14) : Exit V2 RECHARGE desormais son etat (peak_usd,
+        # be_armed) depuis exit_v2_state.json au boot du routeur — c'est tout
+        # l'objet du correctif : un redemarrage ne desarme plus un break-even.
+        # Ce dossier de test est PARTAGE : sans cette purge, le pic ecrit par un
+        # test (ex: profit +5.00 => peak 5.0, be_armed) est recharge par le suivant
+        # (profit +1.60), dont le plancher de trailing (5.0 - 1.2 = 3.8) declenche
+        # alors une fermeture. On purge donc l'etat comme on purge le journal.
+        snapshot = events.parent / "exit_v2_state.json"
+        if snapshot.exists():
+            snapshot.unlink()
         return DemoKellyRouter(settings, events_path=events)
 
     def _account(self) -> dict:

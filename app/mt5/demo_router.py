@@ -575,6 +575,17 @@ class DemoKellyRouter:
         self._mt5_positions_unavailable = False
         self.market_eyes_snapshot: dict | None = None
         self._exit_v2_state: dict[int, dict] = {}
+        # FIX 3 (2026-07-14) : cet etat etait EN MEMOIRE SEULE et repartait vide a
+        # chaque construction du routeur. Exit V2 perdait donc son pic et son
+        # be_armed a CHAQUE redemarrage. Il est desormais recharge depuis le
+        # snapshot disque.
+        #
+        # Le chemin derive de events_path, comme decision_dataset.jsonl et
+        # outcome_tracker_state.json. En production c'est le meme fichier qu'avant
+        # (app/data/exit_v2_state.json) ; en test, chaque routeur a le sien — sans
+        # cela, un routeur de test rechargerait l'etat REEL de production.
+        self.exit_v2_snapshot_path = self.events_path.parent / "exit_v2_state.json"
+        self._load_exit_v2_state()
         self._quick_exit_state: dict[int, dict] = {}
         self._rescue_states: dict[int, dict] = {}
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
@@ -714,6 +725,65 @@ class DemoKellyRouter:
         # BLOC 9 â€” executed (or send-refused) decisions -> dataset (fail-silent)
         self.decision_dataset.record_decision(event, extras={"frames": frames, **(self.market_eyes_snapshot or {})})
         return [self._ingest_event(event)]
+
+    def _load_exit_v2_state(self) -> None:
+        """FIX 3 (2026-07-14) — EXIT V2 NE PERD PLUS SON PIC A CHAQUE REDEMARRAGE.
+
+        `self._exit_v2_state` etait un dict EN MEMOIRE SEULE, reinitialise vide a
+        chaque construction du routeur. Et `exit_v2.py` fait :
+
+            st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False})
+
+        Autrement dit, apres un redemarrage, le pic d'une position etait RE-AMORCE
+        sur son profit COURANT et `be_armed` repassait a False.
+
+        Consequence : un redemarrage DESARMAIT le plancher de break-even d'un
+        gagnant deja protege. Le gain verrouille s'evaporait, en silence.
+        `exit_v2_state.json` existait pourtant — mais il n'etait ECRIT que pour le
+        dashboard, jamais RELU.
+
+        Constate sur le ticket 383260970 : le snapshot annonce `peak_usd = -6.66`
+        alors que la position avait ete brievement a l'equilibre. Ce -6,66 etait le
+        pic DEPUIS LE REDEMARRAGE, pas depuis l'ouverture.
+
+        Le snapshot est desormais recharge au boot. Un ticket INCONNU du snapshot
+        (position ouverte hors de la connaissance d'Exit V2) est re-amorce sur son
+        profit courant — c'est le comportement d'origine, et il reste le seul
+        raisonnable : on ne peut pas inventer un pic qu'on n'a jamais observe."""
+        try:
+            path = getattr(self, "exit_v2_snapshot_path", EXIT_V2_SNAPSHOT_PATH)
+            if not path.exists():
+                return
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(snapshot, dict):
+                return
+            restored = 0
+            for key, item in snapshot.items():
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    ticket = int(key)
+                except (TypeError, ValueError):
+                    continue
+                peak = _to_float(item.get("peak_usd"))
+                if peak is None:
+                    continue
+                self._exit_v2_state[ticket] = {
+                    "peak_usd": peak,
+                    "be_armed": bool(item.get("be_armed")),
+                }
+                restored += 1
+            if restored:
+                armed = sum(1 for st in self._exit_v2_state.values() if st.get("be_armed"))
+                log.info(
+                    "[EXIT_V2] etat restaure : %d position(s), dont %d avec break-even ARME — "
+                    "un redemarrage ne desarme plus un gagnant protege",
+                    restored, armed,
+                )
+        except Exception as exc:
+            # Fail-silent : un snapshot illisible ne doit jamais empecher le boot.
+            # On repart alors sur l'ancien comportement (re-amorcage), degrade mais sur.
+            log.warning("[EXIT_V2] restauration de l'etat impossible : %s", str(exc)[:160])
 
     def update_outcome_tracker(self, now: datetime | None = None) -> list[dict]:
         """P0-G — labellisation du dataset, INDEPENDANTE de la config des sorties.
@@ -3846,7 +3916,10 @@ class DemoKellyRouter:
             # try/except so a write failure (disk full, permission) can NEVER
             # cascade into the outer except and skip real exit evaluation.
             try:
-                _write_exit_v2_snapshot(ticket, symbol, action, cfg, shadow, account_type)
+                _write_exit_v2_snapshot(
+                    ticket, symbol, action, cfg, shadow, account_type,
+                    path=getattr(self, "exit_v2_snapshot_path", None),
+                )
             except Exception:
                 pass
             if str(action.get("action")) != "CLOSE":
@@ -5551,16 +5624,20 @@ def _order_failure_reason(result: object, ticket: object) -> str:
 
 def _write_exit_v2_snapshot(
     ticket: int, symbol: str, action: dict, cfg: "ExitV2Config", shadow: bool, account_type: str,
+    path: Path | None = None,
 ) -> None:
-    """mission/DASHBOARD.md — best-effort read-only snapshot for the
-    dashboard's /api/status. Never raises (caller also wraps in try/except,
-    this is belt-and-suspenders); never called anywhere except immediately
-    after the real [EXIT_V2] log line, so it can only ever be a passive
-    mirror of what already happened, never a decision input."""
+    """mission/DASHBOARD.md — snapshot pour /api/status du dashboard.
+
+    FIX 3 (2026-07-14) : ce fichier n'etait qu'un MIROIR d'affichage, jamais relu.
+    Il est desormais RECHARGE au boot par DemoKellyRouter._load_exit_v2_state() —
+    il porte donc la memoire du pic et du be_armed d'Exit V2 a travers les
+    redemarrages. Le `path` suit celui du routeur (derive de events_path) pour que
+    lecture et ecriture visent toujours le meme fichier."""
+    path = path or EXIT_V2_SNAPSHOT_PATH
     snapshot = {}
-    if EXIT_V2_SNAPSHOT_PATH.exists():
+    if path.exists():
         try:
-            snapshot = json.loads(EXIT_V2_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             snapshot = {}
     snapshot[str(ticket)] = {
@@ -5586,8 +5663,8 @@ def _write_exit_v2_snapshot(
         "account_type": account_type,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    EXIT_V2_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    EXIT_V2_SNAPSHOT_PATH.write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
 
 
 def _quick_exit_event(event_type: str, status: str, payload: dict, now: datetime | None = None) -> dict:

@@ -248,5 +248,96 @@ class TestFix2_PlancherRRUnifie(unittest.TestCase):
         self.assertNotIn("final_rr < 1.0", source)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# FIX 3 — Exit V2 survit aux redemarrages
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestFix3_ExitV2Persistant(unittest.TestCase):
+    """`_exit_v2_state` etait un dict EN MEMOIRE SEULE, reinitialise vide a chaque
+    construction du routeur. Et exit_v2.py fait :
+
+        st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False})
+
+    Apres un redemarrage, le pic etait donc RE-AMORCE sur le profit COURANT et
+    be_armed repassait a False. Un redemarrage DESARMAIT le plancher de break-even
+    d'un gagnant deja protege. Le gain verrouille s'evaporait, en silence."""
+
+    def setUp(self) -> None:
+        self.tmp = TemporaryDirectory()
+        # FIX 3 : le chemin du snapshot derive de events_path. Chaque routeur de test
+        # a donc le sien — sans cela, un routeur de test rechargerait l'etat REEL de
+        # production (c'est exactement ce qui a rougi deux tests de bloc4).
+        self.snapshot = Path(self.tmp.name) / "exit_v2_state.json"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _router(self):
+        return DemoKellyRouter(of_settings(), Path(self.tmp.name) / "events.jsonl")
+
+    def _write_snapshot(self, ticket, peak_usd, be_armed):
+        import json as _json
+        self.snapshot.write_text(
+            _json.dumps({str(ticket): {"symbol": "GOLD#", "peak_usd": peak_usd, "be_armed": be_armed}}),
+            encoding="utf-8",
+        )
+
+    # ── LE test ──
+
+    def test_un_REDEMARRAGE_ne_desarme_plus_un_break_even(self) -> None:
+        """Le scenario qui coutait de l'argent : un gagnant a BE arme, un redemarrage,
+        et le plancher disparait."""
+        self._write_snapshot(383260970, peak_usd=12.40, be_armed=True)
+
+        reborn = self._router()  # <- redemarrage
+
+        st = reborn._exit_v2_state.get(383260970)
+        self.assertIsNotNone(st, "l'etat Exit V2 n'a pas ete restaure")
+        self.assertTrue(st["be_armed"], "le break-even a ete DESARME par le redemarrage")
+        self.assertEqual(st["peak_usd"], 12.40, "le pic a ete perdu")
+
+    def test_le_pic_nest_plus_re_amorce_sur_le_profit_courant(self) -> None:
+        """exit_v2.setdefault ne doit PAS ecraser un pic restaure. On simule une
+        position qui est maintenant en PERTE apres avoir eu un pic de +12.40."""
+        from app.services.exit_v2 import evaluate_exit_v2, ExitV2Config
+
+        self._write_snapshot(383260970, peak_usd=12.40, be_armed=True)
+        reborn = self._router()
+
+        pos = SimpleNamespace(ticket=383260970, symbol="GOLD#", type=1, profit=-6.66,
+                              price_open=3986.93, sl=4097.38, tp=3828.53, volume=0.01)
+        cfg = ExitV2Config(mode="ACTIVE", tp_usd=0.0, be_arm_usd=2.0, be_floor_usd=0.1,
+                           trail_start_usd=2.0, trail_gap_usd=1.2)
+        evaluate_exit_v2(pos, None, None, cfg, reborn._exit_v2_state)
+
+        st = reborn._exit_v2_state[383260970]
+        self.assertEqual(st["peak_usd"], 12.40, "le pic a ete re-amorce sur le profit courant")
+        self.assertTrue(st["be_armed"])
+
+    # ── CONTROLES NEGATIFS ──
+
+    def test_un_ticket_INCONNU_est_re_amorce__comportement_documente(self) -> None:
+        """Une position ouverte hors de la connaissance d'Exit V2 n'a pas de pic
+        observe. On ne peut pas en inventer un : re-amorcage sur le profit courant."""
+        self._write_snapshot(111111, peak_usd=5.0, be_armed=True)
+        reborn = self._router()
+        self.assertNotIn(999999, reborn._exit_v2_state)
+
+    def test_snapshot_absent__le_boot_reussit_quand_meme(self) -> None:
+        reborn = self._router()  # aucun fichier
+        self.assertEqual(reborn._exit_v2_state, {})
+
+    def test_snapshot_CORROMPU__le_boot_reussit_quand_meme(self) -> None:
+        """Un etat illisible ne doit jamais empecher le bot de demarrer."""
+        self.snapshot.write_text("{ ceci n'est pas du json", encoding="utf-8")
+        reborn = self._router()
+        self.assertEqual(reborn._exit_v2_state, {})
+
+    def test_le_routeur_recharge_bien_a_la_construction(self) -> None:
+        import inspect
+        source = inspect.getsource(DemoKellyRouter.__init__)
+        self.assertIn("_load_exit_v2_state()", source)
+
+
 if __name__ == "__main__":
     unittest.main()
