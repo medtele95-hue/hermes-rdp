@@ -105,11 +105,17 @@ def _effective_thresholds(pos: object, symbol_info: object, cfg: ExitV2Config) -
     }
 
 
-def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2Config, state: dict) -> dict:
+def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2Config, state: dict, now: object = None) -> dict:
     """Pure decision function. Returns an action dict; never touches MT5.
 
     Actions: NONE / CLOSE (reason EXIT_V2_TP | EXIT_V2_BE_FLOOR |
     EXIT_V2_TRAIL_FLOOR). State per ticket: peak_usd, be_armed.
+
+    SPEC_EXIT_CONTEXT_WRITER : `now` est OPTIONNEL et n'a AUCUN effet sur la
+    decision — il ne sert qu'a horodater l'armement du breakeven (metadonnee
+    `be_arm_time`/`be_arm_price` dans l'etat, pour la future calibration d'Exit
+    V2). La condition d'armement et toutes les actions CLOSE/NONE sont
+    strictement inchangees. `now=None` (appelants historiques) => be_arm_time None.
     """
     ticket = int(getattr(pos, "ticket", 0) or 0)
     profit = _to_float(getattr(pos, "profit", None))
@@ -123,12 +129,17 @@ def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2
     trail_start_usd = thresholds["trail_start_usd"]
     trail_gap_usd = thresholds["trail_gap_usd"]
 
-    st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False})
+    st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False, "be_arm_time": None, "be_arm_price": None})
     st["peak_usd"] = max(_to_float(st.get("peak_usd")) or profit, profit)
     peak = st["peak_usd"]
 
     if not st["be_armed"] and profit >= be_arm_usd:
         st["be_armed"] = True
+        # SPEC_EXIT_CONTEXT_WRITER : metadonnee CAPTURE-ONLY — on note QUAND et a
+        # quel prix le breakeven s'est arme. La ligne ci-dessus (la DECISION
+        # d'armer) est inchangee ; on n'ajoute qu'un horodatage.
+        st["be_arm_time"] = now.isoformat() if now is not None and hasattr(now, "isoformat") else None
+        st["be_arm_price"] = _to_float(getattr(pos, "price_current", None))
         log.info(
             "[EXIT_V2] action=BE_ARMED ticket=%s symbol=%s profit=%.2f floor=%.2f scale=%s be_arm_usd=%.4f be_arm_pct=%s",
             ticket, getattr(pos, "symbol", ""), profit, be_floor_usd,

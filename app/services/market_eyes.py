@@ -238,6 +238,10 @@ def collect_market_eyes(settings: object = None, mt5_module=None, gold_symbol: s
             trs = [row["high"] - row["low"] for row in d1]
             atr = sum(trs) / len(trs)
         levels = d1_w1_levels(d1, w1, price, atr, point)
+        # SPEC_EXIT_CONTEXT_WRITER : on EXPOSE l'ATR deja calcule (D1, volatilite
+        # journaliere) pour que le contexte de sortie puisse le lire sans le
+        # recalculer. Capture-only : aucun gate ne le lit, il ne change rien.
+        out["eyes_atr"] = round(atr, 5) if atr else None
     except Exception as exc:
         levels = {"available": False, "reason": f"LEVELS_ERROR:{str(exc)[:80]}"}
     _merge(out, "lvl", levels)

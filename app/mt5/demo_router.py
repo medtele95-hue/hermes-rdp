@@ -575,6 +575,12 @@ class DemoKellyRouter:
         self._mt5_positions_unavailable = False
         self.market_eyes_snapshot: dict | None = None
         self._exit_v2_state: dict[int, dict] = {}
+        # SPEC_EXIT_CONTEXT_WRITER : contexte de sortie stampe A LA FERMETURE par
+        # ticket (mecanisme + be_armed + snapshot marche + spread), lu par le
+        # tracker au cycle suivant quand il ecrit la ligne outcome. En memoire :
+        # une fermeture est consommee des le cycle N+1 (fail-silent si perdu au
+        # restart). CAPTURE-ONLY : aucune decision de trade ne le lit.
+        self._exit_context_by_ticket: dict[str, dict] = {}
         # FIX 3 (2026-07-14) : cet etat etait EN MEMOIRE SEULE et repartait vide a
         # chaque construction du routeur. Exit V2 perdait donc son pic et son
         # be_armed a CHAQUE redemarrage. Il est desormais recharge depuis le
@@ -778,6 +784,11 @@ class DemoKellyRouter:
                 self._exit_v2_state[ticket] = {
                     "peak_usd": peak,
                     "be_armed": bool(item.get("be_armed")),
+                    # SPEC_EXIT_CONTEXT_WRITER : on preserve la metadonnee d'armement
+                    # a travers un redemarrage (comme peak_usd/be_armed) pour ne pas
+                    # perdre be_arm_time/price d'un gagnant deja protege.
+                    "be_arm_time": item.get("be_arm_time"),
+                    "be_arm_price": _to_float(item.get("be_arm_price")),
                 }
                 restored += 1
             if restored:
@@ -829,6 +840,9 @@ class DemoKellyRouter:
                 prices,
                 deals_fn=lambda ticket: mt5.history_deals_get(position=int(ticket)),
                 now_utc=now,
+                # SPEC_EXIT_CONTEXT_WRITER : le tracker lit ici le contexte stampe a
+                # la fermeture (cycle N) pour l'ecrire dans la ligne outcome (cycle N+1).
+                exit_context_fn=lambda ticket: self._exit_context_by_ticket.pop(str(ticket), None),
             )
         except Exception as exc:  # fail-silent par contrat : jamais dans le trading
             log.warning("[OUTCOME_TRACKER] update_failed error=%s", str(exc)[:160])
@@ -3908,7 +3922,9 @@ class DemoKellyRouter:
             )
             tick = mt5.symbol_info_tick(symbol)
             info = mt5.symbol_info(symbol)
-            action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state)
+            # SPEC_EXIT_CONTEXT_WRITER : `now` transmis UNIQUEMENT pour horodater
+            # l'armement du BE (metadonnee). Zero effet sur la decision d'Exit V2.
+            action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state, now=now)
             account_type = self.account_diagnostics(account)["account_type"]
             shadow = cfg.mode != "ACTIVE" or account_type != "DEMO"
             # mission GRAND_PLAN_2 mission3 (2026-07-08): effective threshold
@@ -3954,6 +3970,15 @@ class DemoKellyRouter:
             result_event["exit_v2_peak_usd"] = action.get("peak_usd")
             result_event["exit_v2_floor_usd"] = action.get("floor_usd")
             events.append(result_event)
+            # SPEC_EXIT_CONTEXT_WRITER : on STAMPE le contexte de sortie (que des
+            # valeurs deja en main : action + tick + market_eyes_snapshot + etat
+            # exit_v2), lu par le tracker au cycle N+1 quand il ecrit l'outcome.
+            # Enveloppe try/except : la capture ne doit JAMAIS empecher/retarder
+            # une fermeture reelle.
+            try:
+                self._stamp_exit_context(ticket, action, tick, now)
+            except Exception:
+                pass
             return events
         except Exception as exc:
             # Fail-closed: the position keeps its original SL/TP.
@@ -3962,6 +3987,49 @@ class DemoKellyRouter:
                 ticket, symbol, str(exc)[:200],
             )
             return events
+
+    def _stamp_exit_context(self, ticket: int, action: dict, tick: Any, now: datetime | None) -> None:
+        """SPEC_EXIT_CONTEXT_WRITER — enregistre par ticket le contexte de sortie.
+
+        CAPTURE-ONLY : ne lit QUE des valeurs deja en main a la fermeture (le dict
+        `action` d'Exit V2, le `tick` courant, le `market_eyes_snapshot` du cycle,
+        l'etat exit_v2 pour be_arm_time/price). N'ecrit rien de production hors ce
+        store memoire, ne calcule aucune donnee de marche, ne prend aucune decision.
+        Le tracker le lira au cycle N+1 pour enrichir la ligne outcome.
+        """
+        eyes = self.market_eyes_snapshot or {}
+        st = self._exit_v2_state.get(int(ticket)) or {}
+        spread = None
+        bid = _to_float(getattr(tick, "bid", None))
+        ask = _to_float(getattr(tick, "ask", None))
+        if bid is not None and ask is not None:
+            spread = round(ask - bid, 5)
+        dist = {
+            k[len("eyes_lvl_dist_"):]: v
+            for k, v in eyes.items()
+            if isinstance(k, str) and k.startswith("eyes_lvl_dist_")
+        }
+        ctx = {
+            "exit_mechanism": action.get("reason"),
+            "be_armed": action.get("be_armed"),
+            "be_arm_time": st.get("be_arm_time"),
+            "be_arm_price": st.get("be_arm_price"),
+            "peak_usd": action.get("peak_usd"),
+            "floor_usd": action.get("floor_usd"),
+            "spread_at_exit": spread,
+            "atr_at_exit": eyes.get("eyes_atr"),
+            "momentum_at_exit": eyes.get("eyes_cvd_slope_m5"),
+            "cvd_at_exit": eyes.get("eyes_cvd_session"),
+            "cvd_divergence_at_exit": eyes.get("eyes_cvd_divergence"),
+            "dist_to_structure_at_exit": dist or None,
+            "exit_context_captured_at": now.isoformat() if now is not None and hasattr(now, "isoformat") else None,
+        }
+        store = self._exit_context_by_ticket
+        store[str(ticket)] = ctx
+        # anti-fuite : chaque contexte est consomme au cycle N+1 ; on borne au cas ou
+        if len(store) > 64:
+            for k in list(store)[:-64]:
+                store.pop(k, None)
 
     def _quick_exit_modify_sl(self, pos: Any, action: dict, now: datetime | None = None) -> dict:
         symbol = str(getattr(pos, "symbol", "") or "")

@@ -606,10 +606,20 @@ class OutcomeTracker:
                 "symbol": row.get("broker_symbol") or row.get("symbol"),
                 "direction": direction,
                 "entry": entry,
+                # SPEC_EXIT_CONTEXT_WRITER : le prix de FILL reel (l'exposition
+                # engagee), a cote de l'entry signal — pour recalculer R/MFE/MAE
+                # sur la vraie base. Absent sur les refus virtuels.
+                "fill_price": _to_float(row.get("exec_quality.fill_price")),
                 "sl": sl,
                 "tp": tp,
                 "mfe": 0.0,
                 "mae": 0.0,
+                # SPEC_EXIT_CONTEXT_WRITER : prix ET instant des extremes (pas juste
+                # la magnitude), poses quand un nouvel extreme est atteint.
+                "mfe_price": None,
+                "mfe_time": None,
+                "mae_price": None,
+                "mae_time": None,
                 "opened_at": row.get("recorded_at"),
                 "setup_id": row.get("setup_id"),
                 "reason": row.get("reason"),
@@ -624,7 +634,9 @@ class OutcomeTracker:
         cloture reelle, prix de cloture reel, P&L = profit+commission+swap."""
         base = {
             key: item.get(key)
-            for key in ("key", "virtual", "ticket", "symbol", "direction", "entry", "sl", "tp", "mfe", "mae", "opened_at", "setup_id", "reason")
+            for key in ("key", "virtual", "ticket", "symbol", "direction", "entry", "fill_price", "sl", "tp",
+                        "mfe", "mae", "mfe_price", "mfe_time", "mae_price", "mae_time",
+                        "opened_at", "setup_id", "reason")
         }
         close_price = info.get("close_price")
         entry = _to_float(item.get("entry"))
@@ -654,7 +666,31 @@ class OutcomeTracker:
             "deals_count": info.get("deals_count"),
         }
 
-    def update(self, prices: dict[str, float], deals_fn=None, now_utc: datetime | None = None) -> list[dict]:
+    def _apply_exit_context(self, outcome: dict, ticket: object, exit_context_fn) -> None:
+        """SPEC_EXIT_CONTEXT_WRITER — enrichit une ligne outcome REELLE avec le
+        contexte de sortie stampe par le routeur a la fermeture. Fail-silent :
+        contexte manquant (coupe broker SL/TP, ou restart entre close et ecriture)
+        => la ligne s'ecrit quand meme, `exit_context_present=False`, jamais
+        d'exception. `exit_context_version=1` marque la FRONTIERE : toute ligne
+        reelle post-patch la porte (absente = pre-patch)."""
+        outcome["exit_context_version"] = 1
+        ctx = None
+        if exit_context_fn is not None and ticket is not None:
+            try:
+                ctx = exit_context_fn(ticket)
+            except Exception:
+                ctx = None
+        outcome["exit_context_present"] = bool(ctx)
+        if ctx:
+            for field in (
+                "exit_mechanism", "be_armed", "be_arm_time", "be_arm_price",
+                "peak_usd", "floor_usd", "spread_at_exit", "atr_at_exit",
+                "momentum_at_exit", "cvd_at_exit", "cvd_divergence_at_exit",
+                "dist_to_structure_at_exit", "exit_context_captured_at",
+            ):
+                outcome[field] = ctx.get(field)
+
+    def update(self, prices: dict[str, float], deals_fn=None, now_utc: datetime | None = None, exit_context_fn=None) -> list[dict]:
         """prices: {symbol: last_price}. Returns closed outcome rows.
 
         Trades REELS  : la cloture est lue dans les deals MT5 — TOUTE fermeture
@@ -662,6 +698,10 @@ class OutcomeTracker:
                         plus seulement une touche exacte de TP/SL.
         Refus VIRTUELS: inchange — simulation TP/SL sur les ticks (ils n'ont
                         aucune position MT5 a interroger).
+
+        SPEC_EXIT_CONTEXT_WRITER : `exit_context_fn(ticket)` (optionnel) fournit le
+        contexte de sortie a fusionner dans la ligne outcome reelle. None => aucun
+        enrichissement (appelants historiques inchanges).
         """
         closed: list[dict] = []
         dirty = False
@@ -674,6 +714,9 @@ class OutcomeTracker:
                     info = close_info_from_deals(item.get("ticket"), deals_fn)
                     if info and info.get("state") == "CLOSED":
                         outcome = self._outcome_from_deals(item, info)
+                        # SPEC_EXIT_CONTEXT_WRITER : enrichit la ligne reelle avec le
+                        # contexte de sortie (mecanisme + snapshot marche) + la frontiere.
+                        self._apply_exit_context(outcome, item.get("ticket"), exit_context_fn)
                         # P0-G-2 : on retire le ticket du suivi et on PERSISTE
                         # AVANT d'ecrire la ligne. Auparavant, l'ordre etait
                         # append -> pop -> _save_state en fin de boucle : un crash
@@ -708,25 +751,15 @@ class OutcomeTracker:
                         # commentaire disait "seuls les deals ferment un trade reel" ;
                         # le code le contredisait exactement quand MT5 etait muet.
                         price, _ = _exit_side_price(prices.get(str(item.get("symbol") or "")), item["direction"])
-                        if price is not None:
-                            sign = 1.0 if item["direction"] == "BUY" else -1.0
-                            excursion = sign * (price - item["entry"])
-                            previous = (item["mfe"], item["mae"])
-                            item["mfe"] = max(item["mfe"], excursion)
-                            item["mae"] = min(item["mae"], excursion)
-                            if (item["mfe"], item["mae"]) != previous:
-                                dirty = True
+                        if price is not None and _update_excursion(item, price, now_utc):
+                            dirty = True
                         continue
 
                 price, label_method = _exit_side_price(prices.get(str(item.get("symbol") or "")), item["direction"])
                 if price is None:
                     continue
                 sign = 1.0 if item["direction"] == "BUY" else -1.0
-                excursion = sign * (price - item["entry"])
-                previous = (item["mfe"], item["mae"])
-                item["mfe"] = max(item["mfe"], excursion)
-                item["mae"] = min(item["mae"], excursion)
-                if is_real and (item["mfe"], item["mae"]) != previous:
+                if _update_excursion(item, price, now_utc) and is_real:
                     dirty = True
 
                 # Une position REELLE ne se ferme QUE sur les deals (traite ci-dessus).
@@ -740,7 +773,9 @@ class OutcomeTracker:
                 if not (hit_tp or hit_sl):
                     continue
                 outcome = {
-                    **{k: item[k] for k in ("key", "virtual", "ticket", "symbol", "direction", "entry", "sl", "tp", "mfe", "mae", "opened_at", "setup_id", "reason")},
+                    **{k: item.get(k) for k in ("key", "virtual", "ticket", "symbol", "direction", "entry", "fill_price", "sl", "tp",
+                                                "mfe", "mae", "mfe_price", "mfe_time", "mae_price", "mae_time",
+                                                "opened_at", "setup_id", "reason")},
                     "closed_at": (now_utc or datetime.now(timezone.utc)).isoformat(),
                     "outcome": "TP_HIT" if hit_tp else "SL_HIT",
                     "close_price": price,
@@ -771,6 +806,28 @@ class OutcomeTracker:
 
     def open_count(self) -> int:
         return len(self._open)
+
+
+def _update_excursion(item: dict, price: float, now_utc: "datetime | None") -> bool:
+    """SPEC_EXIT_CONTEXT_WRITER — met a jour mfe/mae ET, quand un NOUVEL extreme
+    est atteint, son PRIX et son INSTANT. Semantique identique a l'ancien
+    max()/min() (mfe>=0 favorable, mae<=0 adverse), avec en plus le prix/temps.
+    Renvoie True si un extreme a change (pilote le flag `dirty`)."""
+    sign = 1.0 if item["direction"] == "BUY" else -1.0
+    excursion = sign * (price - item["entry"])
+    ts = (now_utc or datetime.now(timezone.utc)).isoformat()
+    changed = False
+    if excursion > item["mfe"]:
+        item["mfe"] = excursion
+        item["mfe_price"] = price
+        item["mfe_time"] = ts
+        changed = True
+    if excursion < item["mae"]:
+        item["mae"] = excursion
+        item["mae_price"] = price
+        item["mae_time"] = ts
+        changed = True
+    return changed
 
 
 def _reconcile_pnl(ticket: object, deals_fn) -> float | None:
