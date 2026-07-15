@@ -13,6 +13,11 @@ logs/
 watchdog/heartbeat.txt
 watchdog/alert_state.json
 
+# Sentinelle : artefacts runtime (etat anti-bruit + log). Le CODE est suivi.
+sentinelle/state.json
+sentinelle/sentinelle.log
+sentinelle/__pycache__/
+
 # Local backups produced by the daily backup job
 backups/
 
