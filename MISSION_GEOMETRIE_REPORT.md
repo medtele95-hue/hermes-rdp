@@ -78,7 +78,22 @@ Détail des sorties simulées : TP 68 · TRAIL 214 · SL 100 · UND 36 (382 déc
 - **Suite complète** : 3572 passed, 2 skipped (16 nouveaux tests géométrie ; les tests Exit V2 existants inchangés = preuve que la protection n'a pas régressé).
 - **Bot redéployé** : PID 4480, 1er cycle sain, aucune erreur liée au fix.
 
-<!-- LIVE_PROOF -->
+## PREUVE LIVE — le SL borné passe le cap en production
+
+À 03:26:20 UTC (post-déploiement), un setup GOLD SELL order-flow **top-down PASS** a atteint le routeur :
+```
+[ROUTER_CONTEXT] symbol=GOLD# strategy=ORDER_FLOW_EXECUTION_AGENT direction=SELL td_status=PASS
+[DEMO_ROUTER_REACHED] symbol=GOLD# strategy=ORDER_FLOW_EXECUTION_AGENT magic=909002
+[KELLY_DEMO] symbol=GOLD# kelly_lot=0.06 capped_lot=0.01 risk_pct=0.07286786
+```
+**`risk_pct = 0,073 %`** → risque ≈ **6,6 $** (SL borné à ~1,5×ATR). C'est **bien sous le cap de 0,25 %** : le gate `DEMO_MAX_RISK_PER_TRADE_EXCEEDED` **ne se déclenche plus**. Avant FIX 1, le SL structurel (~33 $) aurait donné `risk_pct ≈ 0,37 % > 0,25 %` → **rejeté**. **La sélection adverse est cassée : le setup fort passe désormais le cap de risque.**
+
+*(Ce setup précis a ensuite été arrêté par un autre gate — `TOP_DOWN_READER_BLOCK`, indépendant du cap — donc non exécuté. Le FIX 1 fait ce pour quoi il est fait : rendre le SL compatible avec le cap. Une exécution complète portera `geometry_version=1` ; la dernière exécution GOLD, ticket 386681393 à 01:47, est PRÉ-déploiement — `geometry_version=None`, SL 20 $. Le bot tourne (PID 4480) ; la prochaine exécution géométrie-versionnée le confirmera de bout en bout.)*
+
+Pour repérer la première exécution géométrie-versionnée :
+```
+python -c "import json,os; p='app/data/decision_dataset.jsonl'; s=os.path.getsize(p); f=open(p,'rb'); f.seek(max(0,s-4_000_000)); f.readline(); rows=[json.loads(l) for l in f if l.strip()]; r=[x for x in rows if x.get('row_type')=='outcome' and x.get('geometry_version')==1]; print(r[-1] if r else 'pas encore')"
+```
 
 ---
 
