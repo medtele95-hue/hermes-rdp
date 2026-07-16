@@ -95,6 +95,12 @@ class Settings(BaseModel):
     exit_v2_be_floor_usd: float = 0.10
     exit_v2_trail_start_usd: float = 2.0
     exit_v2_trail_gap_usd: float = 1.2
+    # MISSION_GEOMETRIE FIX 2 (2026-07-16) : le trail floor ne coupe plus a un $
+    # fixe (1.2$ = ~+0.3R sur un SL borne de 6$, ce qui tuait l'edge du FIX 1).
+    # Le gagnant COURT tant qu'il ne recule pas de plus de TRAIL_ATR_MULT x ATR
+    # sous son pic. Le breakeven (be_arm/be_floor) reste inchange : protection
+    # intacte. Fallback sur trail_gap_usd si l'ATR est indisponible.
+    exit_v2_trail_atr_mult: float = 1.0
     # GRAND_PLAN_2 mission3 (2026-07-08, SIMO validé GO): BTCUSD#-only,
     # percentage of entry price instead of flat $ — see app/services/exit_v2.py
     # module docstring for the exact GOLD-equivalence each default reproduces.
@@ -214,6 +220,14 @@ class Settings(BaseModel):
     order_flow_execution_enabled: bool = False
     order_flow_min_score: int = 75
     order_flow_min_rr: float = 1.5
+    # MISSION_GEOMETRIE FIX 1 (2026-07-16) : le SL structurel ORDER_FLOW (Value
+    # Area sur 25h) etait non borne (median 33.5$ > cap de risque 22.60$), donc
+    # les setups FORTS etaient rejetes (DEMO_MAX_RISK_PER_TRADE_EXCEEDED) et seuls
+    # les faibles (SL serre) tradaient. On borne : risk = min(structurel, k*ATR).
+    # k=1.5 est prouve par CALIBRATION_SL_BORNE_REPORT.md (sommet de la courbe en U
+    # inverse, win 12.9%->49.6%, E[R] -0.68->+0.24). A REVALIDER sur v2 (echantillon
+    # 100% SELL, un regime) — la constante s'ajuste sans re-coder.
+    sl_atr_cap_k: float = 1.5
     order_flow_cooldown_minutes: int = 15
     order_flow_allowed_symbols: str = "GOLD,GOLD#,XAUUSD,BTCUSD,BTCUSD#"
     hermes_strategy_pack_enabled: bool = True
@@ -571,6 +585,7 @@ def get_settings() -> Settings:
         exit_v2_be_floor_usd=float(os.getenv("EXIT_V2_BE_FLOOR_USD", "0.10")),
         exit_v2_trail_start_usd=float(os.getenv("EXIT_V2_TRAIL_START_USD", "2.0")),
         exit_v2_trail_gap_usd=float(os.getenv("EXIT_V2_TRAIL_GAP_USD", "1.2")),
+        exit_v2_trail_atr_mult=float(os.getenv("EXIT_V2_TRAIL_ATR_MULT", "1.0")),
         exit_v2_btc_pct_thresholds_enabled=_bool_env("EXIT_V2_BTC_PCT_THRESHOLDS_ENABLED", True),
         exit_v2_btc_be_arm_pct=float(os.getenv("EXIT_V2_BTC_BE_ARM_PCT", "0.05")),
         exit_v2_btc_be_floor_pct=float(os.getenv("EXIT_V2_BTC_BE_FLOOR_PCT", "0.0025")),
@@ -812,6 +827,7 @@ def get_settings() -> Settings:
         order_flow_execution_enabled=_bool_env("ORDER_FLOW_EXECUTION_ENABLED", False),
         order_flow_min_score=_int_env("ORDER_FLOW_MIN_SCORE", 75),
         order_flow_min_rr=float(os.getenv("ORDER_FLOW_MIN_RR", "1.5")),
+        sl_atr_cap_k=float(os.getenv("SL_ATR_CAP_K", "1.5")),
         order_flow_cooldown_minutes=_int_env("ORDER_FLOW_COOLDOWN_MINUTES", 15),
         order_flow_allowed_symbols=os.getenv("ORDER_FLOW_ALLOWED_SYMBOLS", "GOLD,GOLD#,XAUUSD,BTCUSD,BTCUSD#"),
         hermes_strategy_pack_enabled=_bool_env("HERMES_STRATEGY_PACK_ENABLED", True),

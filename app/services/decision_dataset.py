@@ -81,6 +81,14 @@ _collection_v2_first_line_logged = False
 #                                 cote du spread, ATR de regime en Wilder.
 CORE_FIX_LEVEL = "P0TER"
 
+# ── MISSION_GEOMETRIE (2026-07-16) ──────────────────────────────────────────
+# Frontiere de la geometrie SL/sortie. Absent = trades v2 AVANT le fix (SL
+# structurel large median 33$, Exit V2 coupe a +0.3R) -> a EXCLURE de la
+# calibration finale. geometry_version=1 = SL borne a 1.5xATR + Exit V2 qui
+# laisse courir (trailing ATR). k=1.5 prouve sur echantillon 100% SELL/un regime,
+# A REVALIDER sur les 200 trades v2 (constante SL_ATR_CAP_K ajustable).
+GEOMETRY_VERSION = 1
+
 DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "decision_dataset.jsonl"
 
 _KILL_ZONES_UTC = ((7, 9), (12, 14), (1, 3))
@@ -322,6 +330,7 @@ def build_decision_row(event: dict, extras: dict | None = None) -> dict:
         "schema_version": SCHEMA_VERSION,
         "core_version": CORE_VERSION,
         "core_fix_level": CORE_FIX_LEVEL,
+        "geometry_version": GEOMETRY_VERSION,
         "recorded_at": now.isoformat(),
     }
     for key, value in (event or {}).items():

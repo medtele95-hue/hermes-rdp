@@ -187,7 +187,12 @@ def evaluate(
         return _wait(symbol, "ORDER_FLOW_SCORE_BELOW_THRESHOLD", score=score)
 
     min_rr = float(getattr(settings, "order_flow_min_rr", 1.5))
-    levels = _calc_sltp(direction, price, vwap, poc, vah, val, min_rr)
+    # MISSION_GEOMETRIE FIX 1 : ATR M5 Wilder (bougies CLOTUREES), IDENTIQUE a celui
+    # ecrit dans la ligne decision (decision_dataset.atr_price) -> coherence avec la
+    # calibration. Sert a borner le SL structurel a k*ATR.
+    _sl_atr = _atr_m5_for_sl((frames or {}).get("M5"))
+    _sl_k = float(getattr(settings, "sl_atr_cap_k", 1.5))
+    levels = _calc_sltp(direction, price, vwap, poc, vah, val, min_rr, atr=_sl_atr, sl_atr_cap_k=_sl_k)
     if levels is None:
         log.info(
             "[OF_SLTP] symbol=%s verdict=INVALID direction=%s price=%s val=%s vah=%s",
@@ -374,19 +379,36 @@ def _score_setup(
     return max(0, min(100, score))
 
 
+def _cap_risk_by_atr(risk: float, atr: float | None, k: float) -> float:
+    """MISSION_GEOMETRIE FIX 1 — borne le risque structurel a k*ATR.
+    Plafond, pas plancher : n'active que si le structurel DEPASSE k*ATR. Sans ATR
+    valide, on ne touche a rien (fail-safe : le SL structurel d'origine s'applique)."""
+    if atr is None or atr <= 0 or k <= 0:
+        return risk
+    return min(risk, k * atr)
+
+
 def _calc_sltp(
     direction: str, price: float, vwap: float, poc: float, vah: float, val: float, min_rr: float,
+    atr: float | None = None, sl_atr_cap_k: float = 1.5,
 ) -> tuple[float, float, float, float] | None:
     buffer = price * 0.001
 
     # Anchor the SL on the far side of BOTH the value level and the current
     # price. Anchoring on VAL/VAH alone put the SL on the wrong side whenever
     # price swept beyond the level - rejecting exactly the best sweep setups.
+    #
+    # MISSION_GEOMETRIE FIX 1 : le risque structurel est BORNE a min(structurel,
+    # k*ATR) APRES son calcul, AVANT le TP. Le SL est reconstruit sur le risque
+    # borne, et le TP (fabrique a partir du risque) SUIT donc automatiquement
+    # (RR reste min_rr). C'est le "Modele B" valide par la calibration.
     if direction == "BUY":
         sl = min(val, price) - buffer
         risk = price - sl
         if risk <= 0:
             return None
+        risk = _cap_risk_by_atr(risk, atr, sl_atr_cap_k)
+        sl = price - risk
         tp = price + risk * min_rr
         rr = (tp - price) / risk
     else:
@@ -394,10 +416,25 @@ def _calc_sltp(
         risk = sl - price
         if risk <= 0:
             return None
+        risk = _cap_risk_by_atr(risk, atr, sl_atr_cap_k)
+        sl = price + risk
         tp = price - risk * min_rr
         rr = (price - tp) / risk
 
     return round(price, 5), round(sl, 5), round(tp, 5), round(rr, 2)
+
+
+def _atr_m5_for_sl(m5_df: object, period: int = 14) -> float | None:
+    """MISSION_GEOMETRIE FIX 1 — ATR M5 Wilder sur bougies CLOTUREES, calcul
+    IDENTIQUE a decision_dataset.atr_price (le meme ATR que la ligne decision)."""
+    try:
+        from app.utils.indicators import atr_last
+        df = closed_frame(m5_df)
+        if df is None or getattr(df, "empty", True) or len(df) < period + 1:
+            return None
+        return atr_last(df, period)
+    except Exception:
+        return None
 
 
 def _cooldown_ok(canonical: str, cooldown_minutes: int) -> bool:
