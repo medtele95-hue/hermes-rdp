@@ -45,7 +45,11 @@ class ExitV2Config:
     be_arm_usd: float = 2.00       # profit that arms the breakeven floor (GOLD, and BTC fallback)
     be_floor_usd: float = 0.10     # virtual floor once BE armed (BE + buffer)
     trail_start_usd: float = 2.00  # peak that arms the trailing floor
-    trail_gap_usd: float = 1.20    # distance kept below the peak
+    trail_gap_usd: float = 1.20    # distance kept below the peak (FALLBACK si pas d'ATR)
+    # MISSION_GEOMETRIE FIX 2 (2026-07-16) : le gap du trailing devient ATR-based
+    # (TRAIL_ATR_MULT x ATR converti en USD) au lieu d'un $ fixe. L'ancien 1.20$
+    # coupait le gagnant a ~+0.3R sur un SL borne de 6$, tuant l'edge du FIX 1.
+    trail_atr_mult: float = 1.0
     # mission GRAND_PLAN_2 mission3 (2026-07-08, SIMO validé GO): BTC-only,
     # percentage of entry price — see module docstring for the exact GOLD
     # equivalence each default reproduces. GOLD never reads these fields.
@@ -105,7 +109,7 @@ def _effective_thresholds(pos: object, symbol_info: object, cfg: ExitV2Config) -
     }
 
 
-def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2Config, state: dict, now: object = None) -> dict:
+def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2Config, state: dict, now: object = None, atr_price: object = None) -> dict:
     """Pure decision function. Returns an action dict; never touches MT5.
 
     Actions: NONE / CLOSE (reason EXIT_V2_TP | EXIT_V2_BE_FLOOR |
@@ -129,7 +133,7 @@ def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2
     trail_start_usd = thresholds["trail_start_usd"]
     trail_gap_usd = thresholds["trail_gap_usd"]
 
-    st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False, "be_arm_time": None, "be_arm_price": None})
+    st = state.setdefault(ticket, {"peak_usd": profit, "be_armed": False, "be_arm_time": None, "be_arm_price": None, "trail_gap_usd": None})
     st["peak_usd"] = max(_to_float(st.get("peak_usd")) or profit, profit)
     peak = st["peak_usd"]
 
@@ -152,9 +156,24 @@ def evaluate_exit_v2(pos: object, tick: object, symbol_info: object, cfg: ExitV2
 
     # Trailing floor: once the peak reached trail_start, protect peak - gap.
     # The trailing floor can only rise (peak is monotonic).
+    #
+    # MISSION_GEOMETRIE FIX 2 : le gap = TRAIL_ATR_MULT x ATR (converti en USD),
+    # FIGE a l'armement du trail (floor strictement monotone : le pic monte, la
+    # distance est fixe). Laisse le gagnant courir vers le TP au lieu de le couper
+    # a ~+0.3R. Le breakeven (be_floor) reste le filet dur, inchange. Sans ATR
+    # valide -> fallback sur trail_gap_usd (ancien comportement, fail-safe).
+    trail_gap_effective = trail_gap_usd
+    _atr = _to_float(atr_price)
+    if _atr is not None and _atr > 0:
+        upu = _usd_per_price_unit(pos, symbol_info)
+        if upu:
+            if st.get("trail_gap_usd") is None:
+                st["trail_gap_usd"] = float(cfg.trail_atr_mult) * _atr * upu
+            trail_gap_effective = st["trail_gap_usd"]
+
     floors: list[tuple[str, float]] = []
     if peak >= trail_start_usd:
-        floors.append(("EXIT_V2_TRAIL_FLOOR", peak - trail_gap_usd))
+        floors.append(("EXIT_V2_TRAIL_FLOOR", peak - trail_gap_effective))
     if st["be_armed"]:
         floors.append(("EXIT_V2_BE_FLOOR", be_floor_usd))
 

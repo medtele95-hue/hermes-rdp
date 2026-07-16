@@ -3912,6 +3912,8 @@ class DemoKellyRouter:
                 be_floor_usd=float(getattr(self.settings, "exit_v2_be_floor_usd", 0.10)),
                 trail_start_usd=float(getattr(self.settings, "exit_v2_trail_start_usd", 2.0)),
                 trail_gap_usd=float(getattr(self.settings, "exit_v2_trail_gap_usd", 1.2)),
+                # MISSION_GEOMETRIE FIX 2 : trailing ATR-based (laisse courir le gagnant).
+                trail_atr_mult=float(getattr(self.settings, "exit_v2_trail_atr_mult", 1.0)),
                 # GRAND_PLAN_2 mission3 (2026-07-08, SIMO validé GO): BTC-only
                 # percentage thresholds — see app/services/exit_v2.py docstring.
                 btc_pct_thresholds_enabled=bool(getattr(self.settings, "exit_v2_btc_pct_thresholds_enabled", True)),
@@ -3922,9 +3924,14 @@ class DemoKellyRouter:
             )
             tick = mt5.symbol_info_tick(symbol)
             info = mt5.symbol_info(symbol)
+            # MISSION_GEOMETRIE FIX 2 : ATR M5 (Wilder, bougies cloturees) pour le
+            # trailing qui laisse courir. Recalcule ici (le prix bouge) — coherent
+            # avec l'ATR M5 du FIX 1. None si indispo -> Exit V2 retombe sur l'ancien
+            # trail_gap_usd (fail-safe, protege toujours).
+            _atr_m5 = self._exit_m5_atr(symbol)
             # SPEC_EXIT_CONTEXT_WRITER : `now` transmis UNIQUEMENT pour horodater
             # l'armement du BE (metadonnee). Zero effet sur la decision d'Exit V2.
-            action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state, now=now)
+            action = evaluate_exit_v2(pos, tick, info, cfg, self._exit_v2_state, now=now, atr_price=_atr_m5)
             account_type = self.account_diagnostics(account)["account_type"]
             shadow = cfg.mode != "ACTIVE" or account_type != "DEMO"
             # mission GRAND_PLAN_2 mission3 (2026-07-08): effective threshold
@@ -3987,6 +3994,24 @@ class DemoKellyRouter:
                 ticket, symbol, str(exc)[:200],
             )
             return events
+
+    def _exit_m5_atr(self, symbol: str) -> float | None:
+        """MISSION_GEOMETRIE FIX 2 — ATR M5 Wilder (bougies CLOTUREES) pour le
+        trailing d'Exit V2. Lecture seule, best-effort : None si indisponible ->
+        Exit V2 retombe sur l'ancien trail_gap_usd (fail-safe, protege toujours)."""
+        try:
+            import pandas as pd
+            from app.utils.indicators import atr_last
+            from app.utils.candles import closed_frame
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 60)
+            if rates is None or len(rates) < 20:
+                return None
+            df = closed_frame(pd.DataFrame(rates))
+            if df.empty or len(df) < 15:
+                return None
+            return atr_last(df, 14)
+        except Exception:
+            return None
 
     def _stamp_exit_context(self, ticket: int, action: dict, tick: Any, now: datetime | None) -> None:
         """SPEC_EXIT_CONTEXT_WRITER — enregistre par ticket le contexte de sortie.
