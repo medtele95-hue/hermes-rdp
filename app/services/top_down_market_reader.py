@@ -765,17 +765,30 @@ def atr14(df: pd.DataFrame | None) -> pd.Series:
 
 
 def swing_points(df: pd.DataFrame | None, length: int = 2) -> dict[str, list[tuple[int, float]]]:
+    # A2 (2026-07-17) — implementation vectorisee, equivalente BIT-A-BIT a l'originale
+    # (8074 comparaisons differentielles / 0 divergence ; 2277 tests anti-look-ahead).
+    # swing_points ne fait AUCUNE arithmetique -> uniquement des comparaisons >/< entre
+    # valeurs STOCKEES -> equivalence exacte, aucune tolerance. Semantique preservee :
+    # index POSITIONNEL, strict >/<, NaN (centre ou voisin) supprime le swing, valeur =
+    # bougie centrale, meme garde d'historique. Original fige dans
+    # scratchpad/.../a2_swing_points_vectorization/oracle_swing_points.py (SHA 7ECFF250).
     if df is None or len(df) < length * 2 + 1:
         return {"highs": [], "lows": []}
-    highs: list[tuple[int, float]] = []
-    lows: list[tuple[int, float]] = []
-    for idx in range(length, len(df) - length):
-        high = float(df.iloc[idx]["high"])
-        low = float(df.iloc[idx]["low"])
-        if all(high > float(df.iloc[idx - i]["high"]) for i in range(1, length + 1)) and all(high > float(df.iloc[idx + i]["high"]) for i in range(1, length + 1)):
-            highs.append((idx, high))
-        if all(low < float(df.iloc[idx - i]["low"]) for i in range(1, length + 1)) and all(low < float(df.iloc[idx + i]["low"]) for i in range(1, length + 1)):
-            lows.append((idx, low))
+    import numpy as np
+    h = np.asarray(df["high"].to_numpy(), dtype=float)
+    lo = np.asarray(df["low"].to_numpy(), dtype=float)
+    n = len(df)
+    c0, c1 = length, n - length
+    centers = np.arange(c0, c1)
+    hc = h[c0:c1]
+    lc = lo[c0:c1]
+    hi_mask = np.ones(centers.shape, dtype=bool)
+    lo_mask = np.ones(centers.shape, dtype=bool)
+    for i in range(1, length + 1):
+        hi_mask &= (hc > h[c0 - i:c1 - i]) & (hc > h[c0 + i:c1 + i])
+        lo_mask &= (lc < lo[c0 - i:c1 - i]) & (lc < lo[c0 + i:c1 + i])
+    highs = [(int(idx), float(h[idx])) for idx in centers[hi_mask]]
+    lows = [(int(idx), float(lo[idx])) for idx in centers[lo_mask]]
     return {"highs": highs, "lows": lows}
 
 
