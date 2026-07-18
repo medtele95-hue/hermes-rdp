@@ -803,26 +803,51 @@ def premium_discount_zone(ratio: float | None) -> str:
 
 
 def detect_fvg(df: pd.DataFrame | None) -> list[dict]:
+    # A2.1 (2026-07-18) — implementation vectorisee, equivalente BIT-A-BIT a l'originale
+    # (6076 comparaisons differentielles / 0 divergence ; 0 divergence _fvg_score ;
+    # 862 tests anti-look-ahead). Le O(n^2) venait du scan des closes futures par FVG
+    # (any(close<low) sur df.iloc[idx+1:].iterrows()). Remplace par un min/max SUFFIXE des
+    # closes precalcule O(n) : any(close_futur < low) <=> min(closes futurs) < low. np.fmin/
+    # fmax ignorent les NaN comme float(nan)<low = False. Regles FVG/IFVG, strict >/<, seuil
+    # min_gap (meme atr14 et _safe_value), gestion NaN, index positionnel et ordre : preserves
+    # a l'identique. Original fige dans scratchpad/.../a2_1_detect_fvg_optimization/
+    # oracle_detect_fvg.py (SHA 0F6D0A47). Detection causale ; flag inverted = mitigation
+    # utilisant le futur, comportement d'origine inchange.
     if df is None or len(df) < 3:
         return []
+    import numpy as np
     atr = atr14(df)
+    n = len(df)
+    high = np.asarray(df["high"].to_numpy(), dtype=float)
+    low = np.asarray(df["low"].to_numpy(), dtype=float)
+    close = np.asarray(df["close"].to_numpy(), dtype=float)
+    atr_vals = atr.to_numpy()
+    smin = np.empty(n + 1, dtype=float)
+    smax = np.empty(n + 1, dtype=float)
+    smin[n] = np.inf
+    smax[n] = -np.inf
+    for i in range(n - 1, -1, -1):
+        smin[i] = np.fmin(close[i], smin[i + 1])
+        smax[i] = np.fmax(close[i], smax[i + 1])
     zones: list[dict] = []
-    for idx in range(2, len(df)):
-        c1 = df.iloc[idx - 2]
-        c3 = df.iloc[idx]
-        min_gap = (_safe_value(atr.iloc[idx]) or 0.0) * 0.1
-        if float(c1["high"]) < float(c3["low"]):
-            low = float(c1["high"])
-            high = float(c3["low"])
-            if high - low >= min_gap:
-                inverted = any(float(row["close"]) < low for _, row in df.iloc[idx + 1 :].iterrows())
-                zones.append({"type": "BULLISH_IFVG" if inverted else "BULLISH_FVG", "low": low, "high": high, "index": idx})
-        if float(c1["low"]) > float(c3["high"]):
-            low = float(c3["high"])
-            high = float(c1["low"])
-            if high - low >= min_gap:
-                inverted = any(float(row["close"]) > high for _, row in df.iloc[idx + 1 :].iterrows())
-                zones.append({"type": "BEARISH_IFVG" if inverted else "BEARISH_FVG", "low": low, "high": high, "index": idx})
+    for idx in range(2, n):
+        min_gap = (_safe_value(atr_vals[idx]) or 0.0) * 0.1
+        c1h = high[idx - 2]
+        c1l = low[idx - 2]
+        c3l = low[idx]
+        c3h = high[idx]
+        if c1h < c3l:
+            lo = c1h
+            hi = c3l
+            if hi - lo >= min_gap:
+                inverted = smin[idx + 1] < lo
+                zones.append({"type": "BULLISH_IFVG" if inverted else "BULLISH_FVG", "low": float(lo), "high": float(hi), "index": idx})
+        if c1l > c3h:
+            lo = c3h
+            hi = c1l
+            if hi - lo >= min_gap:
+                inverted = smax[idx + 1] > hi
+                zones.append({"type": "BEARISH_IFVG" if inverted else "BEARISH_FVG", "low": float(lo), "high": float(hi), "index": idx})
     return zones
 
 
