@@ -63,6 +63,22 @@ function Start-Dashboard {
         Where-Object { $_.CommandLine -match "app\.dashboard_api\.server" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
+    # V5.1 / action A1 (2026-07-17) - log du dashboard SEPARE de celui du bot.
+    # Meme motif que scripts/bot_supervisor.ps1:66, qui fixe deja son propre
+    # HERMES_LOG_FILE avant de lancer app.main.
+    #
+    # Pourquoi : deux process tenant logs/hermes.log ouvert empechent le rollover
+    # (os.rename refuse par Windows sur un fichier ouvert) - le meme diagnostic que
+    # celui note dans bot_supervisor.ps1:58-61 le 2026-07-08. Le dashboard tenait ce
+    # fichier EN PERMANENCE : app/dashboard_api/server.py:28 fait `from app.logger
+    # import log`, et app/logger.py:70 cree le RotatingFileHandler des l'import.
+    # Resultat mesure : 176 rollovers echoues, 0 backup, 1766 Mo (176x le seuil).
+    #
+    # Portee : ce $env: n'affecte QUE ce process PowerShell et ses enfants (le
+    # dashboard). Le bot (app.main) est lance par scripts/bot_supervisor.ps1, qui
+    # fixe HERMES_LOG_FILE=logs\hermes.log de son cote : aucune fuite possible.
+    # Rollback : supprimer la ligne $env:HERMES_LOG_FILE ci-dessous.
+    $env:HERMES_LOG_FILE = Join-Path $repo "logs\hermes-dashboard.log"
     Start-Process -FilePath "python" -ArgumentList "-m", "app.dashboard_api.server" -WorkingDirectory $repo -WindowStyle Hidden
 }
 
