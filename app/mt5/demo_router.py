@@ -436,6 +436,26 @@ def _execution_invariants_block(request: dict, strategy: object, max_open_per_sy
     """
     symbol = str(request.get("symbol") or "")
     strat = str(strategy or "UNKNOWN")
+    # D2 (2026-07-18) — HARD DEMO GUARD (fail-closed). Dernier rempart AVANT toute NOUVELLE
+    # exposition : relit DIRECTEMENT le compte MT5 courant ici, au choke-point, independamment
+    # de allow_live_trading, du dashboard et de toute decision prise plus tot dans le cycle.
+    # Strict : seul un trade_mode ENTIER (type int, exclut bool) egal a 0 passe -> ferme la
+    # porte aux valeurs seulement egales a 0 (False, 0.0, "0", "DEMO"). is_mt5_demo_account
+    # (importe ligne 18) gere deja le piege du 0-falsy. Tout le reste -> BLOCK. Ne s'applique
+    # qu'aux ouvertures (seuls _send_order/_send_pending_order appellent cette fonction) ; les
+    # fermetures et modifications SL/TP ne passent pas par ici et ne sont jamais bloquees.
+    try:
+        _acc = mt5.account_info()
+    except Exception as exc:  # noqa: BLE001
+        log.critical("[HARD_DEMO_GUARD] account_info a leve (%s) -> ordre BLOQUE (fail-closed)", str(exc)[:120])
+        return "HARD_DEMO_GUARD_ACCOUNT_UNREADABLE"
+    _tm = getattr(_acc, "trade_mode", None) if _acc is not None else None
+    if not (is_mt5_demo_account(_acc) and type(_tm) is int and _tm == 0):
+        log.critical(
+            "[HARD_DEMO_GUARD] compte non-DEMO au choke-point -> nouvelle exposition BLOQUEE symbol=%s strategy=%s trade_mode=%r",
+            symbol, strat, _tm,
+        )
+        return "HARD_DEMO_GUARD_NOT_DEMO"
     # Invariant 1 — allowlist stricte au choke-point (GOLD# + BTCUSD#).
     # CE CHECK N'EST JAMAIS MODIFIÉ PAR LE DASHBOARD — SYMBOL_ALLOWLIST reste
     # la constante en dur définie en tête de module, point final.
