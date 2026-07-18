@@ -2,6 +2,8 @@
 
 import json
 import math
+import os
+import tempfile
 import threading
 import time as _time
 from collections import Counter, defaultdict
@@ -5748,6 +5750,35 @@ def _order_failure_reason(result: object, ticket: object) -> str:
     return "ORDER_RESULT_UNCONFIRMED"
 
 
+def _atomic_write_json(path: Path, obj: dict) -> None:
+    """T1-P0B (2026-07-18) — ecriture JSON ATOMIQUE compatible Windows.
+
+    tmp dans le MEME dossier -> write -> flush -> os.fsync -> validation JSON round-trip
+    -> os.replace (atomique, meme volume). En cas d'echec AVANT le replace, la cible
+    d'origine reste intacte et le tmp est nettoye. Ne tronque jamais la cible directement.
+    Remonte l'echec (except Exception, jamais BaseException)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps(obj, indent=1)
+    expected = json.loads(data)                       # round-trip attendu (evite un faux mismatch)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if json.loads(tmp_path.read_text(encoding="utf-8")) != expected:
+            raise ValueError("EXIT_V2_ATOMIC_VALIDATION_MISMATCH")
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def _write_exit_v2_snapshot(
     ticket: int, symbol: str, action: dict, cfg: "ExitV2Config", shadow: bool, account_type: str,
     path: Path | None = None,
@@ -5762,10 +5793,25 @@ def _write_exit_v2_snapshot(
     path = path or EXIT_V2_SNAPSHOT_PATH
     snapshot = {}
     if path.exists():
+        # T1-P0B (2026-07-18) — lecture FAIL-CLOSED. Un fichier existant mais illisible
+        # (tronque/JSON invalide/mauvais type/inaccessible) ne doit PAS etre remplace par
+        # {ticket courant} : cela detruirait les autres tickets. On ABANDONNE cette
+        # sauvegarde, on PRESERVE la cible, la logique Exit V2 en memoire continue. Aucun
+        # ordre, aucune regle de sortie modifiee.
         try:
             snapshot = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            snapshot = {}
+        except Exception as _exc:
+            log.critical(
+                "[EXIT_V2_STATE_READ_FAILED] path=%s error=%s ticket=%s action=WRITE_ABORTED_PRESERVE_EXISTING",
+                path, type(_exc).__name__, ticket,
+            )
+            return
+        if not isinstance(snapshot, dict):
+            log.critical(
+                "[EXIT_V2_STATE_READ_FAILED] path=%s error=root_not_dict ticket=%s action=WRITE_ABORTED_PRESERVE_EXISTING",
+                path, ticket,
+            )
+            return
     snapshot[str(ticket)] = {
         "symbol": symbol,
         "action": action.get("action"),
@@ -5789,8 +5835,16 @@ def _write_exit_v2_snapshot(
         "account_type": account_type,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(snapshot, indent=1), encoding="utf-8")
+    # T1-P0B — ecriture ATOMIQUE (tmp+fsync+validation+os.replace) au lieu de write_text.
+    # Un echec preserve la derniere cible valide (jamais de fichier tronque) et n'altere
+    # ni la strategie, ni l'execution, ni aucune regle Exit V2.
+    try:
+        _atomic_write_json(path, snapshot)
+    except Exception as _exc:
+        log.critical(
+            "[EXIT_V2_STATE_ATOMIC_WRITE_FAILED] path=%s ticket=%s error=%s action=PREVIOUS_TARGET_PRESERVED",
+            path, ticket, type(_exc).__name__,
+        )
 
 
 def _quick_exit_event(event_type: str, status: str, payload: dict, now: datetime | None = None) -> dict:
