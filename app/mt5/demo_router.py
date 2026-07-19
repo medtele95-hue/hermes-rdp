@@ -619,6 +619,11 @@ class DemoKellyRouter:
         self._exit_states: dict[int, dict] = {}   # market-danger per-ticket state
         self._dynamic_exit_state: dict[int, dict] = {}  # Â§5 R-multiple exit state
         self._events_lock = threading.RLock()
+        # T1.2B2A (2026-07-19) — SHADOW identity enrichment adapter. None by
+        # default (feature flag HERMES_EVENT_IDENTITY_ENABLED OFF) => zero cost,
+        # events strictly identical to legacy. Attached at boot ONLY when the
+        # flag is ON. Purely additive; no consumer/order/gate depends on it.
+        self._identity_enricher = None
 
     @property
     def enabled(self) -> bool:
@@ -4581,7 +4586,21 @@ class DemoKellyRouter:
                 continue
         return events
 
+    def attach_identity_enricher(self, enricher: object) -> None:
+        """T1.2B2A — attach the SHADOW identity enricher (boot wiring, flag ON
+        only). No-op path stays the default (attribute None)."""
+        self._identity_enricher = enricher
+
     def _record_event(self, event: dict) -> None:
+        # T1.2B2A — single centralized enrichment point. When no enricher is
+        # attached (flag OFF, production default) this is a strict no-op and the
+        # event is byte-identical to legacy. When attached (flag ON), the
+        # enricher adds ONE additive `identity_shadow` key IN PLACE, so the very
+        # next `_ingest_event(event)` at each call site sees the same enriched
+        # object — one point, both sinks, no writer duplication. SHADOW: the
+        # enricher never raises toward the trading path.
+        if self._identity_enricher is not None:
+            event = self._identity_enricher.enrich(event)
         with self._events_lock:
             self.events_path.parent.mkdir(parents=True, exist_ok=True)
             self._rotate_events_if_needed()

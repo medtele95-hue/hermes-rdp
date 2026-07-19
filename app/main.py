@@ -296,6 +296,13 @@ class HermesBackend:
         self.agent = Hermes5MinAgent(self.settings, self.learning_optimizer)
         self.paper_trader = PaperTradingAgent(self.settings)
         self.demo_router = DemoKellyRouter(self.settings)
+        # T1.2B2A (2026-07-19) — additive SHADOW identity enrichment, gated by
+        # HERMES_EVENT_IDENTITY_ENABLED (OFF by default). Returns None when OFF:
+        # no instance, no id, no registry, events strictly identical to legacy.
+        from app.services.event_identity_runtime import maybe_build_identity_enricher
+        _identity_enricher = maybe_build_identity_enricher()
+        if _identity_enricher is not None:
+            self.demo_router.attach_identity_enricher(_identity_enricher)
         self.setup_hunter = SetupHunter(self.settings)
         self.time_engine = TimeEngine(self.settings)
         self.strategy_manager = StrategyManager(self.settings)
