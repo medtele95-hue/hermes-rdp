@@ -23,9 +23,15 @@ mapping are explicitly OUT OF SCOPE here (T1.3+ / future broker-mapping mission)
 """
 from __future__ import annotations
 
+import json
+import re
 import threading
 import time
+import uuid
 from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from app.services.event_identity import (
@@ -36,6 +42,147 @@ from app.services.event_identity import (
 IDENTITY_FLAG_ENV = "HERMES_EVENT_IDENTITY_ENABLED"
 IDENTITY_SHADOW_VERSION = "1"
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+# --------------------------------------------------------------------------- #
+# Activation lease (T1.2B2B2A1, 2026-07-19)
+# --------------------------------------------------------------------------- #
+# SHADOW activation is granted by an EXPIRING runtime lease (a strictly-validated
+# JSON file read ONCE at boot), never a permanent boolean flag: an expired or
+# absent lease can never re-activate SHADOW after a crash/restart/reboot. The
+# lease does NOT disable an already-running process mid-observation; immediate
+# deactivation = delete the lease + controlled bot restart. Posture is FAIL-OFF:
+# any lease problem (missing/invalid/expired/commit-mismatch/IO) leaves SHADOW
+# OFF and never blocks the legacy bot or creates exposure.
+IDENTITY_LEASE_FILENAME = "identity_shadow_activation.json"
+IDENTITY_LEASE_SCHEMA_VERSION = 1
+MAX_IDENTITY_SHADOW_LEASE_SECONDS = 7200  # 2 h ceiling; a real lease is shorter
+IDENTITY_LEASE_MAX_BYTES = 16 * 1024
+_REQUIRED_LEASE_FIELDS = frozenset({
+    "schema_version", "enabled", "mode", "activation_id", "created_at_utc",
+    "expires_at_utc", "expected_git_commit", "requested_by", "reason",
+})
+_GIT_COMMIT_RE = re.compile(r"\A[0-9a-f]{40}\Z")
+
+
+@dataclass(frozen=True)
+class IdentityActivationDecision:
+    """Diagnostic result of activation resolution. Carries NO lease body and NO
+    secret. ``source`` in {OFF, ENVIRONMENT, RUNTIME_LEASE}."""
+
+    enabled: bool
+    source: str
+    reason_code: str
+    activation_id: "str | None" = None
+    expires_at_utc: "str | None" = None
+    expected_git_commit: "str | None" = None
+
+
+def _off(reason_code: str) -> IdentityActivationDecision:
+    return IdentityActivationDecision(False, "OFF", reason_code)
+
+
+def _parse_utc(value: object) -> "datetime | None":
+    """Parse a strict ISO-8601 UTC-aware timestamp. Naive (no tz) -> None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.astimezone(timezone.utc)
+
+
+def _validate_lease_semantics(obj, current_git_commit, now_utc) -> IdentityActivationDecision:
+    if not isinstance(obj, dict):
+        return _off("LEASE_SCHEMA_INVALID")
+    if set(obj.keys()) != _REQUIRED_LEASE_FIELDS:  # no missing / no unknown field
+        return _off("LEASE_SCHEMA_INVALID")
+    if type(obj["schema_version"]) is not int or obj["schema_version"] != IDENTITY_LEASE_SCHEMA_VERSION:
+        return _off("LEASE_SCHEMA_INVALID")
+    if type(obj["enabled"]) is not bool:            # 1 / "true" are NOT bool
+        return _off("LEASE_SCHEMA_INVALID")
+    if obj["enabled"] is not True:                  # explicitly disabled lease
+        return _off("OFF_DEFAULT")
+    if obj["mode"] != "SHADOW":
+        return _off("LEASE_SCHEMA_INVALID")
+    aid = obj["activation_id"]
+    if not isinstance(aid, str):
+        return _off("LEASE_SCHEMA_INVALID")
+    try:
+        uuid.UUID(aid)
+    except (ValueError, AttributeError, TypeError):
+        return _off("LEASE_SCHEMA_INVALID")
+    for field in ("requested_by", "reason"):
+        if not isinstance(obj[field], str) or not obj[field].strip():
+            return _off("LEASE_SCHEMA_INVALID")
+    commit = obj["expected_git_commit"]
+    if not isinstance(commit, str) or not _GIT_COMMIT_RE.match(commit):
+        return _off("LEASE_SCHEMA_INVALID")
+    created = _parse_utc(obj["created_at_utc"])
+    expires = _parse_utc(obj["expires_at_utc"])
+    if created is None or expires is None:
+        return _off("LEASE_SCHEMA_INVALID")
+    if created > expires:
+        return _off("LEASE_SCHEMA_INVALID")
+    if (expires - created).total_seconds() > MAX_IDENTITY_SHADOW_LEASE_SECONDS:
+        return _off("LEASE_DURATION_EXCEEDED")
+    if created > now_utc:                            # window not started yet
+        return _off("LEASE_NOT_YET_VALID")
+    if expires <= now_utc:
+        return _off("LEASE_EXPIRED")
+    if not isinstance(current_git_commit, str) or not _GIT_COMMIT_RE.match(current_git_commit or "") \
+            or current_git_commit != commit:
+        return _off("LEASE_COMMIT_MISMATCH")         # includes "unknown" commit
+    return IdentityActivationDecision(True, "RUNTIME_LEASE", "LEASE_VALID", aid, obj["expires_at_utc"], commit)
+
+
+def evaluate_identity_activation(
+    *,
+    env_value: "str | None",
+    lease_path: "Path | str | None",
+    current_git_commit: str,
+    now_utc: datetime,
+    allowed_dir: "Path | str | None" = None,
+) -> IdentityActivationDecision:
+    """Deterministic, injectable activation resolver. Precedence: a truthy env
+    var -> ENVIRONMENT (kept for compatibility); else a valid non-expired lease
+    -> RUNTIME_LEASE; else OFF. FAIL-OFF: never raises, never returns the lease
+    body/secret. Read ONCE at boot (never per-event)."""
+    try:
+        if env_value is not None and str(env_value).strip().lower() in _TRUE_VALUES:
+            return IdentityActivationDecision(True, "ENVIRONMENT", "ENV_ENABLED")
+        if lease_path is None:
+            return _off("OFF_DEFAULT")
+        p = Path(lease_path)
+        try:
+            if p.is_symlink():                       # no symlink / reparse target
+                return _off("LEASE_PATH_INVALID")
+            if not p.exists():
+                return _off("LEASE_MISSING")
+            if not p.is_file():
+                return _off("LEASE_PATH_INVALID")
+            if allowed_dir is not None and p.resolve().parent != Path(allowed_dir).resolve():
+                return _off("LEASE_PATH_INVALID")
+            if p.stat().st_size > IDENTITY_LEASE_MAX_BYTES:
+                return _off("LEASE_SCHEMA_INVALID")
+            raw = p.read_text(encoding="utf-8")
+        except PermissionError:
+            return _off("LEASE_PERMISSION_DENIED")
+        except FileNotFoundError:
+            return _off("LEASE_MISSING")
+        except (UnicodeError, UnicodeDecodeError):
+            return _off("LEASE_INVALID_JSON")
+        except OSError:
+            return _off("LEASE_PERMISSION_DENIED")
+        try:
+            obj = json.loads(raw)
+        except (ValueError, TypeError):
+            return _off("LEASE_INVALID_JSON")
+        return _validate_lease_semantics(obj, current_git_commit, now_utc)
+    except Exception:
+        return _off("LEASE_SCHEMA_INVALID")          # last-resort FAIL-OFF
 
 # Registry bounds (in-memory only, never persisted).
 DEFAULT_MAX_ENTRIES = 4096
@@ -127,7 +274,7 @@ class LifecycleRegistry:
             del self._map[k]
             self.expirations += 1
 
-    def resolve(self, lifecycle_key: tuple, factory: Callable[[], str]) -> str:
+    def _resolve_entry(self, lifecycle_key: tuple, factory: Callable[[], str]) -> _Entry:
         with self._lock:
             now = self._clock()
             self._cleanup(now)
@@ -136,14 +283,25 @@ class LifecycleRegistry:
                 e.last_seen = now
                 e.count += 1
                 self._map.move_to_end(lifecycle_key)
-                return e.correlation_id
-            correlation_id = factory()
-            self._map[lifecycle_key] = _Entry(correlation_id, now)
+                return e
+            e = _Entry(factory(), now)
+            self._map[lifecycle_key] = e
             self._map.move_to_end(lifecycle_key)
             while len(self._map) > self._max:
                 self._map.popitem(last=False)  # LRU eviction (oldest last_seen)
                 self.evictions += 1
-            return correlation_id
+            return e
+
+    def resolve(self, lifecycle_key: tuple, factory: Callable[[], str]) -> str:
+        return self._resolve_entry(lifecycle_key, factory).correlation_id
+
+    def resolve_with_sequence(self, lifecycle_key: tuple, factory: Callable[[], str]) -> "tuple[str, int]":
+        """T1.2B2B2A1-R2 — the correlation_sequence LIVES IN the bounded entry
+        (``count``: 1 on creation, +1 per resolve). Same LRU/TTL policy: an
+        evicted/expired lifecycle drops its sequence with it, ``clear()`` frees
+        everything, and there is NO second unbounded per-correlation table."""
+        e = self._resolve_entry(lifecycle_key, factory)
+        return e.correlation_id, e.count
 
     def mark_terminal(self, lifecycle_key: tuple) -> None:
         with self._lock:
@@ -151,6 +309,11 @@ class LifecycleRegistry:
             if e is not None:
                 e.terminal = True
                 e.terminal_at = self._clock()
+
+    def clear(self) -> None:
+        """Drop all entries (used once on lease expiry). Thread-safe, no I/O."""
+        with self._lock:
+            self._map.clear()
 
     def __len__(self) -> int:
         with self._lock:
@@ -179,6 +342,11 @@ class CausationCache:
             while len(self._map) > self._max:
                 self._map.popitem(last=False)
 
+    def clear(self) -> None:
+        """Drop all entries (used once on lease expiry). Thread-safe, no I/O."""
+        with self._lock:
+            self._map.clear()
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._map)
@@ -202,6 +370,8 @@ class IdentityShadowEnricher:
         registry: LifecycleRegistry | None = None,
         causation_cache: CausationCache | None = None,
         enabled: bool = False,
+        expiry_monotonic: "float | None" = None,
+        monotonic_clock: Callable[[], float] | None = None,
     ) -> None:
         self._ctx = context
         # `is not None`, NOT `or`: LifecycleRegistry/CausationCache define
@@ -210,10 +380,48 @@ class IdentityShadowEnricher:
         self._registry = registry if registry is not None else LifecycleRegistry()
         self._causation = causation_cache if causation_cache is not None else CausationCache()
         self._enabled = bool(enabled)
+        # T1.2B2B2A1-R1 — runtime expiry. When built from a RUNTIME_LEASE, the
+        # deadline is a MONOTONIC instant (immune to wall-clock jumps after boot).
+        # Once reached, this live process self-deactivates: enrich() becomes a
+        # strict no-op and the registry/cache are cleared ONCE. State is
+        # one-way ACTIVE -> EXPIRED; re-activation requires a new lease + a
+        # controlled bot restart. None => no runtime expiry (e.g. ENVIRONMENT).
+        self._expiry_monotonic = expiry_monotonic
+        self._monotonic = monotonic_clock or time.monotonic
+        self._state_lock = threading.Lock()
+        self._expired = False
 
     @property
     def enabled(self) -> bool:
         return self._enabled
+
+    @property
+    def expired(self) -> bool:
+        return self._expired
+
+    def _expire_once(self) -> None:
+        """One-time, idempotent, thread-safe cleanup on lease expiry. No I/O."""
+        with self._state_lock:
+            if self._expired:
+                return
+            self._expired = True
+            try:
+                self._registry.clear()
+                self._causation.clear()
+            except Exception:
+                pass
+
+    def _is_expired(self) -> bool:
+        """Cheap per-event check. No I/O, no subprocess, no getenv. After the
+        first expiry it is a single bool read (~`if expired: return event`)."""
+        if self._expiry_monotonic is None:
+            return False
+        if self._expired:
+            return True
+        if self._monotonic() >= self._expiry_monotonic:
+            self._expire_once()
+            return True
+        return False
 
     def _resolve_lifecycle(self, event: dict, lifecycle_context: "dict | None"):
         """Return (lifecycle_key | None, unresolved_reason_code | None).
@@ -252,6 +460,11 @@ class IdentityShadowEnricher:
         # Flag OFF -> strict no-op (identical object, zero id, zero field).
         if not self._enabled:
             return event
+        # Lease expired in THIS live process -> strict no-op. No new event_id,
+        # correlation_id, sequence, registry/cache access, or identity_shadow;
+        # the legacy event is returned intact. One-way ACTIVE -> EXPIRED.
+        if self._is_expired():
+            return event
         try:
             lifecycle_key, unresolved_reason = self._resolve_lifecycle(event, lifecycle_context)
             event_id = self._ctx.new_event_id()
@@ -259,8 +472,15 @@ class IdentityShadowEnricher:
             correlation_id: "str | None" = None
             correlation_sequence: "int | None" = None
             if lifecycle_key is not None:
-                correlation_id = self._registry.resolve(lifecycle_key, self._ctx.new_correlation_id)
-                correlation_sequence = self._ctx.next_correlation_sequence(correlation_id)
+                # T1.2B2B2A1-R2 — the sequence comes from the BOUNDED registry
+                # entry, NOT from context.next_correlation_sequence(): that pure-
+                # module store is a plain unbounded dict that would grow with
+                # every lifecycle seen during the lease and survive expiry. The
+                # pure API stays available for other uses/tests; the runtime
+                # SHADOW path must only hold bounded per-correlation state.
+                correlation_id, correlation_sequence = self._registry.resolve_with_sequence(
+                    lifecycle_key, self._ctx.new_correlation_id
+                )
                 # Causation is only ever within the SAME strict key (same setup
                 # cycle) -> no cross-setup, cross-strategy or cross-direction link.
                 if causation_id is None:
@@ -301,24 +521,97 @@ class IdentityShadowEnricher:
         return event
 
 
+def _default_lease_path() -> Path:
+    # app/services/event_identity_runtime.py -> repo/app/data/<lease>
+    return Path(__file__).resolve().parents[1] / "data" / IDENTITY_LEASE_FILENAME
+
+
+def _read_git_commit_safe() -> str:
+    """Single boot-time git read (short timeout, no exception propagated). Any
+    failure -> 'unknown' (which the lease resolver treats as a commit mismatch,
+    i.e. OFF). Never called per-event."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parents[2]),
+            capture_output=True, timeout=5, text=True,
+        )
+        commit = (out.stdout or "").strip()
+        return commit if _GIT_COMMIT_RE.match(commit) else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def resolve_identity_activation(
+    *,
+    getenv: Callable[[str], "str | None"] | None = None,
+    lease_path: "Path | str | None" = None,
+    current_git_commit: "str | None" = None,
+    now_utc: "datetime | None" = None,
+) -> IdentityActivationDecision:
+    """Boot-time activation decision (diagnostic). Reads env + lease ONCE."""
+    import os
+
+    env_value = (getenv or os.environ.get)(IDENTITY_FLAG_ENV)
+    # Default (production) path is pinned to app/data and its allowed dir is
+    # enforced. An explicitly injected path is a trusted code-level override
+    # (tests / future flexibility) whose own parent is the allowed dir.
+    if lease_path is None:
+        path = _default_lease_path()
+        allowed = path.parent
+    else:
+        path = lease_path
+        allowed = Path(lease_path).parent
+    commit = current_git_commit if current_git_commit is not None else _read_git_commit_safe()
+    when = now_utc or datetime.now(timezone.utc)
+    return evaluate_identity_activation(
+        env_value=env_value, lease_path=path, current_git_commit=commit,
+        now_utc=when, allowed_dir=allowed,
+    )
+
+
 def maybe_build_identity_enricher(
     *,
     getenv: Callable[[str], "str | None"] | None = None,
     bot_instance_id: "str | None" = None,
+    lease_path: "Path | str | None" = None,
+    current_git_commit: "str | None" = None,
+    now_utc: "datetime | None" = None,
+    monotonic_clock: Callable[[], float] | None = None,
 ) -> "IdentityShadowEnricher | None":
-    """Boot factory. Returns None when the flag is OFF (production default): no
-    instance, no registry, no id. Only builds a SHADOW enricher when the flag is
-    explicitly ON. Uses a syntactically-valid PLACEHOLDER server_id purely to
-    satisfy the context constructor; the emitted ``server_id_state`` stays
-    ``UNPROVISIONED`` (no real server_id is created or persisted here)."""
-    if not is_identity_enabled(getenv):
-        return None
+    """Boot factory. Returns None when SHADOW is OFF (production default): no
+    instance, no registry, no id. Builds a SHADOW enricher only when the
+    activation decision (env OR a valid non-expired runtime lease) is enabled.
+    For a RUNTIME_LEASE, the lease's ``expires_at_utc`` is converted to a
+    MONOTONIC deadline so the live process self-deactivates at expiry (no
+    restart needed, immune to wall-clock jumps). ENVIRONMENT source has no
+    runtime expiry (no false expiry invented). Uses a placeholder server_id."""
     import os
 
+    mono = monotonic_clock or time.monotonic
+    mono_now = mono()
+    when = now_utc or datetime.now(timezone.utc)
+    decision = resolve_identity_activation(
+        getenv=getenv, lease_path=lease_path,
+        current_git_commit=current_git_commit, now_utc=when,
+    )
+    if not decision.enabled:
+        return None
+    expiry_monotonic: "float | None" = None
+    if decision.source == "RUNTIME_LEASE" and decision.expires_at_utc:
+        expires = _parse_utc(decision.expires_at_utc)
+        if expires is not None:
+            remaining = (expires - when).total_seconds()
+            expiry_monotonic = mono_now + max(0.0, remaining)
     instance = bot_instance_id or ("bot-shadow-%d" % os.getpid())
     context = EventIdentityContext(
         server_id="srv-" + "0" * 16,   # placeholder (UNPROVISIONED), not a real id
         bot_instance_id=instance,
         uuid_generator=MonotonicUUID7Generator(),
     )
-    return IdentityShadowEnricher(context=context, enabled=True)
+    return IdentityShadowEnricher(
+        context=context, enabled=True,
+        expiry_monotonic=expiry_monotonic, monotonic_clock=mono,
+    )
