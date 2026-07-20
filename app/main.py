@@ -303,6 +303,16 @@ class HermesBackend:
         _identity_enricher = maybe_build_identity_enricher()
         if _identity_enricher is not None:
             self.demo_router.attach_identity_enricher(_identity_enricher)
+        # A0.3-R6B1 — SYSTEM_HEARTBEAT, gated by HERMES_SYSTEM_HEARTBEAT_ENABLED
+        # (OFF par defaut = dormant, zero evenement). Emis UNIQUEMENT depuis le
+        # fil principal en toute fin de run_cycle(), jamais depuis le thread
+        # live-snapshot : un thread qui survit a une boucle bloquee ne doit pas
+        # fabriquer une preuve de vie. Ecrit via demo_router._record_event —
+        # meme verrou, meme rotation, meme demo_pilot_events.jsonl.
+        from app.services.system_heartbeat import build_system_heartbeat_emitter
+        self.system_heartbeat = build_system_heartbeat_emitter(
+            self.settings, self.demo_router._record_event
+        )
         self.setup_hunter = SetupHunter(self.settings)
         self.time_engine = TimeEngine(self.settings)
         self.strategy_manager = StrategyManager(self.settings)
@@ -1793,6 +1803,9 @@ class HermesBackend:
             latest_safety_guard=self._latest_safety_guard,
             ingest_health=self._ingest_health_dict(),
         )
+        # A0.3-R6B1 — le cycle est reellement termine : preuve de vie de la
+        # boucle principale. mt5_connected est une info d'etat, pas une preuve.
+        self.system_heartbeat.on_cycle_complete(mt5_connected=self.mt5.connected)
 
     def sync_open_mt5_positions_to_lovable(self, blocking: bool = True) -> dict:
         if not blocking and not self._live_snapshot_lock.acquire(blocking=False):

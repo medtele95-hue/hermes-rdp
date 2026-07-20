@@ -62,6 +62,18 @@ def _tick(bid: float) -> dict:
     return {"bid": bid, "ask": bid + 1.0, "time": 0}
 
 
+def _disabled_heartbeat():
+    """A0.3-R6B1 — miroir du __init__ réel : l'émetteur SYSTEM_HEARTBEAT existe
+    toujours sur un backend construit, flag OFF par défaut (défaut prod).
+    Émetteur réel (pas un mock) : ces tests de cycle prouvent au passage que le
+    hook de fin de run_cycle est neutre quand le flag est OFF."""
+    from app.services.system_heartbeat import SystemHeartbeatEmitter
+    return SystemHeartbeatEmitter(
+        enabled=False, interval_seconds=60,
+        record_event=lambda event: None, mode="READ_ONLY",
+    )
+
+
 # ── 1. cycle_start uses hermes_main_symbol_list ───────────────────────────────
 
 class TestCycleStartSymbols(unittest.TestCase):
@@ -80,6 +92,7 @@ class TestCycleStartSymbols(unittest.TestCase):
         backend.paper_trader = MagicMock()
         backend.demo_router = MagicMock()
         backend.demo_router.process_quick_exits.return_value = []
+        backend.system_heartbeat = _disabled_heartbeat()
         backend.setup_hunter = MagicMock()
         backend.time_engine = MagicMock()
         backend.strategy_manager = MagicMock()
@@ -240,6 +253,7 @@ class TestSimoCycleCounts(unittest.TestCase):
         backend.agent = MagicMock()
         backend.demo_router = MagicMock()
         backend.demo_router.process_decision.return_value = []
+        backend.system_heartbeat = _disabled_heartbeat()
         backend._per_symbol_state = {}
         backend.latest_order_flow_snapshots = {}
         backend.ingest_client = MagicMock()
@@ -366,6 +380,7 @@ class TestCycleCountInvariant(unittest.TestCase):
         backend.paper_trader.process_closures.return_value = []
         backend.demo_router = MagicMock()
         backend.demo_router.process_quick_exits.return_value = []
+        backend.system_heartbeat = _disabled_heartbeat()
         backend.setup_hunter = MagicMock()
         backend.time_engine = MagicMock()
         backend.time_engine.evaluate.return_value = {
@@ -524,6 +539,7 @@ def _make_minimal_backend(settings: Settings, resolved_symbols: dict) -> object:
     b.paper_trader.process_closures.return_value = []
     b.demo_router = MagicMock()
     b.demo_router.process_quick_exits.return_value = []
+    b.system_heartbeat = _disabled_heartbeat()
     b.setup_hunter = MagicMock()
     b.time_engine = MagicMock()
     b.time_engine.evaluate.return_value = {

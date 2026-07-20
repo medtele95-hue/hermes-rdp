@@ -67,6 +67,10 @@ class Settings(BaseModel):
     demo_only: bool = True
     demo_pilot_enabled: bool = False
     demo_pilot_hours: int = 24
+    # A0.3-R6B1 — SYSTEM_HEARTBEAT : preuve de vie de run_cycle. OFF par
+    # defaut = dormant (zero evenement, zero changement legacy).
+    hermes_system_heartbeat_enabled: bool = False
+    system_heartbeat_interval_seconds: int = 60
     demo_magic_number: int = 909002
     demo_comment: str = "HERMES_DEMO_KELLY_24H"
     demo_max_lot: float = 0.01
@@ -558,6 +562,8 @@ def get_settings() -> Settings:
         demo_only=_bool_env("DEMO_ONLY", True),
         demo_pilot_enabled=_bool_env("DEMO_PILOT_ENABLED", False),
         demo_pilot_hours=int(os.getenv("DEMO_PILOT_HOURS", "24")),
+        hermes_system_heartbeat_enabled=_bool_env("HERMES_SYSTEM_HEARTBEAT_ENABLED", False),
+        system_heartbeat_interval_seconds=_int_env("SYSTEM_HEARTBEAT_INTERVAL_SECONDS", 60),
         demo_magic_number=int(os.getenv("DEMO_MAGIC_NUMBER", "909002")),
         demo_comment=os.getenv("DEMO_COMMENT", "HERMES_DEMO_KELLY_24H"),
         demo_max_lot=float(os.getenv("DEMO_MAX_LOT", "0.01")),
