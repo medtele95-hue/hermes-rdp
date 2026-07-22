@@ -372,6 +372,8 @@ class IdentityShadowEnricher:
         enabled: bool = False,
         expiry_monotonic: "float | None" = None,
         monotonic_clock: Callable[[], float] | None = None,
+        provenance=None,
+        lifecycle_resolver: "Callable[[dict], dict | None] | None" = None,
     ) -> None:
         self._ctx = context
         # `is not None`, NOT `or`: LifecycleRegistry/CausationCache define
@@ -390,6 +392,21 @@ class IdentityShadowEnricher:
         self._monotonic = monotonic_clock or time.monotonic
         self._state_lock = threading.Lock()
         self._expired = False
+        # M02-P1B — provenance runtime partagée (RuntimeProvenance), INJECTÉE
+        # explicitement. None (défaut) : sortie identique à pré-P1B (aucun
+        # champ boot_id/cycle_id). L'enricher LIT la provenance ; il ne génère
+        # JAMAIS son propre boot_id ni un second compteur cycle.
+        self._provenance = provenance
+        # M02-P1C — resolver lifecycle optionnel (labo). None (défaut) :
+        # sortie identique à pré-P1C. Injecté : callable(event) -> dict|None
+        # ({"lifecycle_id", "correlation_id", "reason"}) ; toute panne du
+        # resolver est confinée dans l'enrichissement, jamais vers le caller.
+        self._lifecycle_resolver = lifecycle_resolver
+        # M02-P1C (dette P1A-B) — un événement portant DÉJÀ identity_shadow
+        # n'est jamais écrasé : il est préservé intégralement et compté ici.
+        # Diagnostic exposé par duplicate_shadow_diagnostics() (aucun champ
+        # top-level legacy ajouté à l'événement).
+        self._duplicate_shadow_count = 0
 
     @property
     def enabled(self) -> bool:
@@ -423,6 +440,56 @@ class IdentityShadowEnricher:
             return True
         return False
 
+    @property
+    def duplicate_shadow_count(self) -> int:
+        return self._duplicate_shadow_count
+
+    def duplicate_shadow_diagnostics(self) -> dict:
+        """Diagnostic sanitisé (dette P1A-B) : combien d'événements portaient
+        déjà identity_shadow et ont été préservés tels quels."""
+        return {
+            "reason_code": "DUPLICATE_IDENTITY_SHADOW",
+            "count": self._duplicate_shadow_count,
+        }
+
+    def _resolve_lifecycle_mapping(self, event: dict) -> dict:
+        """M02-P1C — interroge le resolver lifecycle injecté. Ne lève jamais.
+        Résolu : lifecycle_id + correlation_id restauré (qualité PARTIAL).
+        Sinon : UNRESOLVED honnête (raison sanitisée, jamais de matching par
+        ticket seul — la construction de la référence stricte appartient au
+        resolver, qui refuse les discriminants incomplets)."""
+        try:
+            info = self._lifecycle_resolver(event)
+        except Exception as exc:
+            return {
+                "lifecycle_id": None,
+                "lifecycle_resolution": "UNRESOLVED",
+                "lifecycle_unresolved_reason": "RESOLVER_ERROR:%s" % type(exc).__name__,
+            }
+        if not isinstance(info, dict) or not info.get("lifecycle_id"):
+            reason = info.get("reason") if isinstance(info, dict) else None
+            return {
+                "lifecycle_id": None,
+                "lifecycle_resolution": "UNRESOLVED",
+                "lifecycle_unresolved_reason": (
+                    str(reason)[:64] if reason else "LIFECYCLE_NOT_RESOLVED"
+                ),
+            }
+        resolved = {
+            "lifecycle_id": str(info["lifecycle_id"]),
+            "lifecycle_resolution": "RESOLVED",
+            "lifecycle_unresolved_reason": None,
+        }
+        correlation = info.get("correlation_id")
+        if isinstance(correlation, str) and correlation:
+            # Corrélation restaurée depuis le store durable : elle prime sur
+            # l'UNRESOLVED des événements de close (le mapping broker existe
+            # désormais). La causation n'est jamais fabriquée ici.
+            resolved["correlation_id"] = correlation
+            resolved["correlation_quality"] = "PARTIAL"
+            resolved["unresolved_reason_code"] = None
+        return resolved
+
     def _resolve_lifecycle(self, event: dict, lifecycle_context: "dict | None"):
         """Return (lifecycle_key | None, unresolved_reason_code | None).
 
@@ -437,7 +504,15 @@ class IdentityShadowEnricher:
         if event_type in _CLOSE_EVENT_TYPES:
             return None, "BROKER_MAPPING_NOT_AVAILABLE"
         setup_id = src.get("setup_id")
-        setup_id = str(setup_id).strip() if setup_id is not None else ""
+        # M02-P1C (dette P1A-A) — plus JAMAIS de conversion silencieuse
+        # (l'ancien str(123) -> "123" fabriquait une clé lifecycle à partir
+        # d'un type invalide). Contrat existant : setup_id légitime = chaîne
+        # non vide (uuid4 côté main.py). Non-str -> SETUP_ID_INVALID.
+        if setup_id is None:
+            return None, "SETUP_ID_MISSING"
+        if not isinstance(setup_id, str):
+            return None, "SETUP_ID_INVALID"
+        setup_id = setup_id.strip()
         if not setup_id:
             return None, "SETUP_ID_MISSING"
         broker_symbol = _norm(src.get("broker_symbol"))
@@ -464,6 +539,15 @@ class IdentityShadowEnricher:
         # correlation_id, sequence, registry/cache access, or identity_shadow;
         # the legacy event is returned intact. One-way ACTIVE -> EXPIRED.
         if self._is_expired():
+            return event
+        # M02-P1C (dette P1A-B) — DUPLICATE_IDENTITY_SHADOW : un shadow
+        # préexistant est PRÉSERVÉ intégralement (jamais écrasé, dernier
+        # écrivain ne gagne plus). Diagnostic compté côté enricher seulement
+        # (duplicate_shadow_diagnostics()) : aucun champ top-level legacy
+        # inventé sur l'événement.
+        if "identity_shadow" in event:
+            with self._state_lock:
+                self._duplicate_shadow_count += 1
             return event
         try:
             lifecycle_key, unresolved_reason = self._resolve_lifecycle(event, lifecycle_context)
@@ -509,6 +593,18 @@ class IdentityShadowEnricher:
                 "bot_instance_id": self._ctx.bot_instance_id,
                 "server_id_state": "UNPROVISIONED",
             }
+            if self._provenance is not None:
+                # Lecture atomique de la paire canonique partagée avec le
+                # SYSTEM_HEARTBEAT — même boot_id, même cycle_id, un seul
+                # compteur (celui du provider).
+                prov_boot_id, prov_cycle_id = self._provenance.snapshot()
+                shadow["boot_id"] = prov_boot_id
+                shadow["cycle_id"] = prov_cycle_id
+            if self._lifecycle_resolver is not None:
+                # M02-P1C — mapping lifecycle durable (labo). Panne confinée
+                # ici même : elle dégrade en UNRESOLVED sans détruire le
+                # reste de l'enrichissement ni toucher le caller.
+                shadow.update(self._resolve_lifecycle_mapping(event))
             # Single additive top-level key: cannot collide with legacy keys.
             event["identity_shadow"] = shadow
         except Exception as exc:  # SHADOW: never propagate to the trading path
@@ -580,14 +676,25 @@ def maybe_build_identity_enricher(
     current_git_commit: "str | None" = None,
     now_utc: "datetime | None" = None,
     monotonic_clock: Callable[[], float] | None = None,
+    provenance=None,
+    lifecycle_resolver: "Callable[[dict], dict | None] | None" = None,
 ) -> "IdentityShadowEnricher | None":
     """Boot factory. Returns None when SHADOW is OFF (production default): no
-    instance, no registry, no id. Builds a SHADOW enricher only when the
-    activation decision (env OR a valid non-expired runtime lease) is enabled.
-    For a RUNTIME_LEASE, the lease's ``expires_at_utc`` is converted to a
-    MONOTONIC deadline so the live process self-deactivates at expiry (no
-    restart needed, immune to wall-clock jumps). ENVIRONMENT source has no
-    runtime expiry (no false expiry invented). Uses a placeholder server_id."""
+    instance, no registry, no id, and the new ``provenance``/``lifecycle_resolver``
+    kwargs are NEVER touched (decision checked BEFORE any use). Builds a SHADOW
+    enricher only when the activation decision (env OR a valid non-expired
+    runtime lease) is enabled. For a RUNTIME_LEASE, the lease's
+    ``expires_at_utc`` is converted to a MONOTONIC deadline so the live process
+    self-deactivates at expiry (no restart needed, immune to wall-clock jumps).
+    ENVIRONMENT source has no runtime expiry (no false expiry invented). Uses a
+    placeholder server_id.
+
+    ``provenance`` (M02-P1D, optional) is forwarded as-is to
+    ``IdentityShadowEnricher`` so it reads the SAME (boot_id, cycle_id) pair as
+    SYSTEM_HEARTBEAT. ``lifecycle_resolver`` (M02-P1D, optional) is forwarded
+    as-is for durable lifecycle mapping (M02-P1C). Both default to None:
+    output identical to pre-P1D when omitted.
+    """
     import os
 
     mono = monotonic_clock or time.monotonic
@@ -614,4 +721,5 @@ def maybe_build_identity_enricher(
     return IdentityShadowEnricher(
         context=context, enabled=True,
         expiry_monotonic=expiry_monotonic, monotonic_clock=mono,
+        provenance=provenance, lifecycle_resolver=lifecycle_resolver,
     )

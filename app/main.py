@@ -36,6 +36,7 @@ from app.services.paper_report_analytics import (
     format_time_stats_tables,
     manual_adjusted_report,
 )
+from app.services.runtime_provenance import RuntimeProvenance
 from app.agents.confluence_engine import evaluate_confluence
 from app.services.strategy_manager import StrategyManager
 from app.services.balanced_selector import select_best_candidate
@@ -296,11 +297,16 @@ class HermesBackend:
         self.agent = Hermes5MinAgent(self.settings, self.learning_optimizer)
         self.paper_trader = PaperTradingAgent(self.settings)
         self.demo_router = DemoKellyRouter(self.settings)
+        # M02-P1D — source canonique unique de provenance runtime (boot_id +
+        # cycle_id, M02-P1B), injectee explicitement dans l'enricher SHADOW et
+        # le heartbeat pour qu'ils partagent exactement la meme paire. Une
+        # seule instance par processus ; un restart cree un nouveau boot_id.
+        self.runtime_provenance = RuntimeProvenance()
         # T1.2B2A (2026-07-19) — additive SHADOW identity enrichment, gated by
         # HERMES_EVENT_IDENTITY_ENABLED (OFF by default). Returns None when OFF:
         # no instance, no id, no registry, events strictly identical to legacy.
         from app.services.event_identity_runtime import maybe_build_identity_enricher
-        _identity_enricher = maybe_build_identity_enricher()
+        _identity_enricher = maybe_build_identity_enricher(provenance=self.runtime_provenance)
         if _identity_enricher is not None:
             self.demo_router.attach_identity_enricher(_identity_enricher)
         # A0.3-R6B1 — SYSTEM_HEARTBEAT, gated by HERMES_SYSTEM_HEARTBEAT_ENABLED
@@ -311,7 +317,7 @@ class HermesBackend:
         # meme verrou, meme rotation, meme demo_pilot_events.jsonl.
         from app.services.system_heartbeat import build_system_heartbeat_emitter
         self.system_heartbeat = build_system_heartbeat_emitter(
-            self.settings, self.demo_router._record_event
+            self.settings, self.demo_router._record_event, provenance=self.runtime_provenance
         )
         self.setup_hunter = SetupHunter(self.settings)
         self.time_engine = TimeEngine(self.settings)
@@ -680,6 +686,9 @@ class HermesBackend:
         return {"checked": checked, "closed": closed, "still_open": still_open}
 
     def run_cycle(self) -> None:
+        # M02-P1B contrat — un cycle logique = un begin_cycle() ; heartbeat et
+        # evenements SHADOW lisent ensuite la meme paire (boot_id, cycle_id).
+        self.runtime_provenance.begin_cycle()
         cycle_start_utc = datetime.now(timezone.utc)
         log.info("[CYCLE] started")
         self._cycle_active = True

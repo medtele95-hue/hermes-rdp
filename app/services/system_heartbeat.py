@@ -51,6 +51,14 @@ class SystemHeartbeatEmitter:
     - throttle : horloge monotone (insensible aux sauts NTP) ; le premier
       cycle terminé émet toujours, puis au plus une émission par
       ``interval_seconds``.
+    - ``provenance`` (M02-P1B, optionnel) : source canonique partagée
+      ``RuntimeProvenance``. Absente (défaut, production actuelle) : le
+      comportement historique est STRICTEMENT inchangé (boot_id propre,
+      compteur privé incrémenté ici). Présente : ``boot_id`` vient du
+      provider et ``cycle_id`` est LU depuis le provider (avancé par le
+      propriétaire de la boucle via ``begin_cycle()``, jamais ici) — le
+      heartbeat et l'enricher Identity SHADOW partagent alors exactement la
+      même paire (boot_id, cycle_id).
     """
 
     def __init__(
@@ -62,6 +70,7 @@ class SystemHeartbeatEmitter:
         mode: str,
         now_monotonic: Callable[[], float] = time.monotonic,
         now_utc: Callable[[], datetime] | None = None,
+        provenance=None,
     ) -> None:
         interval = float(interval_seconds)
         if interval <= 0:
@@ -80,7 +89,18 @@ class SystemHeartbeatEmitter:
         self._mode = mode_value
         self._now_monotonic = now_monotonic
         self._now_utc = now_utc or (lambda: datetime.now(timezone.utc))
-        self.boot_id = str(uuid.uuid4())
+        self._provenance = provenance
+        if provenance is None:
+            self.boot_id = str(uuid.uuid4())
+        else:
+            # Le provider est LA source canonique : boot_id validé UUID ici
+            # (une provenance invalide doit échouer à la construction, que le
+            # builder fail-safe convertit en émetteur désactivé, jamais en
+            # heartbeat menteur).
+            try:
+                self.boot_id = str(uuid.UUID(str(provenance.boot_id)))
+            except (ValueError, AttributeError, TypeError):
+                raise ValueError("SYSTEM_HEARTBEAT provenance.boot_id invalide (UUID requis)")
         self.pid = os.getpid()
         self.cycle_id = 0
         self.emitted_count = 0
@@ -107,7 +127,13 @@ class SystemHeartbeatEmitter:
         if not self.enabled:
             return None
         try:
-            self.cycle_id += 1
+            if self._provenance is None:
+                self.cycle_id += 1
+            else:
+                # Provenance partagée : le compteur appartient au provider
+                # (begin_cycle() en tête de cycle par le propriétaire de la
+                # boucle). Le heartbeat LIT — un seul compteur, jamais deux.
+                _, self.cycle_id = self._provenance.snapshot()
             now_mono = self._now_monotonic()
             if (
                 self._last_emit_monotonic is not None
@@ -133,10 +159,19 @@ class SystemHeartbeatEmitter:
             return None
 
 
-def build_system_heartbeat_emitter(settings, record_event: Callable[[dict], None]) -> SystemHeartbeatEmitter:
+def build_system_heartbeat_emitter(
+    settings, record_event: Callable[[dict], None], provenance=None
+) -> SystemHeartbeatEmitter:
     """Construction fail-safe pour le boot du bot : une config invalide
     désactive l'émetteur (fail-closed côté heartbeat — la Control Tower verra
-    ABSENT/STALE et bloquera) sans jamais empêcher le trading de démarrer."""
+    ABSENT/STALE et bloquera) sans jamais empêcher le trading de démarrer.
+
+    ``provenance`` (M02-P1D, optionnel) est forwardée telle quelle aux DEUX
+    constructions ci-dessous (chemin normal ET chemin fail-safe désactivé) :
+    une provenance invalide (ex. ``boot_id`` non-UUID) lève ``ValueError`` à
+    la construction, ce qui bascule sur le chemin fail-safe — un émetteur
+    désactivé, jamais un heartbeat menteur avec un boot_id fabriqué.
+    """
     if settings.read_only:
         mode = "READ_ONLY"
     elif settings.demo_trading and settings.demo_only:
@@ -149,9 +184,21 @@ def build_system_heartbeat_emitter(settings, record_event: Callable[[dict], None
             interval_seconds=settings.system_heartbeat_interval_seconds,
             record_event=record_event,
             mode=mode,
+            provenance=provenance,
         )
     except ValueError as exc:
         log.error("[SYSTEM_HEARTBEAT] disabled reason=CONFIG_INVALID error=%s", exc)
-        return SystemHeartbeatEmitter(
-            enabled=False, interval_seconds=60, record_event=record_event, mode=mode
-        )
+        try:
+            # Le fail-safe reforward la provenance : si elle est saine, le
+            # boot_id désactivé reste cohérent avec le reste du process.
+            return SystemHeartbeatEmitter(
+                enabled=False, interval_seconds=60, record_event=record_event, mode=mode,
+                provenance=provenance,
+            )
+        except ValueError:
+            # La provenance elle-même était la cause de l'échec (ex. boot_id
+            # non-UUID) : ne JAMAIS la re-proposer, sinon ce second appel
+            # échoue à son tour et empêche le boot. Dernier recours propre.
+            return SystemHeartbeatEmitter(
+                enabled=False, interval_seconds=60, record_event=record_event, mode=mode,
+            )
