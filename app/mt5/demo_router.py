@@ -624,6 +624,12 @@ class DemoKellyRouter:
         # events strictly identical to legacy. Attached at boot ONLY when the
         # flag is ON. Purely additive; no consumer/order/gate depends on it.
         self._identity_enricher = None
+        # M02-P1D-P2 (2026-07-21) — DORMANT lifecycle capture hook. None by
+        # default => zero cost, `_record_event` byte-identical to legacy. No
+        # mission currently attaches a capture service; wiring is a future,
+        # separate activation mission. Purely additive; never read by any
+        # trading decision.
+        self._lifecycle_capture = None
 
     @property
     def enabled(self) -> bool:
@@ -4591,6 +4597,13 @@ class DemoKellyRouter:
         only). No-op path stays the default (attribute None)."""
         self._identity_enricher = enricher
 
+    def attach_lifecycle_capture(self, capture: object) -> None:
+        """M02-P1D-P2 — attach the DORMANT lifecycle capture service. No
+        current boot path calls this; attaching is reserved for a future,
+        separate activation mission. No-op path stays the default (attribute
+        None)."""
+        self._lifecycle_capture = capture
+
     def _record_event(self, event: dict) -> None:
         # T1.2B2A — single centralized enrichment point. When no enricher is
         # attached (flag OFF, production default) this is a strict no-op and the
@@ -4601,6 +4614,17 @@ class DemoKellyRouter:
         # enricher never raises toward the trading path.
         if self._identity_enricher is not None:
             event = self._identity_enricher.enrich(event)
+        # M02-P1D-P2 — DORMANT lifecycle capture hook. When no service is
+        # attached (production default) this is a strict no-op. When attached,
+        # the service observes the event to maintain its own durable lifecycle
+        # <-> broker-position mapping; it never mutates `event` and any
+        # failure is confined here (silent to the trading path — the service
+        # counts its own errors).
+        if self._lifecycle_capture is not None:
+            try:
+                self._lifecycle_capture.on_event(event)
+            except Exception:
+                pass
         with self._events_lock:
             self.events_path.parent.mkdir(parents=True, exist_ok=True)
             self._rotate_events_if_needed()
